@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies / build
+node_modules
+dist
+dist-ssr
+
+# Local env files (IMPORTANT)
+.env
+.env.*
+!.env.example
+
+# OS / system
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local config / cache
+*.local
+.vite
+.cache
+coverage
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# Env
+.env
+.env.*
+!.env.example
