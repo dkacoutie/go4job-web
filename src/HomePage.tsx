@@ -1,122 +1,172 @@
-// src/HomePage.tsx
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "./lib/supabaseClient";
+import { useSession } from "./lib/useSession";
+import "./HomePage.css";
 
-function HomePage() {
+type Profile = {
+  user_id: string;
+  full_name: string | null;
+  phone: string | null;
+  location: string | null;
+  headline: string | null;
+};
+
+export default function HomePage() {
   const navigate = useNavigate();
+  const { session, loading } = useSession();
+  const userId = session?.user.id ?? null;
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [appsCount, setAppsCount] = useState(0);
+  const [appsLoading, setAppsLoading] = useState(true);
+
+  const [alertsCount, setAlertsCount] = useState(0);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+
+  const profileStatus = useMemo(() => {
+    if (!profile) return "À compléter";
+    return profile.full_name?.trim() ? "OK" : "À compléter";
+  }, [profile]);
+
+  // Si pas connecté → /auth
+  useEffect(() => {
+    if (!loading && !session) navigate("/auth", { replace: true });
+  }, [loading, session, navigate]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (!userId) {
+      queueMicrotask(() => {
+        setProfileLoading(false);
+        setAppsLoading(false);
+        setAlertsLoading(false);
+      });
+      return;
+    }
+
+    async function loadAll() {
+      setErrorMsg(null);
+      setProfileLoading(true);
+      setAppsLoading(true);
+      setAlertsLoading(true);
+
+      // 1) Profil
+      const { data: prof, error: profErr } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, phone, location, headline")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (profErr) {
+        setErrorMsg(profErr.message);
+        setProfileLoading(false);
+        setAppsLoading(false);
+        setAlertsLoading(false);
+        return;
+      }
+
+      // si profil inexistant → le créer
+      if (!prof) {
+        const { data: created, error: upsertErr } = await supabase
+          .from("profiles")
+          .upsert(
+            { user_id: userId, full_name: null, phone: null, location: null, headline: null },
+            { onConflict: "user_id" }
+          )
+          .select("user_id, full_name, phone, location, headline")
+          .single();
+
+        if (upsertErr) {
+          setErrorMsg(upsertErr.message);
+          setProfileLoading(false);
+          setAppsLoading(false);
+          setAlertsLoading(false);
+          return;
+        }
+
+        setProfile(created as Profile);
+      } else {
+        setProfile(prof as Profile);
+      }
+
+      setProfileLoading(false);
+
+      // 2) Compteur candidatures
+      const { count: cApps, error: appsErr } = await supabase
+        .from("applications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+
+      if (appsErr) setErrorMsg((m) => m ?? appsErr.message);
+      setAppsCount(cApps ?? 0);
+      setAppsLoading(false);
+
+      // 3) Compteur alertes
+      const { count: cAlerts, error: alertsErr } = await supabase
+        .from("alerts")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+
+      if (alertsErr) setErrorMsg((m) => m ?? alertsErr.message);
+      setAlertsCount(cAlerts ?? 0);
+      setAlertsLoading(false);
+    }
+
+    loadAll();
+  }, [loading, userId, navigate]);
+
+  const makeCardProps = (to: string) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    onClick: () => navigate(to),
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        navigate(to);
+      }
+    },
+  });
 
   return (
-    <div className="app-root">
-      {/* Header */}
-      <header className="app-header">
-        <div className="app-header-inner">
-          <div className="app-logo">
-            <div className="app-logo-circle">G</div>
-            <span className="app-logo-text">Go4Job</span>
-          </div>
-
-          <div className="app-header-actions">
-            <div className="app-lang">
-              <button type="button">FR</button>
-              <span className="app-lang-sep">|</span>
-              <button type="button">EN</button>
-            </div>
-
-            {/* CTA Auth */}
-            <Link className="btn btn-outline" to="/auth">
-              Se connecter
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Contenu principal */}
-      <main className="app-main">
-        {/* Texte d’accueil */}
-        <section className="hero">
-          <h1>Bienvenue sur Go4Job</h1>
-          <p>
-            L&apos;IA qui cherche les offres pour toi et t&apos;aide à y postuler.
-            Choisis par où commencer&nbsp;: laisser <strong>JobRadar</strong> scanner le marché,
-            ou te faire accompagner par <strong>JobCopilot</strong> pour optimiser ton CV et tes candidatures.
+    <div className="home-shell">
+      <main className="home-main">
+        <section className="heroCard">
+          <h1 className="heroTitle">Bienvenue 👋</h1>
+          <p className="heroSub">
+            Tu es connecté en tant que <b>{session?.user.email ?? "—"}</b>.
+            <br />
+            Prochaine étape : construire ton profil et suivre tes candidatures.
           </p>
-
-          <div className="hero-cta">
-            <button className="btn btn-primary" type="button" onClick={() => navigate("/auth")}>
-              Créer un compte / Se connecter
-            </button>
-          </div>
         </section>
 
-        {/* Deux cartes : JobRadar / JobCopilot */}
-        <section className="cards">
-          <div className="card">
-            <div>
-              <div className="card-tag">🛰️ JobRadar</div>
-              <h2>Laisse Go4Job scanner le web pour toi</h2>
-              <p>
-                L&apos;IA collecte des offres sur plusieurs sites, les analyse et te remonte
-                celles qui matchent le mieux avec ton profil.
-              </p>
-              <ul>
-                <li>Analyse de nombreuses sources d&apos;offres</li>
-                <li>Matching intelligent avec ton profil</li>
-                <li>Mises à jour régulières des nouvelles opportunités</li>
-              </ul>
-            </div>
+        {errorMsg && (
+          <div className="home-error">
+            Erreur : {errorMsg}
+          </div>
+        )}
 
-            <button className="btn btn-primary" type="button" onClick={() => navigate("/auth")}>
-              Activer JobRadar
-            </button>
+        <section className="grid">
+          <div className="card" {...makeCardProps("/jobradar/profile")} aria-label="Ouvrir mon profil">
+            <div className="cardTitle">Profil</div>
+            <p className="cardValue">{profileLoading ? "Chargement..." : profileStatus}</p>
           </div>
 
-          <div className="card">
-            <div>
-              <div className="card-tag card-tag-secondary">🤝 JobCopilot</div>
-              <h2>Ton copilote IA pour candidater</h2>
-              <p>
-                Go4Job t&apos;aide à améliorer ton CV, adapter tes lettres et répondre
-                aux formulaires de candidature plus rapidement.
-              </p>
-              <ul>
-                <li>Analyse et suggestions pour ton CV</li>
-                <li>Lettres personnalisées selon chaque offre</li>
-                <li>Aide pour les questions des formulaires</li>
-              </ul>
-            </div>
-
-            <button className="btn btn-dark" type="button" onClick={() => navigate("/auth")}>
-              Lancer JobCopilot
-            </button>
+          <div className="card" {...makeCardProps("/jobradar/applications")} aria-label="Ouvrir mes candidatures">
+            <div className="cardTitle">Candidatures</div>
+            <p className="cardValue">{appsLoading ? "…" : appsCount}</p>
           </div>
-        </section>
 
-        {/* Comment ça marche ? */}
-        <section className="steps">
-          <h3>Comment ça marche ?</h3>
-
-          <div className="steps-grid">
-            <div className="step-card">
-              <div className="step-number">1</div>
-              <h4>Configure ton profil</h4>
-              <p>Compétences, pays, niveau de salaire et types de postes.</p>
-            </div>
-
-            <div className="step-card">
-              <div className="step-number">2</div>
-              <h4>Laisse JobRadar travailler</h4>
-              <p>L&apos;IA collecte et score les offres pour toi.</p>
-            </div>
-
-            <div className="step-card">
-              <div className="step-number">3</div>
-              <h4>Utilise JobCopilot pour candidater</h4>
-              <p>Adaptation de ton CV &amp; LM + suivi de tes candidatures.</p>
-            </div>
+          <div className="card" {...makeCardProps("/jobradar/alerts")} aria-label="Ouvrir mes alertes">
+            <div className="cardTitle">Alertes</div>
+            <p className="cardValue">{alertsLoading ? "…" : alertsCount}</p>
           </div>
         </section>
       </main>
     </div>
   );
 }
-
-export default HomePage;

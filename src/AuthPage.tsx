@@ -1,156 +1,213 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
-import "./App.css";
+import { useSession } from "./lib/useSession";
+import "./AuthPage.css";
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const { session, loading } = useSession();
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    setLoading(true);
+  // si connecté => dashboard
+  useEffect(() => {
+    if (!loading && session) navigate("/", { replace: true });
+  }, [loading, session, navigate]);
+
+  const canSubmit = useMemo(() => {
+    return email.trim().length > 3 && password.length >= 6;
+  }, [email, password]);
+
+  async function handleSubmit() {
+    if (!canSubmit || busy) return;
+
+    setBusy(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
 
     try {
-      if (!email || !password) {
-        setMsg("Renseigne ton email et ton mot de passe.");
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) {
+          setErrorMsg(error.message);
+          return;
+        }
+
+        setInfoMsg(
+          "Compte créé. Si la confirmation email est activée, vérifie ta boîte mail. Sinon tu seras connecté automatiquement."
+        );
         return;
       }
 
-      if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        navigate("/me/jobs");
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setMsg("Compte créé ✅ Si une confirmation email est activée, vérifie ta boîte mail.");
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setErrorMsg(error.message);
+        return;
       }
-    } catch (err: any) {
-      setMsg(err?.message ? `Erreur : ${err.message}` : "Erreur inconnue.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
   return (
-    <div className="app-root">
-      <header className="app-header">
-        <div className="app-header-inner">
-          <div className="app-logo" style={{ cursor: "pointer" }} onClick={() => navigate("/")}>
-            <div className="app-logo-circle">G</div>
-            <span className="app-logo-text">Go4Job</span>
-          </div>
-
-          <div className="app-lang">
-            <button type="button">FR</button>
-            <span className="app-lang-sep">|</span>
-            <button type="button">EN</button>
-          </div>
+    <div className="auth-shell">
+      <div className="auth-top">
+        <div className="auth-brand" onClick={() => navigate("/")}>
+          <div className="auth-mark" />
+          <span>Go4Job</span>
         </div>
-      </header>
 
-      <main className="app-main">
-        <div className="auth-grid">
-          {/* Panel gauche */}
-          <section className="auth-panel">
-            <h1>Accède à tes jobs recommandés</h1>
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            setErrorMsg(null);
+            setInfoMsg(null);
+            setMode("signin");
+          }}
+        >
+          Log in
+        </a>
+      </div>
+
+      <div className="auth-main">
+        {/* LEFT / HERO */}
+        <section className="hero">
+          <div className="hero-content">
+            
+            <h1 className="heroTitle">Espace candidat</h1>
+
             <p>
-              Connecte-toi pour voir tes recommandations, enregistrer ton profil, et suivre tes candidatures.
+              Postule plus vite, centralise ton suivi, et reçois des opportunités pertinentes.
+              Une expérience nette et élégante, pensée pour toi.
             </p>
 
-            <div className="auth-bullets">
-              <div className="auth-bullet">✅ Recos personnalisées</div>
-              <div className="auth-bullet">✅ Profil & CV (bientôt)</div>
-              <div className="auth-bullet">✅ Suivi des candidatures</div>
+            <div className="hero-badges">
+              <div className="badge">Matching intelligent</div>
+              <div className="badge">Candidature en 1 clic</div>
+              <div className="badge">Suivi centralisé</div>
+              <div className="badge">Données sécurisées</div>
             </div>
-          </section>
 
-          {/* Carte formulaire */}
-          <section className="auth-card">
-            <div className="auth-tabs">
+            <div className="hero-ctaWrap">
+  <div className="hero-ctaRow">
+    <button
+      className="hero-cta hero-ctaPrimary"
+      type="button"
+      onClick={() => setMode("signup")}
+    >
+      Créer mon compte
+    </button>
+
+    <button
+      className="hero-cta hero-ctaGhost"
+      type="button"
+      onClick={() => setMode("signin")}
+    >
+      J’ai déjà un compte
+    </button>
+  </div>
+
+  <div className="hero-ctaHint">
+    Déjà inscrit ? Connecte-toi. Nouveau ? Crée ton espace en 30 secondes.
+  </div>
+</div>
+
+          </div>
+        </section>
+
+        {/* RIGHT / FORM */}
+        <aside className="card">
+          <h2>{mode === "signup" ? "Créer un compte" : "Connexion"}</h2>
+
+          <p className="sub">
+            {mode === "signup"
+              ? "Crée ton espace candidat en moins d’une minute."
+              : "Accède à ton espace candidat."}
+          </p>
+
+          {/* ✅ form : Enter = submit */}
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSubmit();
+            }}
+          >
+            <label className="label">
+              Email
+              <input
+                className="input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder="ex: contact@go4job.org"
+                autoComplete="email"
+              />
+            </label>
+
+            <label className="label">
+              Mot de passe
+              <input
+                className="input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                placeholder="Minimum 6 caractères"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              />
+            </label>
+
+            {errorMsg && <div className="error">{errorMsg}</div>}
+            {infoMsg && <div className="foot">{infoMsg}</div>}
+
+            {/* ✅ boutons alignés / même largeur */}
+            <div className="authActions">
               <button
-                type="button"
-                className={mode === "signin" ? "auth-tab active" : "auth-tab"}
-                onClick={() => setMode("signin")}
+                className="btn btnPrimary wFull"
+                disabled={!canSubmit || busy}
+                type="submit"
               >
-                Connexion
+                {busy ? "Patiente..." : mode === "signup" ? "Créer un compte" : "Se connecter"}
               </button>
+
               <button
+                className="btn btnSecondary wFull"
+                disabled={busy}
                 type="button"
-                className={mode === "signup" ? "auth-tab active" : "auth-tab"}
-                onClick={() => setMode("signup")}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setInfoMsg(null);
+                  setMode((m) => (m === "signin" ? "signup" : "signin"));
+                }}
               >
-                Créer un compte
+                {mode === "signin" ? "Je n’ai pas de compte" : "J’ai déjà un compte"}
               </button>
             </div>
 
-            <div className="auth-title">
-              <h2>{mode === "signin" ? "Bienvenue 👋" : "Créer ton compte"}</h2>
-              <p>{mode === "signin" ? "Connecte-toi pour continuer." : "2 minutes et c’est bon."}</p>
+            <div className="foot">
+              Astuce : pour tester vite, tu peux désactiver “Confirm email” dans Supabase.
+              <br />
+              Plus tard, on ajoutera{" "}
+              <a
+                className="smallLink"
+                href="#"
+                onClick={(e) => e.preventDefault()}
+              >
+                Google Login
+              </a>
+              .
             </div>
-
-            {msg && <div className="auth-alert">{msg}</div>}
-
-            <form onSubmit={handleSubmit} className="auth-form">
-              <div className="field">
-                <label>Email</label>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  placeholder="ex: dkacoutie@gmail.com"
-                  autoComplete="email"
-                />
-              </div>
-
-              <div className="field">
-                <label>Mot de passe</label>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                />
-              </div>
-
-              <div className="auth-row">
-                <span className="auth-hint">
-                  {mode === "signup" ? "Min. 8 caractères recommandé." : " "}
-                </span>
-
-                <button
-                  className="auth-link"
-                  type="button"
-                  onClick={async () => {
-                    if (!email) return setMsg("Entre ton email puis clique “Mot de passe oublié”.");
-                    const { error } = await supabase.auth.resetPasswordForEmail(email);
-                    setMsg(error ? `Erreur : ${error.message}` : "Email de récupération envoyé ✅");
-                  }}
-                >
-                  Mot de passe oublié ?
-                </button>
-              </div>
-
-              <button className="btn btn-primary" type="submit" disabled={loading}>
-                {loading ? "Chargement..." : mode === "signin" ? "Se connecter" : "Créer mon compte"}
-              </button>
-
-              <div className="auth-footer">
-                En continuant, tu acceptes nos conditions d’utilisation (à ajouter).
-              </div>
-            </form>
-          </section>
-        </div>
-      </main>
+          </form>
+        </aside>
+      </div>
     </div>
   );
 }

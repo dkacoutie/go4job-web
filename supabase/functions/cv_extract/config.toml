@@ -1,0 +1,2 @@
+[functions.cv_extract]
+verify_jwt = false

@@ -1,0 +1,164 @@
+:root {
+  --jd-max: 1120px;
+  --jd-pad: 16px;
+
+  --jd-card: #ffffff;
+  --jd-border: rgba(15, 23, 42, 0.12);
+  --jd-text: rgba(15, 23, 42, 0.95);
+  --jd-muted: rgba(15, 23, 42, 0.70);
+  --jd-surface: rgba(15, 23, 42, 0.04);
+
+  --jd-radius: 14px;
+  --jd-shadow: 0 10px 25px rgba(2, 6, 23, 0.08);
+  --jd-shadow2: 0 12px 35px rgba(2, 6, 23, 0.12);
+}
+
+.jd-shell {
+  width: 100%;
+  padding: 18px 0 42px;
+}
+
+.jd-main {
+  width: 100%;
+  max-width: var(--jd-max);
+  margin: 0 auto;
+  padding: 0 var(--jd-pad);
+}
+
+.jd-topbar {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.jd-error {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 80, 80, 0.35);
+  background: rgba(255, 80, 80, 0.12);
+  color: rgba(120, 10, 10, 0.95);
+}
+
+.jd-empty {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px dashed var(--jd-border);
+  border-radius: var(--jd-radius);
+  background: var(--jd-surface);
+  color: var(--jd-muted);
+}
+
+.jd-card {
+  margin-top: 14px;
+  border-radius: var(--jd-radius);
+  border: 1px solid var(--jd-border);
+  background: var(--jd-card);
+  box-shadow: var(--jd-shadow);
+  padding: 18px;
+}
+
+.jd-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.jd-title {
+  margin: 0 0 8px;
+  font-size: 26px;
+  letter-spacing: 0.2px;
+  color: var(--jd-text);
+}
+
+.jd-sub {
+  color: var(--jd-muted);
+}
+
+.jd-badges {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.jd-date {
+  border: 1px solid var(--jd-border);
+  background: var(--jd-surface);
+  color: var(--jd-text);
+}
+
+.jd-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.jd-actionsRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.jd-body {
+  margin-top: 18px;
+  border-top: 1px solid var(--jd-border);
+  padding-top: 16px;
+}
+
+.jd-body h3 {
+  margin: 0 0 10px;
+  color: var(--jd-text);
+}
+
+.jd-desc {
+  color: var(--jd-text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.jd-muted {
+  color: var(--jd-muted);
+}
+
+/* chips (si pas global) */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  line-height: 1;
+}
+.chipStatus {
+  border: 1px solid var(--jd-border);
+  background: var(--jd-surface);
+  color: var(--jd-text);
+}
+.chipQueued {
+  border-color: rgba(59, 130, 246, 0.30);
+  background: rgba(59, 130, 246, 0.10);
+  color: rgba(30, 64, 175, 0.95);
+}
+.chipInProgress {
+  border-color: rgba(245, 158, 11, 0.30);
+  background: rgba(245, 158, 11, 0.10);
+  color: rgba(146, 64, 14, 0.95);
+}
+.chipSubmitted {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.10);
+  color: rgba(20, 83, 45, 0.95);
+}
+.chipFailed {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.10);
+  color: rgba(127, 29, 29, 0.95);
+}

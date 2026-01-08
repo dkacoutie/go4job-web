@@ -1,0 +1,160 @@
+/* =========================
+   AppNav (uses AppLayout container)
+   ========================= */
+
+.appnav{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+/* =========================
+   Brand
+   ========================= */
+
+.appnav__brand{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ✅ Supprime le cadre “navigateur”, mais garde un focus premium au clavier */
+.appnav__brand:focus{
+  outline: none;
+}
+.appnav__brand:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  border-radius: 18px;
+  padding: 4px;
+  margin: -4px;
+}
+
+/* ✅ Logo plus grand + premium */
+.appnav__logo{
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  object-fit: contain;
+  display: block;
+
+  background: rgba(255,255,255,0.88);
+  padding: 6px;
+
+  border: 1px solid rgba(15,23,42,0.10);
+  box-shadow: 0 12px 28px rgba(2,6,23,0.08);
+}
+
+/* Nom Go4Job (brand premium) */
+.appnav__name{
+  font-weight: 850;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+
+  background: linear-gradient(135deg, #0b4cc2 0%, #2563eb 55%, #1d4ed8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  text-shadow: 0 10px 22px rgba(0,82,204,0.10);
+}
+
+/* =========================
+   Links
+   ========================= */
+
+.appnav__links{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* Buttons */
+.appnav__btn{
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+
+  border: 1px solid rgba(15,23,42,0.10);
+  background: rgba(255,255,255,0.70);
+  color: rgba(15,23,42,0.88);
+
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+
+  cursor: pointer;
+  white-space: nowrap;
+  width: auto;
+  min-width: 0;
+
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.appnav__btn:hover{
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(15,23,42,0.14);
+  box-shadow: 0 12px 26px rgba(2,6,23,0.06);
+}
+
+.appnav__btn:active{
+  transform: translateY(0) scale(.99);
+}
+
+/* Focus clavier sur les boutons */
+.appnav__btn:focus{
+  outline: none;
+}
+.appnav__btn:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
+/* Active */
+.appnav__btn.is-active{
+  background: rgba(37, 99, 235, 0.10);
+  border-color: rgba(37, 99, 235, 0.24);
+  color: rgba(11,76,194,0.98);
+  box-shadow: 0 14px 30px rgba(0,82,204,0.10);
+}
+
+/* =========================
+   Mobile: scroll horizontal
+   ========================= */
+
+@media (max-width: 900px){
+  .appnav{
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .appnav__links{
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .appnav__links::-webkit-scrollbar{ display: none; }
+
+  /* Un poil plus compact sur mobile */
+  .appnav__logo{
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+  }
+  .appnav__name{
+    font-size: 16px;
+  }
+}
