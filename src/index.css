@@ -129,3 +129,40 @@ a:hover { text-decoration: none; }
 ::selection {
   background: rgba(0, 82, 204, 0.18);
 }
+/* =========================================================
+   SAFETY OVERRIDE — empêche les CTA primaires d'avoir un texte invisible
+   (si un autre CSS écrase la couleur)
+========================================================= */
+html body button.btn.btnPrimary,
+html body a.btn.btnPrimary,
+html body .btn.btnPrimary {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+html body button.btn.btnPrimary:hover,
+html body a.btn.btnPrimary:hover,
+html body .btn.btnPrimary:hover {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+/* =========================================================
+   HARD FIX — empêche .btnPrimary d'être écrasé par d'autres CSS
+   (bouton "vide" sauf au hover = background écrasé)
+========================================================= */
+html body .btn.btnPrimary,
+html body a.btn.btnPrimary,
+html body .btnPrimary.btn {
+  background: var(--brand-600) !important;
+  border-color: rgba(0, 82, 204, 0.35) !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+html body .btn.btnPrimary:hover,
+html body a.btn.btnPrimary:hover,
+html body .btnPrimary.btn:hover {
+  background: var(--brand-700) !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
