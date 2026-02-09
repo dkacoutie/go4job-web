@@ -44,7 +44,6 @@
   user-select: none;
 }
 
-/* ✅ IMPORTANT: contraint la taille du logo */
 .auth-shell .auth-brand-logo{
   height: 40px;
   width: auto;
@@ -162,22 +161,20 @@
   margin-top: 22px;
 }
 
+/* ✅ 2 colonnes (mêmes colonnes que les boutons) */
 .auth-shell .hero-ctaRow{
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
   align-items: stretch;
 }
-@media (max-width: 560px){
-  .auth-shell .hero-ctaRow{ grid-template-columns: 1fr; }
-}
 
-/* ✅ Boutons CTA (centrage parfait) */
+/* ✅ Boutons CTA : centrage parfait et mêmes dimensions */
 .auth-shell .hero-cta{
-  height: 46px;              /* même hauteur que les boutons du form */
+  height: 46px;
   width: 100%;
   border-radius: 12px;
-  padding: 0 16px;           /* padding horizontal uniquement */
+  padding: 0 16px;
   border: 1px solid rgba(255,255,255,0.20);
   background: rgba(255,255,255,0.10);
   color: #fff;
@@ -189,9 +186,11 @@
 
   font-size: 14px;
   font-weight: 700;
-  line-height: 1;            /* évite le décalage vertical */
-  white-space: nowrap;       /* évite le retour à la ligne */
+  line-height: 1;
+  white-space: nowrap;
   cursor:pointer;
+
+  transition: transform 120ms ease, opacity 120ms ease;
 }
 
 .auth-shell .hero-cta:hover{
@@ -204,7 +203,7 @@
   border-color: rgba(255,255,255,0.28);
 }
 
-/* ✅ Texte d’aide aligné SOUS chaque bouton (2 colonnes) */
+/* ✅ Texte sous CHAQUE bouton : 2 colonnes alignées */
 .auth-shell .hero-ctaHints{
   margin-top: 10px;
   display: grid;
@@ -215,28 +214,15 @@
 
 .auth-shell .hero-ctaHintItem{
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.45;
   color: rgba(255,255,255,0.92);
-  text-align: center;
+  text-align: center;       /* sous le bouton, c’est plus net */
 }
 
-/* Mobile : 1 colonne */
+/* Mobile : tout en 1 colonne */
 @media (max-width: 560px){
-  .auth-shell .hero-ctaHints{
-    grid-template-columns: 1fr;
-  }
-  .auth-shell .hero-ctaHintItem{
-    text-align: center;
-  }
-}
-
-/* (Compat) Si tu as encore un seul bloc .hero-ctaHint quelque part */
-.auth-shell .hero-ctaHint{
-  margin-top: 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: rgba(255,255,255,0.92);
-  text-align: center;
+  .auth-shell .hero-ctaRow{ grid-template-columns: 1fr; }
+  .auth-shell .hero-ctaHints{ grid-template-columns: 1fr; }
 }
 
 /* CARD */
@@ -300,7 +286,7 @@
   font-size:13px;
 }
 
-/* Buttons */
+/* Buttons (form) */
 .authActions{
   display:grid;
   gap: 14px;
@@ -344,6 +330,7 @@
   font-size:12px;
   line-height:1.6;
 }
+
 .auth-shell .smallLink{
   color: var(--brand);
   text-decoration:none;
@@ -362,4 +349,22 @@
   width:18px;
   height:18px;
   display:block;
+}
+
+/* Divider (si présent dans TSX) */
+.dividerRow{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  opacity: 0.75;
+  margin: 6px 0 4px;
+}
+.dividerLine{
+  height:1px;
+  background: rgba(15,23,42,0.12);
+  flex:1;
+}
+.dividerText{
+  font-size: 12px;
+  font-weight: 800;
 }
