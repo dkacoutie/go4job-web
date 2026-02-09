@@ -327,3 +327,24 @@
   height:18px;
   display:block;
 }
+/* ✅ Fix alignement texte CTA hero */
+.auth-shell .hero-ctaRow{
+  align-items: stretch;
+}
+
+.auth-shell .hero-cta{
+  height: 46px;              /* même hauteur que les boutons du form */
+  padding: 0 16px;           /* padding horizontal seulement */
+  line-height: 1;            /* évite le décalage vertical */
+  display: flex;
+  align-items: center;       /* centre vertical */
+  justify-content: center;   /* centre horizontal */
+  text-align: center;
+  white-space: nowrap;       /* évite le retour à la ligne */
+}
+
+/* optionnel : même rendu typo */
+.auth-shell .hero-cta{
+  font-size: 14px;
+  font-weight: 700;
+}
