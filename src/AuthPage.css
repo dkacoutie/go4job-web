@@ -1,11 +1,22 @@
-/* src/AuthPage.css — Go4Job Premium (FORCED OVERRIDE) */
+/* src/AuthPage.css — Go4Job Auth (Premium) */
 
+:root{
+  --bg: #f6f8fc;
+  --text: #0f172a;
+  --muted: #475569;
+  --shadow: 0 18px 50px rgba(2,6,23,.10);
+  --line: rgba(15,23,42,0.10);
+  --brand: #0052cc;
+}
+
+/* Page shell */
 .auth-shell{
   min-height: 100vh;
   background:
     radial-gradient(1200px 600px at 10% 10%, rgba(0, 82, 204, 0.09), transparent 60%),
     radial-gradient(900px 520px at 90% 15%, rgba(14, 165, 233, 0.08), transparent 55%),
-    #f6f8fc;
+    var(--bg);
+  color: var(--text);
 }
 
 /* Top bar */
@@ -18,23 +29,39 @@
   justify-content:space-between;
 }
 
+/* Brand button (logo) */
 .auth-shell .auth-brand{
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: none;
+  outline: none;
+
   display:flex;
   align-items:center;
   gap:10px;
-  font-weight:750;
-  letter-spacing:-0.02em;
-  color: var(--text);
+  user-select: none;
 }
 
-.auth-shell .auth-mark{
-  width:34px;
-  height:34px;
-  border-radius:12px;
-  background: linear-gradient(135deg, #0052cc 0%, #0b4cc2 40%, #1d4ed8 100%);
-  box-shadow: 0 14px 34px rgba(0,82,204,0.25);
+/* ✅ IMPORTANT: contraint la taille du logo */
+.auth-shell .auth-brand-logo{
+  height: 40px;
+  width: auto;
+  max-width: 180px;
+  display: block;
+  object-fit: contain;
 }
 
+/* Focus accessible */
+.auth-shell .auth-brand:focus{ outline: none; }
+.auth-shell .auth-brand:focus-visible{
+  outline: 3px solid rgba(0,82,204,0.25);
+  outline-offset: 6px;
+  border-radius: 14px;
+}
+
+/* Top link */
 .auth-shell .auth-top a{
   color: var(--text);
   text-decoration:none;
@@ -53,27 +80,21 @@
   gap: 28px;
   align-items:center;
 }
-
 @media (max-width: 920px){
   .auth-shell .auth-main{ grid-template-columns: 1fr; }
 }
 
-/* HERO — force contrast (this is where your screenshot is too pale) */
+/* HERO */
 .auth-shell .hero{
   position:relative;
   overflow:hidden;
   border-radius:24px;
   padding:56px 52px;
 
-  /* force visibility */
-  opacity: 1 !important;
-  filter: none !important;
-
-  color:#fff !important;
-  background: linear-gradient(135deg, #0b4cc2 0%, #0a3aa5 38%, #071f63 100%) !important;
+  color:#fff;
+  background: linear-gradient(135deg, #0b4cc2 0%, #0a3aa5 38%, #071f63 100%);
   box-shadow: var(--shadow);
 }
-
 .auth-shell .hero::before{
   content:"";
   position:absolute;
@@ -85,7 +106,6 @@
   transform: rotate(10deg);
   pointer-events:none;
 }
-
 .auth-shell .hero::after{
   content:"";
   position:absolute;
@@ -103,91 +123,66 @@
   max-width:560px;
 }
 
-.auth-shell .hero-kicker{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  font-size:12px;
-  font-weight:700;
-  letter-spacing:0.08em;
-  text-transform:uppercase;
-  color: rgba(255,255,255,0.92);
-  background: rgba(255,255,255,0.14);
-  border: 1px solid rgba(255,255,255,0.22);
-  padding:10px 12px;
-  border-radius:999px;
-}
-
-.auth-shell .hero h1{
+.auth-shell .heroTitle{
   margin:16px 0 12px 0;
   font-size:52px;
   line-height:1.03;
   letter-spacing:-0.05em;
-  font-weight:760;
-  color:#fff !important;
+  font-weight:740;
+  color:#fff;
   text-shadow: 0 10px 30px rgba(0,0,0,0.25);
 }
+@media (max-width: 560px){
+  .auth-shell .heroTitle{ font-size: 40px; }
+}
 
-.auth-shell .hero p{
+.auth-shell .heroSubtitle{
   margin:0;
   font-size:16px;
   line-height:1.75;
-  color: rgba(255,255,255,0.92) !important;
+  color: rgba(255,255,255,0.92);
   max-width:520px;
 }
 
+/* Badges */
 .auth-shell .hero-badges{
   margin-top:18px;
   display:flex;
   flex-wrap:wrap;
   gap:10px;
 }
-
 .auth-shell .badge{
-  background: transparent;
-  border: none;
-  padding: 0;
-  border-radius: 0;
-  backdrop-filter: none;
-
-  font-weight: 650;
-  font-size: 13px;
+  font-weight:650;
+  font-size:13px;
   color: rgba(255,255,255,0.92);
 }
 
+/* CTA hero */
 .auth-shell .hero-ctaRow{
   margin-top: 22px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  align-items: center;
 }
-
-/* mobile : un bouton par ligne */
 @media (max-width: 560px){
-  .auth-shell .hero-ctaRow{
-    grid-template-columns: 1fr;
-  }
-}.auth-shell .hero-cta{
-  width: 100%;
-  justify-content: center;
+  .auth-shell .hero-ctaRow{ grid-template-columns: 1fr; }
 }
 
-/* force remove the “lime” look */
 .auth-shell .hero-cta{
   height: 42px;
   width: 100%;
   border-radius: 12px;
   padding: 0 14px;
   border: 1px solid rgba(255,255,255,0.20);
-  background: rgba(255,255,255,0.10) !important;
-  color: #fff !important;
+  background: rgba(255,255,255,0.10);
+  color: #fff;
   font-weight: 650;
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  cursor:pointer;
 }
 
 .auth-shell .hero-cta:hover{
@@ -196,15 +191,22 @@
 }
 
 .auth-shell .hero-ctaPrimary{
-  background: rgba(255,255,255,0.18) !important;
-  border-color: rgba(255,255,255,0.28) !important;
-  color: #fff !important;
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.28);
+}
+
+/* ✅ Texte sous les 2 boutons (celui que tu as entouré) */
+.auth-shell .hero-ctaHint{
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255,255,255,0.92);
 }
 
 /* CARD */
 .auth-shell .card{
   background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(15,23,42,0.10);
+  border: 1px solid var(--line);
   border-radius:20px;
   padding:26px;
   box-shadow: var(--shadow);
@@ -248,7 +250,6 @@
   background:#fff;
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }
-
 .auth-shell .input:focus{
   border-color: rgba(0,82,204,0.55);
   box-shadow: 0 0 0 4px rgba(0,82,204,0.12);
@@ -263,15 +264,17 @@
   font-size:13px;
 }
 
-.auth-shell .actions{
+/* Buttons */
+.authActions{
   display:grid;
-  gap:10px;
-  margin-top:6px;
+  gap: 14px;
+  margin-top: 16px;
 }
+.wFull{ width: 100%; }
 
 .auth-shell .btn{
   height:46px;
-  border-radius:12px;
+  border-radius:14px;
   padding:0 14px;
   border:1px solid rgba(15,23,42,0.12);
   background:#fff;
@@ -279,29 +282,24 @@
   font-weight:750;
   transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
 }
-
 .auth-shell .btn:hover{ transform: translateY(-1px); }
-
-/* force remove “blue pale” */
-.auth-shell .btnPrimary{
-  background: linear-gradient(135deg, #0052cc 0%, #1d4ed8 100%) !important;
-  color:#fff !important;
-  border-color: rgba(0,82,204,0.65) !important;
-  box-shadow: 0 16px 30px rgba(0,82,204,0.24) !important;
-}
-
-.auth-shell .btnPrimary:hover{
-  box-shadow: 0 18px 36px rgba(0,82,204,0.28) !important;
-}
-
-.auth-shell .btnSecondary{
-  background: rgba(2,6,23,0.02);
-}
-
 .auth-shell .btn:disabled{
   opacity:0.6;
   cursor:not-allowed;
   transform:none;
+}
+
+.auth-shell .btnPrimary{
+  background: linear-gradient(135deg, #0052cc 0%, #1d4ed8 100%);
+  color:#fff;
+  border-color: rgba(0,82,204,0.65);
+  box-shadow: 0 16px 30px rgba(0,82,204,0.24);
+}
+.auth-shell .btnPrimary:hover{
+  box-shadow: 0 18px 36px rgba(0,82,204,0.28);
+}
+.auth-shell .btnSecondary{
+  background: rgba(2,6,23,0.02);
 }
 
 .auth-shell .foot{
@@ -310,30 +308,22 @@
   font-size:12px;
   line-height:1.6;
 }
-
 .auth-shell .smallLink{
   color: var(--brand);
   text-decoration:none;
   font-weight:700;
 }
 .auth-shell .smallLink:hover{ text-decoration: underline; }
-/* ✅ Boutons du formulaire : séparés, élégants, pas "collés" */
-.authActions {
-  display: grid;
-  gap: 14px;            /* espace entre les 2 boutons */
-  margin-top: 16px;
-}
 
-.wFull {
-  width: 100%;
+/* Google button */
+.btnGoogle{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
 }
-
-/* si ton CSS applique un radius énorme ou un style "groupe", on force proprement */
-.authActions .btn {
-  border-radius: 14px;
-}
-
-/* optionnel : un peu plus d'air visuel */
-.btn {
-  min-height: 46px;
+.googleIcon{
+  width:18px;
+  height:18px;
+  display:block;
 }
