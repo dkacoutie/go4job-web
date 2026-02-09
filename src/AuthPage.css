@@ -158,30 +158,39 @@
 }
 
 /* CTA hero */
-.auth-shell .hero-ctaRow{
+.auth-shell .hero-ctaWrap{
   margin-top: 22px;
+}
+
+.auth-shell .hero-ctaRow{
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  align-items: stretch;
 }
 @media (max-width: 560px){
   .auth-shell .hero-ctaRow{ grid-template-columns: 1fr; }
 }
 
+/* ✅ Boutons CTA (centrage parfait) */
 .auth-shell .hero-cta{
-  height: 42px;
+  height: 46px;              /* même hauteur que les boutons du form */
   width: 100%;
   border-radius: 12px;
-  padding: 0 14px;
+  padding: 0 16px;           /* padding horizontal uniquement */
   border: 1px solid rgba(255,255,255,0.20);
   background: rgba(255,255,255,0.10);
   color: #fff;
-  font-weight: 650;
 
   display:flex;
   align-items:center;
   justify-content:center;
   text-align:center;
+
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;            /* évite le décalage vertical */
+  white-space: nowrap;       /* évite le retour à la ligne */
   cursor:pointer;
 }
 
@@ -195,12 +204,39 @@
   border-color: rgba(255,255,255,0.28);
 }
 
-/* ✅ Texte sous les 2 boutons (celui que tu as entouré) */
+/* ✅ Texte d’aide aligné SOUS chaque bouton (2 colonnes) */
+.auth-shell .hero-ctaHints{
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.auth-shell .hero-ctaHintItem{
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.92);
+  text-align: center;
+}
+
+/* Mobile : 1 colonne */
+@media (max-width: 560px){
+  .auth-shell .hero-ctaHints{
+    grid-template-columns: 1fr;
+  }
+  .auth-shell .hero-ctaHintItem{
+    text-align: center;
+  }
+}
+
+/* (Compat) Si tu as encore un seul bloc .hero-ctaHint quelque part */
 .auth-shell .hero-ctaHint{
   margin-top: 12px;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   color: rgba(255,255,255,0.92);
+  text-align: center;
 }
 
 /* CARD */
@@ -326,25 +362,4 @@
   width:18px;
   height:18px;
   display:block;
-}
-/* ✅ Fix alignement texte CTA hero */
-.auth-shell .hero-ctaRow{
-  align-items: stretch;
-}
-
-.auth-shell .hero-cta{
-  height: 46px;              /* même hauteur que les boutons du form */
-  padding: 0 16px;           /* padding horizontal seulement */
-  line-height: 1;            /* évite le décalage vertical */
-  display: flex;
-  align-items: center;       /* centre vertical */
-  justify-content: center;   /* centre horizontal */
-  text-align: center;
-  white-space: nowrap;       /* évite le retour à la ligne */
-}
-
-/* optionnel : même rendu typo */
-.auth-shell .hero-cta{
-  font-size: 14px;
-  font-weight: 700;
 }
