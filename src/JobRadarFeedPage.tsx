@@ -20,6 +20,21 @@ type AlertRow = {
 
 type ApplicationStatus = "saved" | "queued" | "in_progress" | "submitted" | "failed";
 
+type MatchWhy = {
+  alert: string[];
+  cv: string[];
+  restAlert: number;
+  restCv: number;
+};
+
+type MatchRow = {
+  job: JobRow;
+  s: number;
+  p: number;
+  kwCount: number;
+  why: MatchWhy;
+};
+
 type JobRow = {
   id: string; // UUID
   title?: string | null;
@@ -464,7 +479,7 @@ export default function JobRadarFeedPage() {
 
     // Explorer (base)
     const exploreMatches = jobs
-      .map((job) => {
+      .map((job): MatchRow | null => {
         const hay = jobHay(job);
         const scored = score(hay);
 
@@ -476,8 +491,7 @@ export default function JobRadarFeedPage() {
 
         return { job, s: scored.sAlert + scored.sCv, p, kwCount, why };
       })
-      .filter(Boolean)
-      .map((x) => x as { job: JobRow; s: number; p: number; kwCount: number; why: { shown: string[]; rest: number } })
+      .filter((x): x is MatchRow => Boolean(x))
       // au moins 1 mot-clé si on en a
       .filter((x) => (kwCount ? x.s >= 1 : true))
       // filtre pays
