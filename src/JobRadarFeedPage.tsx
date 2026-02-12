@@ -37,6 +37,9 @@ type JobRow = {
 
   description?: string | null; // alias description_text -> description
   tags?: string[] | null;
+  job_skills?: string[] | null;
+  required_skills?: string[] | null;
+  optional_skills?: string[] | null;
 };
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -108,26 +111,40 @@ function extractKeywordsFromAlertName(name: string): string[] {
   return uniq([phrase, ...tokens]).slice(0, 5);
 }
 
-// % de match basé sur mots-clés trouvés / mots-clés totaux (capés)
-function matchPercent(found: number, totalKeywords: number): number {
-  if (!totalKeywords) return 0;
-  const p = Math.round((found / totalKeywords) * 100);
-  return Math.max(0, Math.min(100, p));
-}
-
 // "Pourquoi ça match ?" : top 3 mots-clés détectés (+X)
-function topMatchesForJob(job: JobRow, kw: string[], maxShown = 3) {
-  const rawHay = [job.title, job.company_name, job.location, job.country, job.remote_type, job.description]
+function topMatchesForJob(job: JobRow, alertKw: string[], cvKw: string[], maxShown = 2) {
+  const skillBits = [
+    ...(job.required_skills ?? []),
+    ...(job.optional_skills ?? []),
+    ...(job.job_skills ?? []),
+    ...(job.tags ?? []),
+  ];
+
+  const rawHay = [
+    job.title,
+    job.company_name,
+    job.location,
+    job.country,
+    job.remote_type,
+    job.description,
+    ...skillBits,
+  ]
     .filter(Boolean)
     .join(" ");
 
   const hay = canonicalizeText(rawHay);
-  const hits = kw.filter((k) => k && hay.includes(k));
+  const hitsAlert = alertKw.filter((k) => k && hay.includes(k));
+  const hitsCv = cvKw.filter((k) => k && hay.includes(k) && !hitsAlert.includes(k));
 
-  const shown = hits.slice(0, maxShown);
-  const rest = Math.max(0, hits.length - shown.length);
+  const shownAlert = hitsAlert.slice(0, maxShown);
+  const shownCv = hitsCv.slice(0, maxShown);
 
-  return { shown, rest };
+  return {
+    alert: shownAlert,
+    cv: shownCv,
+    restAlert: Math.max(0, hitsAlert.length - shownAlert.length),
+    restCv: Math.max(0, hitsCv.length - shownCv.length),
+  };
 }
 
 export default function JobRadarFeedPage() {
@@ -137,6 +154,7 @@ export default function JobRadarFeedPage() {
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [cvSkills, setCvSkills] = useState<string[]>([]);
   const [busy, setBusy] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -166,14 +184,19 @@ export default function JobRadarFeedPage() {
   const KEYWORDS_MAX_UNIQ = 60;
   const KEYWORDS_CAP = 20;
 
-  // ✅ allKeywords inclut: keywords[] + tokens extraits du nom d’alerte
-  const allKeywords = useMemo(() => {
+  const CV_SKILLS_CAP = 40;
+
+  // ✅ alertKeywords inclut: keywords[] + tokens extraits du nom d’alerte
+  const alertKeywords = useMemo(() => {
     const fromKeywords = alerts.flatMap((a) => a.keywords ?? []);
     const fromNames = alerts.flatMap((a) => extractKeywordsFromAlertName(a.name ?? ""));
     return uniq([...fromKeywords, ...fromNames]).slice(0, KEYWORDS_MAX_UNIQ);
   }, [alerts]);
 
-  const cappedKeywords = useMemo(() => allKeywords.slice(0, KEYWORDS_CAP), [allKeywords]);
+  const cappedAlertKeywords = useMemo(() => alertKeywords.slice(0, KEYWORDS_CAP), [alertKeywords]);
+
+  // ✅ CV skills (pour matching)
+  const cvKeywords = useMemo(() => uniq(cvSkills).slice(0, CV_SKILLS_CAP), [cvSkills]);
 
   // ✅ Pays autorisés (supporte country + countries, et "Tous pays" => countries = null)
   const { allowAllCountries, allowedCountries } = useMemo(() => {
@@ -223,6 +246,9 @@ export default function JobRadarFeedPage() {
         created_at,
         updated_at,
         tags,
+        job_skills,
+        required_skills,
+        optional_skills,
         description:description_text
       `
       )
@@ -254,6 +280,20 @@ export default function JobRadarFeedPage() {
 
       if (aErr) throw aErr;
       setAlerts((aData ?? []) as AlertRow[]);
+
+      // 1b) CV actif (skills)
+      const { data: cvData, error: cvErr } = await supabase
+        .from("user_cvs")
+        .select("skills")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (cvErr) {
+        setCvSkills([]);
+      } else {
+        setCvSkills(Array.isArray((cvData as any)?.skills) ? (cvData as any).skills : []);
+      }
 
       // 2) jobs (1ère page)
       const fetchedJobs = await fetchJobsRange(0, PAGE_SIZE - 1);
@@ -385,37 +425,56 @@ export default function JobRadarFeedPage() {
 
   // ✅ 2 listes: Top matchs vs Explorer
   const matches = useMemo(() => {
-    const kw = uniq(cappedKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
-    const kwCount = kw.length;
+    const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
+    const kwCv = uniq(cvKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
+    const kwCount = kwAlerts.length + kwCv.length;
+    const weightAlert = 2;
+    const weightCv = 1;
+    const denom = kwAlerts.length * weightAlert + kwCv.length * weightCv;
 
     const qCanon = norm(canonicalizeText(q));
 
     const jobHay = (job: JobRow) =>
       canonicalizeText(
-        [job.title, job.company_name, job.location, job.country, job.remote_type, job.description]
+        [
+          job.title,
+          job.company_name,
+          job.location,
+          job.country,
+          job.remote_type,
+          job.description,
+          ...(job.required_skills ?? []),
+          ...(job.optional_skills ?? []),
+          ...(job.job_skills ?? []),
+          ...(job.tags ?? []),
+        ]
           .filter(Boolean)
           .join(" ")
       );
 
     const score = (hay: string) => {
-      let s = 0;
-      for (const k of kw) if (k && hay.includes(k)) s += 1;
-      return s;
+      let sAlert = 0;
+      let sCv = 0;
+      for (const k of kwAlerts) if (k && hay.includes(k)) sAlert += 1;
+      for (const k of kwCv) if (k && hay.includes(k)) sCv += 1;
+      const weighted = sAlert * weightAlert + sCv * weightCv;
+      const p = denom ? Math.round((weighted / denom) * 100) : 0;
+      return { p, sAlert, sCv };
     };
 
     // Explorer (base)
     const exploreMatches = jobs
       .map((job) => {
         const hay = jobHay(job);
-        const s = score(hay);
+        const scored = score(hay);
 
         // filtre recherche
         if (qCanon && !hay.includes(qCanon)) return null;
 
-        const p = matchPercent(Math.max(0, s), kwCount);
-        const why = kwCount ? topMatchesForJob(job, kw, 3) : { shown: [], rest: 0 };
+        const p = scored.p;
+        const why = kwCount ? topMatchesForJob(job, kwAlerts, kwCv, 2) : { alert: [], cv: [], restAlert: 0, restCv: 0 };
 
-        return { job, s, p, kwCount, why };
+        return { job, s: scored.sAlert + scored.sCv, p, kwCount, why };
       })
       .filter(Boolean)
       .map((x) => x as { job: JobRow; s: number; p: number; kwCount: number; why: { shown: string[]; rest: number } })
@@ -444,7 +503,8 @@ export default function JobRadarFeedPage() {
     return { topMatches, exploreMatches, kwCount };
   }, [
     jobs,
-    cappedKeywords,
+    cappedAlertKeywords,
+    cvKeywords,
     q,
     allowAllCountries,
     allowedCountries,
@@ -576,11 +636,21 @@ export default function JobRadarFeedPage() {
                       <div className="jr-title">{job.title ?? "—"}</div>
                       <span className="jr-score">{kwCount ? `${p}% pertinent` : "—"}</span>
                     </div>
-
-                    {kwCount && why.shown.length > 0 ? (
+                    {kwCount && (why.alert.length > 0 || why.cv.length > 0) ? (
                       <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
-                        Mots-clés : {why.shown.join(" · ")}
-                        {why.rest > 0 ? ` (+${why.rest})` : ""}
+                        {why.alert.length > 0 && (
+                          <span>
+                            Alertes : {why.alert.join(" · ")}
+                            {why.restAlert > 0 ? ` (+${why.restAlert})` : ""}
+                          </span>
+                        )}
+                        {why.cv.length > 0 && (
+                          <span>
+                            {why.alert.length > 0 ? " · " : ""}
+                            CV : {why.cv.join(" · ")}
+                            {why.restCv > 0 ? ` (+${why.restCv})` : ""}
+                          </span>
+                        )}
                       </div>
                     ) : null}
 
@@ -653,3 +723,7 @@ export default function JobRadarFeedPage() {
     </div>
   );
 }
+
+
+
+

@@ -4,7 +4,7 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import "./ApplicationsPage.css";
 
-type ApplicationStatus = "queued" | "submitted" | "retired";
+type ApplicationStatus = "saved" | "queued" | "in_progress" | "submitted" | "retired" | "failed";
 
 type JobMini = {
   id: string;
@@ -48,19 +48,28 @@ function norm(s: string) {
 
 function statusLabel(s: ApplicationStatus) {
   switch (s) {
+    case "saved":
     case "queued":
       return "À postuler";
+    case "in_progress":
+      return "En cours";
     case "submitted":
       return "Envoyée";
     case "retired":
       return "Retirée";
+    case "failed":
+      return "Échouée";
     default:
       return s;
   }
 }
 
 function statusClass(s: ApplicationStatus) {
-  return s === "queued" ? "chipQueued" : s === "submitted" ? "chipSubmitted" : "chipRetired";
+  if (s === "saved" || s === "queued") return "chipQueued";
+  if (s === "in_progress") return "chipInProgress";
+  if (s === "submitted") return "chipSubmitted";
+  if (s === "failed") return "chipFailed";
+  return "chipRetired";
 }
 
 function getApplyLink(job?: JobMini | null) {
@@ -165,18 +174,18 @@ export default function ApplicationsPage() {
   }, [loading, session, userId]);
 
   const counts = useMemo(() => {
-    const c = { all: rows.length, queued: 0, submitted: 0, retired: 0 };
-    for (const r of rows) {
-      if (r.status === "queued") c.queued += 1;
-      else if (r.status === "submitted") c.submitted += 1;
-      else if (r.status === "retired") c.retired += 1;
-    }
-    return c;
-  }, [rows]);
+  const c = { all: rows.length, queued: 0, submitted: 0, retired: 0 };
+  for (const r of rows) {
+    if (r.status === "saved" || r.status === "queued" || r.status === "in_progress") c.queued += 1;
+    else if (r.status === "submitted") c.submitted += 1;
+    else if (r.status === "retired") c.retired += 1;
+  }
+  return c;
+}, [rows]);
 
   const filtered = useMemo(() => {
     const qn = norm(q);
-    const byTab = tab === "all" ? rows : rows.filter((r) => r.status === tab);
+    const byTab = tab === "all" ? rows : tab === "queued" ? rows.filter((r) => r.status === "saved" || r.status === "queued" || r.status === "in_progress") : rows.filter((r) => r.status === tab);
 
     if (!qn) return byTab;
 
@@ -390,3 +399,6 @@ export default function ApplicationsPage() {
     </div>
   );
 }
+
+
+

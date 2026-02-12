@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import "./MyCvPage.css";
+import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
+import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+GlobalWorkerOptions.workerSrc = workerSrc;
 
 type CvExtractResponse = {
   ok: boolean;
@@ -26,6 +30,8 @@ export default function MyCvPage() {
 
   const [label, setLabel] = useState("CV");
   const [cvText, setCvText] = useState("");
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [cvFileInfo, setCvFileInfo] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<CvExtractResponse | null>(null);
@@ -50,7 +56,7 @@ export default function MyCvPage() {
 
     const { data, error } = await supabase
       .from("user_cvs")
-      .select("id,label,cv_text,cv_json,skills,contact,is_active,updated_at")
+      .select("id,label,cv_text,cv_json,skills,contact,is_active,updated_at,cv_file_path,cv_file_name,cv_file_type,cv_file_size")
       .eq("user_id", userId)
       .eq("is_active", true)
       .maybeSingle();
@@ -63,6 +69,14 @@ export default function MyCvPage() {
     if (data) {
       setLabel((data as any).label ?? "CV");
       setCvText((data as any).cv_text ?? "");
+      const fileName = (data as any).cv_file_name ?? "";
+      const fileType = (data as any).cv_file_type ?? "";
+      const fileSize = (data as any).cv_file_size ?? null;
+      if (fileName) {
+        setCvFileInfo(`${fileName}${fileType ? ` (${fileType})` : ""}${fileSize ? ` • ${fileSize} octets` : ""}`);
+      } else {
+        setCvFileInfo("");
+      }
       setResult({
         ok: true,
         contact: (data as any).contact ?? {},
@@ -91,6 +105,24 @@ export default function MyCvPage() {
     setErr(null);
 
     try {
+      let uploaded: {
+        path: string;
+        name: string;
+        type: string;
+        size: number;
+      } | null = null;
+
+      if (cvFile) {
+        const safeName = cvFile.name.replace(/[^\w.\-]/g, "_");
+        const path = `${userId}/${Date.now()}_${safeName}`;
+        const { error: upErr } = await supabase
+          .storage
+          .from("cvs")
+          .upload(path, cvFile, { upsert: true, contentType: cvFile.type || "application/octet-stream" });
+        if (upErr) throw upErr;
+        uploaded = { path, name: cvFile.name, type: cvFile.type || "application/octet-stream", size: cvFile.size };
+      }
+
       const { data, error } = await supabase.functions.invoke("cv_extract", {
         body: { cv_text: text }
       });
@@ -109,7 +141,7 @@ export default function MyCvPage() {
 
       const { data: existing, error: exErr } = await supabase
         .from("user_cvs")
-        .select("id")
+        .select("id,cv_file_path,cv_file_name,cv_file_type,cv_file_size")
         .eq("user_id", userId)
         .eq("is_active", true)
         .maybeSingle();
@@ -124,7 +156,12 @@ export default function MyCvPage() {
             cv_text: text,
             cv_json: cvJson,
             skills,
-            contact
+            contact,
+            cv_file_path: uploaded?.path ?? (existing as any).cv_file_path ?? null,
+            cv_file_name: uploaded?.name ?? (existing as any).cv_file_name ?? null,
+            cv_file_type: uploaded?.type ?? (existing as any).cv_file_type ?? null,
+            cv_file_size: uploaded?.size ?? (existing as any).cv_file_size ?? null,
+            cv_updated_at: new Date().toISOString()
           })
           .eq("id", existing.id);
 
@@ -137,7 +174,12 @@ export default function MyCvPage() {
           cv_json: cvJson,
           skills,
           contact,
-          is_active: true
+          is_active: true,
+          cv_file_path: uploaded?.path ?? null,
+          cv_file_name: uploaded?.name ?? null,
+          cv_file_type: uploaded?.type ?? null,
+          cv_file_size: uploaded?.size ?? null,
+          cv_updated_at: new Date().toISOString()
         });
 
         if (insErr) throw insErr;
@@ -179,6 +221,8 @@ export default function MyCvPage() {
 
       setCvText("");
       setResult(null);
+      setCvFile(null);
+      setCvFileInfo("");
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -187,6 +231,47 @@ export default function MyCvPage() {
   }
 
   if (loading) return null;
+
+  async function extractTextFromFile(file: File) {
+    const name = file.name.toLowerCase();
+    const isPdf = file.type === "application/pdf" || name.endsWith(".pdf");
+    const isText = file.type.startsWith("text/") || name.endsWith(".txt");
+
+    if (!isPdf && !isText) {
+      throw new Error("Format non supporté. Utilise PDF ou TXT.");
+    }
+
+    if (isText) {
+      return await file.text();
+    }
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await getDocument({ data }).promise;
+    let out = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = (content.items as any[]).map((it) => (it?.str ?? "")).join(" ");
+      out += `${pageText}\n`;
+    }
+    return out.trim();
+  }
+
+  async function onSelectFile(file: File | null) {
+    if (!file) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const text = await extractTextFromFile(file);
+      setCvFile(file);
+      setCvFileInfo(`${file.name}${file.type ? ` (${file.type})` : ""} • ${file.size} octets`);
+      setCvText(text);
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="mycv-shell">
@@ -206,6 +291,18 @@ export default function MyCvPage() {
       <div className="mycv-grid">
         {/* LEFT: editor */}
         <div className="card">
+          <div className="field">
+            <span className="label">Importer un fichier CV (PDF/TXT)</span>
+            <input
+              className="input"
+              type="file"
+              accept=".pdf,.txt,application/pdf,text/plain"
+              onChange={(e) => onSelectFile(e.currentTarget.files?.[0] ?? null)}
+              disabled={busy}
+            />
+            {cvFileInfo && <div className="small" style={{ marginTop: 6 }}>{cvFileInfo}</div>}
+          </div>
+
           <div className="field">
             <span className="label">Nom/Label du CV</span>
             <input
@@ -256,7 +353,7 @@ export default function MyCvPage() {
           )}
 
           <div className="small" style={{ marginTop: 10 }}>
-            Astuce : colle ton CV en texte brut (Word/PDF → copier-coller).
+            Astuce : tu peux importer un PDF/TXT ou coller le texte.
           </div>
         </div>
 
