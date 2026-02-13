@@ -14,6 +14,8 @@ type CvExtractResponse = {
   skills?: string[];
   formatted_text?: string;
   raw_text?: string;
+  experience_years_min?: number | null;
+  experience_years_max?: number | null;
   skills_by_category?: {
     hard?: string[];
     soft?: string[];
@@ -85,6 +87,8 @@ export default function MyCvPage() {
         skills: (data as any).skills ?? [],
         formatted_text: (data as any).cv_json?.formatted_text ?? undefined,
         raw_text: (data as any).cv_text ?? "",
+        experience_years_min: (data as any).cv_json?.experience_years_min ?? null,
+        experience_years_max: (data as any).cv_json?.experience_years_max ?? null,
         sections: (data as any).cv_json?.sections ?? undefined,
         stats: (data as any).cv_json?.stats ?? undefined
       });
@@ -141,7 +145,9 @@ export default function MyCvPage() {
       const cvJson = {
         sections: parsed?.sections ?? {},
         stats: parsed?.stats ?? {},
-        formatted_text: parsed?.formatted_text ?? null
+        formatted_text: parsed?.formatted_text ?? null,
+        experience_years_min: parsed?.experience_years_min ?? null,
+        experience_years_max: parsed?.experience_years_max ?? null
       };
 
       const { data: existing, error: exErr } = await supabase
@@ -411,6 +417,12 @@ export default function MyCvPage() {
               <div>
                 <b>Analyse :</b>{" "}
                 {result?.stats?.chars ?? "—"} caractères · {result?.stats?.lines ?? "—"} lignes
+              </div>
+              <div>
+                <b>Expérience estimée :</b>{" "}
+                {result?.experience_years_min != null || result?.experience_years_max != null
+                  ? `${result?.experience_years_min ?? result?.experience_years_max}${result?.experience_years_max && result?.experience_years_min && result?.experience_years_max !== result?.experience_years_min ? `–${result?.experience_years_max}` : ""} ans`
+                  : "—"}
               </div>
             </div>
           </div>

@@ -331,6 +331,37 @@ function detectContact(text: string) {
   };
 }
 
+function detectExperienceYears(text: string) {
+  const t = normalizeKey(text);
+  let min: number | null = null;
+  let max: number | null = null;
+
+  const rangeRe = /(\d{1,2})\s*(?:-|a|to)\s*(\d{1,2})\s*(ans|years|yrs|year)/g;
+  const plusRe = /(\d{1,2})\s*\+?\s*(ans|years|yrs|year)/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = rangeRe.exec(t)) !== null) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      min = min == null ? lo : Math.min(min, lo);
+      max = max == null ? hi : Math.max(max, hi);
+    }
+  }
+
+  while ((m = plusRe.exec(t)) !== null) {
+    const a = parseInt(m[1], 10);
+    if (Number.isFinite(a)) {
+      min = min == null ? a : Math.min(min, a);
+      max = max == null ? a : Math.max(max, a);
+    }
+  }
+
+  return { experience_years_min: min, experience_years_max: max };
+}
+
 function splitSections(rawText: string): Record<string, string> {
   const lines = rawText.split("\n");
   const sections: Record<string, string> = {};
@@ -491,6 +522,7 @@ serve(async (req) => {
   const skills_by_category = extractSkillsByCategory(sections, cleaned);
   const skills = flattenSkills(skills_by_category);
   const contact = detectContact(cleaned);
+  const experience = detectExperienceYears(cleaned);
   const formatted_text = buildFormattedText(sections, cleaned);
 
   const stats = {
@@ -507,6 +539,8 @@ serve(async (req) => {
     stats,
     formatted_text,
     raw_text: cleaned,
+    experience_years_min: experience.experience_years_min,
+    experience_years_max: experience.experience_years_max,
     truncated,
     match: { keyword_score: null },
   });

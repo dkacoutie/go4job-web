@@ -32,6 +32,8 @@ type MatchRow = {
   s: number;
   p: number;
   kwCount: number;
+  signalCount: number;
+  expOk: boolean;
   why: MatchWhy;
 };
 
@@ -55,6 +57,8 @@ type JobRow = {
   job_skills?: string[] | null;
   required_skills?: string[] | null;
   optional_skills?: string[] | null;
+  experience_years_min?: number | null;
+  experience_years_max?: number | null;
 };
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -63,6 +67,11 @@ function getErrorMessage(err: unknown): string {
     if (typeof maybeMessage === "string") return maybeMessage;
   }
   return String(err);
+}
+
+function toNumberOrNull(v: unknown) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 
@@ -127,7 +136,13 @@ function extractKeywordsFromAlertName(name: string): string[] {
 }
 
 // "Pourquoi ça match ?" : top 3 mots-clés détectés (+X)
-function topMatchesForJob(job: JobRow, alertKw: string[], cvKw: string[], maxShown = 2) {
+function topMatchesForJob(
+  job: JobRow,
+  alertKw: string[],
+  cvKw: string[],
+  extraCv: string[] = [],
+  maxShown = 2
+) {
   const skillBits = [
     ...(job.required_skills ?? []),
     ...(job.optional_skills ?? []),
@@ -149,7 +164,8 @@ function topMatchesForJob(job: JobRow, alertKw: string[], cvKw: string[], maxSho
 
   const hay = canonicalizeText(rawHay);
   const hitsAlert = alertKw.filter((k) => k && hay.includes(k));
-  const hitsCv = cvKw.filter((k) => k && hay.includes(k) && !hitsAlert.includes(k));
+  const hitsCvRaw = cvKw.filter((k) => k && hay.includes(k) && !hitsAlert.includes(k));
+  const hitsCv = uniq([...extraCv, ...hitsCvRaw]);
 
   const shownAlert = hitsAlert.slice(0, maxShown);
   const shownCv = hitsCv.slice(0, maxShown);
@@ -170,6 +186,7 @@ export default function JobRadarFeedPage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [cvSkills, setCvSkills] = useState<string[]>([]);
+  const [cvExp, setCvExp] = useState<{ min: number | null; max: number | null } | null>(null);
   const [busy, setBusy] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -264,6 +281,8 @@ export default function JobRadarFeedPage() {
         job_skills,
         required_skills,
         optional_skills,
+        experience_years_min,
+        experience_years_max,
         description:description_text
       `
       )
@@ -299,15 +318,24 @@ export default function JobRadarFeedPage() {
       // 1b) CV actif (skills)
       const { data: cvData, error: cvErr } = await supabase
         .from("user_cvs")
-        .select("skills")
+        .select("skills, cv_json")
         .eq("user_id", userId)
         .eq("is_active", true)
         .maybeSingle();
 
       if (cvErr) {
         setCvSkills([]);
+        setCvExp(null);
       } else {
         setCvSkills(Array.isArray((cvData as any)?.skills) ? (cvData as any).skills : []);
+        const cvJson = (cvData as any)?.cv_json ?? {};
+        const expMin = toNumberOrNull(cvJson?.experience_years_min);
+        const expMax = toNumberOrNull(cvJson?.experience_years_max);
+        if (expMin != null || expMax != null) {
+          setCvExp({ min: expMin, max: expMax });
+        } else {
+          setCvExp(null);
+        }
       }
 
       // 2) jobs (1ère page)
@@ -445,7 +473,8 @@ export default function JobRadarFeedPage() {
     const kwCount = kwAlerts.length + kwCv.length;
     const weightAlert = 2;
     const weightCv = 1;
-    const denom = kwAlerts.length * weightAlert + kwCv.length * weightCv;
+    const cvExpValue = cvExp?.max ?? cvExp?.min ?? null;
+    const expWeight = 2;
 
     const qCanon = norm(canonicalizeText(q));
 
@@ -467,33 +496,65 @@ export default function JobRadarFeedPage() {
           .join(" ")
       );
 
-    const score = (hay: string) => {
+    const score = (job: JobRow, hay: string) => {
       let sAlert = 0;
       let sCv = 0;
       for (const k of kwAlerts) if (k && hay.includes(k)) sAlert += 1;
       for (const k of kwCv) if (k && hay.includes(k)) sCv += 1;
-      const weighted = sAlert * weightAlert + sCv * weightCv;
+
+      const jobMin = job.experience_years_min ?? null;
+      const jobMax = job.experience_years_max ?? null;
+      const expConsidered = cvExpValue != null && (jobMin != null || jobMax != null);
+      let expOk = false;
+      let expReason: string | null = null;
+
+      if (expConsidered && cvExpValue != null) {
+        let ok = true;
+        if (jobMin != null) ok = ok && cvExpValue >= jobMin;
+        if (jobMax != null) ok = ok && cvExpValue <= jobMax + 2;
+        expOk = ok;
+        if (ok) {
+          if (jobMin != null) expReason = `ExpÃ©rience â‰¥ ${jobMin} ans`;
+          else if (jobMax != null) expReason = `ExpÃ©rience â‰¤ ${jobMax} ans`;
+          else expReason = `ExpÃ©rience ${cvExpValue} ans`;
+        }
+      }
+
+      const denom = kwAlerts.length * weightAlert + kwCv.length * weightCv + (expConsidered ? expWeight : 0);
+      const weighted = sAlert * weightAlert + sCv * weightCv + (expOk ? expWeight : 0);
       const p = denom ? Math.round((weighted / denom) * 100) : 0;
-      return { p, sAlert, sCv };
+      return { p, sAlert, sCv, expOk, expReason };
     };
 
     // Explorer (base)
     const exploreMatches = jobs
       .map((job): MatchRow | null => {
         const hay = jobHay(job);
-        const scored = score(hay);
+        const scored = score(job, hay);
 
         // filtre recherche
         if (qCanon && !hay.includes(qCanon)) return null;
 
         const p = scored.p;
-        const why = kwCount ? topMatchesForJob(job, kwAlerts, kwCv, 2) : { alert: [], cv: [], restAlert: 0, restCv: 0 };
+        const signalCount = kwCount + (scored.expOk ? 1 : 0);
+        const extraCvReasons = scored.expOk && scored.expReason ? [scored.expReason] : [];
+        const why = signalCount
+          ? topMatchesForJob(job, kwAlerts, kwCv, extraCvReasons, 2)
+          : { alert: [], cv: [], restAlert: 0, restCv: 0 };
 
-        return { job, s: scored.sAlert + scored.sCv, p, kwCount, why };
+        return {
+          job,
+          s: scored.sAlert + scored.sCv,
+          p,
+          kwCount,
+          signalCount,
+          expOk: scored.expOk,
+          why
+        };
       })
       .filter((x): x is MatchRow => Boolean(x))
       // au moins 1 mot-clé si on en a
-      .filter((x) => (kwCount ? x.s >= 1 : true))
+      .filter((x) => (x.signalCount ? (x.s >= 1 || x.expOk) : true))
       // filtre pays
       .filter((x) => {
         if (allowAllCountries) return true;
@@ -519,6 +580,7 @@ export default function JobRadarFeedPage() {
     jobs,
     cappedAlertKeywords,
     cvKeywords,
+    cvExp,
     q,
     allowAllCountries,
     allowedCountries,
@@ -628,7 +690,7 @@ export default function JobRadarFeedPage() {
         ) : (
           <>
             <div className="jr-grid">
-              {displayed.map(({ job, p, kwCount, why }) => {
+              {displayed.map(({ job, p, kwCount, signalCount, why }) => {
                 const isAdding = addingJobId === job.id;
                 const isDismissing = dismissingJobId === job.id;
 
@@ -648,9 +710,9 @@ export default function JobRadarFeedPage() {
                   >
                     <div className="jr-cardTop">
                       <div className="jr-title">{job.title ?? "—"}</div>
-                      <span className="jr-score">{kwCount ? `${p}% pertinent` : "—"}</span>
+                      <span className="jr-score">{signalCount ? `${p}% pertinent` : "—"}</span>
                     </div>
-                    {kwCount && (why.alert.length > 0 || why.cv.length > 0) ? (
+                    {signalCount && (why.alert.length > 0 || why.cv.length > 0) ? (
                       <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
                         {why.alert.length > 0 && (
                           <span>
@@ -737,6 +799,9 @@ export default function JobRadarFeedPage() {
     </div>
   );
 }
+
+
+
 
 
 
