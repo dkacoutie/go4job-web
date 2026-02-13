@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
+import "./ThanksPage.css";
 
 export default function ThanksPage() {
   const [sp] = useSearchParams();
@@ -35,12 +36,13 @@ export default function ThanksPage() {
   }, [sp]);
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ maxWidth: 640, width: "100%", border: "1px solid #e5e7eb", borderRadius: 16, padding: 24 }}>
-        <h1 style={{ fontSize: 28, margin: 0 }}>{data.title}</h1>
-        <p style={{ marginTop: 12, marginBottom: 20, lineHeight: 1.5 }}>{data.message}</p>
+    <div className="thanks-shell">
+      <section className="thanks-card">
+        <div className="thanks-kicker">JobRadar</div>
+        <h1 className="thanks-title">{data.title}</h1>
+        <p className="thanks-message">{data.message}</p>
 
-        <div style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.6 }}>
+        <div className="thanks-meta">
           {data.status && <div><b>status:</b> {data.status}</div>}
           {data.reason && <div><b>reason:</b> {data.reason}</div>}
           {data.action && <div><b>action:</b> {data.action}</div>}
@@ -49,15 +51,11 @@ export default function ThanksPage() {
           {data.alertId && <div><b>alert_id:</b> {data.alertId}</div>}
         </div>
 
-        <div style={{ marginTop: 20, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <a href="/" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #e5e7eb", textDecoration: "none" }}>
-            Aller à l’accueil
-          </a>
-          <a href="/auth" style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid #e5e7eb", textDecoration: "none" }}>
-            Se connecter
-          </a>
+        <div className="thanks-actions">
+          <a className="btn btnGhost" href="/">Aller à l’accueil</a>
+          <a className="btn btnPrimary" href="/auth">Se connecter</a>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

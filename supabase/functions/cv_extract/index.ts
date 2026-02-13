@@ -9,6 +9,14 @@ type SkillsByCategory = {
   other: string[];
 };
 
+type SkillCategory = "domain" | "method" | "tool" | "soft" | "language" | "other";
+
+type SkillItem = {
+  label: string;
+  category: SkillCategory;
+  confidence: number; // 0..1
+};
+
 type CvExtractRequest = {
   cv_text?: unknown;
   file_path?: unknown;
@@ -116,6 +124,49 @@ const CANONICAL_RULES: Array<{ re: RegExp; skill: string; cat?: keyof SkillsByCa
   { re: /\ballemand\b/i, skill: "allemand", cat: "languages" },
 ];
 
+const SKILL_DICTIONARY: Array<{
+  label: string;
+  category: SkillCategory;
+  synonyms: string[];
+}> = [
+  { label: "santÃ© publique", category: "domain", synonyms: ["sante publique", "public health"] },
+  { label: "pharmacie", category: "domain", synonyms: ["pharmacie", "pharmaceutical", "pharmaceutique"] },
+  { label: "gestion hospitaliÃ¨re", category: "domain", synonyms: ["gestion hospitaliere", "hospital management", "healthcare management"] },
+  { label: "finance publique", category: "domain", synonyms: ["finance publique", "finances publiques"] },
+  { label: "administration publique", category: "domain", synonyms: ["administration publique", "public administration"] },
+  { label: "gouvernance", category: "domain", synonyms: ["gouvernance", "governance"] },
+  { label: "audit", category: "method", synonyms: ["audit", "auditing"] },
+  { label: "reporting", category: "method", synonyms: ["reporting", "reporting mensuel"] },
+  { label: "suivi-Ã©valuation", category: "method", synonyms: ["suivi evaluation", "suivi-Ã©valuation", "monitoring evaluation", "m&e"] },
+  { label: "pilotage de la performance", category: "method", synonyms: ["pilotage de la performance", "performance management"] },
+  { label: "gestion de projet", category: "method", synonyms: ["gestion de projet", "project management", "management de projet"] },
+  { label: "planification", category: "method", synonyms: ["planification", "planning"] },
+  { label: "gestion budgÃ©taire", category: "method", synonyms: ["gestion budgetaire", "budget management", "budgeting"] },
+  { label: "tableaux de bord", category: "method", synonyms: ["tableaux de bord", "dashboard", "dashboards"] },
+  { label: "excel", category: "tool", synonyms: ["excel", "ms excel", "microsoft excel"] },
+  { label: "power bi", category: "tool", synonyms: ["power bi", "powerbi"] },
+  { label: "sql", category: "tool", synonyms: ["sql"] },
+  { label: "sap", category: "tool", synonyms: ["sap"] },
+  { label: "word", category: "tool", synonyms: ["word", "ms word", "microsoft word"] },
+  { label: "powerpoint", category: "tool", synonyms: ["powerpoint", "ppt", "ms powerpoint"] },
+  { label: "jira", category: "tool", synonyms: ["jira"] },
+  { label: "trello", category: "tool", synonyms: ["trello"] },
+  { label: "asana", category: "tool", synonyms: ["asana"] },
+  { label: "notion", category: "tool", synonyms: ["notion"] },
+  { label: "communication", category: "soft", synonyms: ["communication", "communication institutionnelle"] },
+  { label: "leadership", category: "soft", synonyms: ["leadership"] },
+  { label: "coordination", category: "soft", synonyms: ["coordination", "coordination d'equipes", "coordination dâ€™Ã©quipes"] },
+  { label: "organisation", category: "soft", synonyms: ["organisation", "organization"] },
+  { label: "autonomie", category: "soft", synonyms: ["autonomie", "autonomous"] },
+  { label: "rigueur", category: "soft", synonyms: ["rigueur"] },
+  { label: "nÃ©gociation", category: "soft", synonyms: ["negociation", "nÃ©gociation", "negotiation"] },
+  { label: "esprit d'analyse", category: "soft", synonyms: ["esprit d'analyse", "analytical mindset"] },
+  { label: "franÃ§ais", category: "language", synonyms: ["francais", "franÃ§ais", "french"] },
+  { label: "anglais", category: "language", synonyms: ["anglais", "english"] },
+  { label: "allemand", category: "language", synonyms: ["allemand", "german"] },
+  { label: "espagnol", category: "language", synonyms: ["espagnol", "spanish"] },
+];
+
 function stripBullets(s: string) {
   return s.replace(/^[•\-–—]\s*/, "").trim();
 }
@@ -128,6 +179,136 @@ function normalizeKey(s: string) {
     .replace(/[^a-z0-9+.# -]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function fixMojibakeText(input: string) {
+  if (!/[ÃÂ]/.test(input)) return input;
+  try {
+    const bytes = new Uint8Array(input.length);
+    for (let i = 0; i < input.length; i++) bytes[i] = input.charCodeAt(i) & 0xff;
+    const repaired = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    if (!/[ÃÂ]/.test(repaired)) return repaired;
+  } catch {
+    // ignore
+  }
+  return input;
+}
+
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasPhrase(text: string, phrase: string) {
+  const p = phrase.trim();
+  if (!p) return false;
+  const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(p)}([^a-z0-9]|$)`, "i");
+  return re.test(text);
+}
+
+function sectionWeight(key: string) {
+  const k = normalizeKey(key);
+  if (!k) return 0.15;
+  if (k.includes("competence") || k.includes("skills") || k.includes("aptitude")) return 0.55;
+  if (k.includes("outil") || k.includes("tool") || k.includes("logiciel")) return 0.5;
+  if (k.includes("langue") || k.includes("language")) return 0.5;
+  if (k.includes("experience") || k.includes("exp")) return 0.35;
+  if (k.includes("profil") || k.includes("summary") || k.includes("objectif")) return 0.3;
+  return 0.2;
+}
+
+function extractSmartSkills(sections: Record<string, string>, cvText: string): SkillItem[] {
+  const candidates = new Map<string, SkillItem & { score: number }>();
+
+  const allSections = Object.entries(sections || {});
+  const fallbackSection = allSections.length ? [] : [["body", cvText]];
+  const mergedSections = allSections.length ? allSections : fallbackSection;
+
+  for (const [key, raw] of mergedSections) {
+    const weight = sectionWeight(key);
+    const text = normalizeKey(raw);
+
+    for (const def of SKILL_DICTIONARY) {
+      const labelNorm = normalizeKey(def.label);
+      const synonyms = [def.label, ...def.synonyms].map(normalizeKey);
+      let hits = 0;
+      for (const s of synonyms) {
+        if (s && hasPhrase(text, s)) hits++;
+      }
+      if (!hits) continue;
+
+      const base = 0.35;
+      const bump = Math.min(0.15, Math.max(0, hits - 1) * 0.05);
+      const score = Math.min(1, base + weight + bump);
+
+      const existing = candidates.get(labelNorm);
+      if (!existing || score > existing.score) {
+        candidates.set(labelNorm, {
+          label: labelNorm,
+          category: def.category,
+          confidence: Math.round(score * 100) / 100,
+          score,
+        });
+      }
+    }
+  }
+
+  // Fallback: short noun-phrases from skills sections
+  const skillsText =
+    sections["compétences"] ||
+    sections["competences"] ||
+    sections["skills"] ||
+    sections["aptitudes"] ||
+    "";
+
+  if (skillsText) {
+    const items = splitToItems(skillsText)
+      .map((s) => normalizeKey(s))
+      .map((s) => s.replace(/\s+/g, " ").trim())
+      .filter((s) => s && s.split(" ").length <= 4);
+
+    for (const it of items) {
+      if (candidates.has(it)) continue;
+      candidates.set(it, {
+        label: it,
+        category: "other",
+        confidence: 0.35,
+        score: 0.35,
+      });
+    }
+  }
+
+  const out = Array.from(candidates.values())
+    .sort((a, b) => (b.confidence - a.confidence) || a.label.localeCompare(b.label))
+    .map(({ score, ...rest }) => rest);
+
+  return out;
+}
+
+function groupSkillsForLegacy(skills: SkillItem[]): SkillsByCategory {
+  const out: SkillsByCategory = { hard: [], soft: [], tools: [], languages: [], other: [] };
+  for (const s of skills) {
+    if (s.category === "tool") out.tools.push(s.label);
+    else if (s.category === "soft") out.soft.push(s.label);
+    else if (s.category === "language") out.languages.push(s.label);
+    else if (s.category === "domain" || s.category === "method") out.hard.push(s.label);
+    else out.other.push(s.label);
+  }
+  return out;
+}
+
+function buildSummary(sections: Record<string, string>, rawText: string) {
+  const pick =
+    sections["profil"] ||
+    sections["profile"] ||
+    sections["summary"] ||
+    sections["resume"] ||
+    sections["résumé"] ||
+    sections["objectif"] ||
+    "";
+
+  const base = pick || rawText.split(/\n{2,}/)[0] || rawText;
+  const trimmed = base.replace(/\s+/g, " ").trim();
+  return trimmed.length > 360 ? trimmed.slice(0, 360) + "..." : trimmed;
 }
 
 function looksLikeSectionTitle(s: string) {
@@ -315,7 +496,8 @@ function jsonResponse(status: number, body: unknown) {
 function normalizeCvText(input: string) {
   const raw = String(input ?? "").replace(/\r/g, "\n").replace(/\u00a0/g, " ");
   const collapsed = raw.replace(/\t/g, " ").replace(/\n{3,}/g, "\n\n");
-  const sliced = collapsed.length > MAX_CV_LENGTH ? collapsed.slice(0, MAX_CV_LENGTH) : collapsed;
+  const fixed = fixMojibakeText(collapsed);
+  const sliced = fixed.length > MAX_CV_LENGTH ? fixed.slice(0, MAX_CV_LENGTH) : fixed;
   return sliced.trim();
 }
 

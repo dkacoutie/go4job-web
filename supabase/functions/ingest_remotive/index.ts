@@ -15,7 +15,7 @@
 
 type Json = Record<string, unknown>;
 
-const BUILD_ID = "2026-02-09_ingest_remotive_auth_and_upsert_v1";
+const BUILD_ID = "2026-02-13_ingest_remotive_html_clean_v2";
 const SENTINEL_ISO = "1970-01-01T00:00:00.000Z";
 
 function json(data: unknown, status = 200) {
@@ -55,6 +55,65 @@ function requireCronAuth(req: Request): Response | null {
 function clampInt(n: number, min: number, max: number) {
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function decodeHtmlEntities(input: string): string {
+  let s = String(input ?? "");
+
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+
+  s = s.replace(/&([a-zA-Z]+);/g, (m, name) => {
+    const k = String(name || "").toLowerCase();
+    return k in named ? named[k] : m;
+  });
+
+  s = s.replace(/&#(\d+);/g, (m, num) => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (m, hex) => {
+    const n = parseInt(hex, 16);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  return s;
+}
+
+function stripHtml(html: string): string {
+  const withBreaks = String(html ?? "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*p\s*>/gi, "\n")
+    .replace(/<\/\s*div\s*>/gi, "\n")
+    .replace(/<\/\s*section\s*>/gi, "\n")
+    .replace(/<\/\s*h[1-6]\s*>/gi, "\n")
+    .replace(/<\s*li\s*>/gi, "\n- ")
+    .replace(/<\/\s*li\s*>/gi, "\n")
+    .replace(/<\/\s*ul\s*>/gi, "\n")
+    .replace(/<\/\s*ol\s*>/gi, "\n")
+    .replace(/<\/\s*tr\s*>/gi, "\n")
+    .replace(/<\/\s*td\s*>/gi, " | ")
+    .replace(/<\/\s*th\s*>/gi, " | ");
+
+  return decodeHtmlEntities(withBreaks)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
 }
 
 function baseHeaders(serviceKey: string) {
@@ -291,6 +350,9 @@ Deno.serve(async (req) => {
       const external_id = `remotive:${j.id}`;
       const posted_at = j.publication_date ? new Date(j.publication_date).toISOString() : null;
 
+      const descriptionHtml = j.description ?? null;
+      const descriptionText = descriptionHtml ? stripHtml(descriptionHtml) : null;
+
       return {
         job_source_id,
         external_id,
@@ -309,8 +371,8 @@ Deno.serve(async (req) => {
         salary_currency: null,
         salary_period: null,
 
-        description_html: j.description ?? null,
-        description_text: null,
+        description_html: descriptionHtml,
+        description_text: descriptionText,
 
         apply_url: j.url ?? null,
         source_url: j.url ?? null,

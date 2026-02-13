@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
@@ -28,6 +28,42 @@ type CvExtractResponse = {
   match?: { keyword_score?: number };
 };
 
+function normalizeKey(input: string) {
+  return (input ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9+.# -]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleFromKey(input: string) {
+  const cleaned = normalizeKey(input);
+  if (!cleaned) return "Section";
+  return cleaned
+    .split(" ")
+    .map((w) => (w.length <= 2 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+function normalizeSkillLabel(input: string) {
+  return (input ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function uniqSkills(list: string[] | undefined) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list ?? []) {
+    const v = normalizeSkillLabel(raw);
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
 export default function MyCvPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -54,6 +90,73 @@ export default function MyCvPage() {
     return t.split(/\r\n|\r|\n/).length;
   }, [cvText]);
 
+  const skillGroups = useMemo(() => {
+    const by = result?.skills_by_category ?? {};
+    const groups = [
+      { key: "hard", label: "Domaines" },
+      { key: "tools", label: "Outils" },
+      { key: "soft", label: "Soft skills" },
+      { key: "languages", label: "Langues" },
+      { key: "other", label: "Autres" }
+    ];
+
+    const built = groups
+      .map((g) => ({
+        label: g.label,
+        items: uniqSkills((by as any)?.[g.key] as string[] | undefined)
+      }))
+      .filter((g) => g.items.length > 0);
+
+    if (!built.length) {
+      const flat = uniqSkills(result?.skills ?? []);
+      if (flat.length) return [{ label: "Compétences", items: flat }];
+    }
+
+    return built;
+  }, [result]);
+
+  const structuredSections = useMemo(() => {
+    const sections = result?.sections ?? {};
+    const keys = Object.keys(sections);
+    if (!keys.length) return [];
+
+    const normMap = new Map<string, string>();
+    for (const k of keys) normMap.set(normalizeKey(k), k);
+
+    const used = new Set<string>();
+    const out: Array<{ title: string; content: string }> = [];
+
+    const pick = (candidates: string[], title: string) => {
+      for (const c of candidates) {
+        const key = normMap.get(normalizeKey(c));
+        if (key && !used.has(key)) {
+          const content = String((sections as any)[key] ?? "").trim();
+          if (content) {
+            used.add(key);
+            out.push({ title, content });
+            return;
+          }
+        }
+      }
+    };
+
+    pick(["profil", "profile", "summary", "resume", "résumé", "objectif"], "Profil");
+    pick(["experience", "experiences", "expérience", "expériences", "parcours"], "expériences");
+    pick(["formation", "education", "etudes", "études"], "Formation");
+    pick(["competences", "Compétences", "skills", "aptitudes"], "Compétences");
+    pick(["langues", "languages"], "Langues");
+    pick(["contact", "coordonnees", "coordonnées", "informations personnelles"], "Contact");
+
+    for (const k of keys) {
+      if (used.has(k)) continue;
+      const content = String((sections as any)[k] ?? "").trim();
+      if (!content) continue;
+      out.push({ title: titleFromKey(k), content });
+    }
+
+    return out;
+  }, [result]);
+
   async function loadActiveCv() {
     if (!userId) return;
     setErr(null);
@@ -77,7 +180,7 @@ export default function MyCvPage() {
       const fileType = (data as any).cv_file_type ?? "";
       const fileSize = (data as any).cv_file_size ?? null;
       if (fileName) {
-        setCvFileInfo(`${fileName}${fileType ? ` (${fileType})` : ""}${fileSize ? ` • ${fileSize} octets` : ""}`);
+        setCvFileInfo(`${fileName}${fileType ? ` (${fileType})` : ""}${fileSize ? ` · ${fileSize} octets` : ""}`);
       } else {
         setCvFileInfo("");
       }
@@ -275,7 +378,7 @@ export default function MyCvPage() {
     try {
       const text = await extractTextFromFile(file);
       setCvFile(file);
-      setCvFileInfo(`${file.name}${file.type ? ` (${file.type})` : ""} • ${file.size} octets`);
+      setCvFileInfo(`${file.name}${file.type ? ` (${file.type})` : ""} · ${file.size} octets`);
       setCvText(text);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
@@ -320,7 +423,7 @@ export default function MyCvPage() {
               className="input"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="ex: CV FR, CV EN…"
+              placeholder="ex: CV FR, CV EN..."
             />
           </div>
 
@@ -384,26 +487,49 @@ export default function MyCvPage() {
 
           <div className="card">
             <h3>Compétences extraites</h3>
-            <div className="pills">
-              {(result?.skills ?? []).length === 0 ? (
-                <span className="muted">—</span>
-              ) : (
-                (result?.skills ?? []).map((s) => (
-                  <span key={s} className="pill">
-                    {s}
-                  </span>
-                ))
-              )}
-            </div>
+            <div className="microcopy">Ces infos servent à améliorer le score de matching.</div>
+            {skillGroups.length === 0 ? (
+              <span className="muted">—</span>
+            ) : (
+              <div className="skillGroups">
+                {skillGroups.map((g) => (
+                  <div className="skillGroup" key={g.label}>
+                    <div className="skillGroupTitle">{g.label}</div>
+                    <div className="pills">
+                      {g.items.map((s) => (
+                        <span key={`${g.label}-${s}`} className="pill">
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="card">
-            <h3>CV formaté</h3>
-            <div className="cvFormatted">
-              {result?.formatted_text
-                ? result.formatted_text
-                : (cvText ? cvText : "—")}
+            <div className="cardHeaderRow">
+              <h3>Résumé structuré</h3>
+              <span className="cardTag">Profil pour le matching</span>
             </div>
+            {structuredSections.length > 0 ? (
+              <div className="cvSections">
+                {structuredSections.map((s) => (
+                  <div className="cvSection" key={s.title}>
+                    <div className="cvSectionTitle">{s.title}</div>
+                    <div className="cvSectionBody">{s.content}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="cvFormatted">
+                {result?.formatted_text
+                  ? result.formatted_text
+                  : (cvText ? cvText : "—")}
+              </div>
+            )}
+            <div className="microcopy">Ces infos servent à améliorer le score de matching.</div>
           </div>
 
 
@@ -421,7 +547,7 @@ export default function MyCvPage() {
               <div>
                 <b>Expérience estimée :</b>{" "}
                 {result?.experience_years_min != null || result?.experience_years_max != null
-                  ? `${result?.experience_years_min ?? result?.experience_years_max}${result?.experience_years_max && result?.experience_years_min && result?.experience_years_max !== result?.experience_years_min ? `–${result?.experience_years_max}` : ""} ans`
+                  ? `${result?.experience_years_min ?? result?.experience_years_max}${result?.experience_years_max && result?.experience_years_min && result?.experience_years_max !== result?.experience_years_min ? `-${result?.experience_years_max}` : ""} ans`
                   : "—"}
               </div>
             </div>
@@ -431,6 +557,10 @@ export default function MyCvPage() {
     </div>
   );
 }
+
+
+
+
 
 
 

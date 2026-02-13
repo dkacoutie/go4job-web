@@ -20,7 +20,7 @@ import { XMLParser } from "https://esm.sh/fast-xml-parser@4.5.3";
 
 type Json = Record<string, unknown>;
 
-const BUILD_ID = "2026-02-10_rss_generic_no_domparser_v2";
+const BUILD_ID = "2026-02-13_rss_generic_clean_html_v3";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -57,6 +57,65 @@ function requireCronAuth(req: Request): Response | null {
 function clampInt(n: number, min: number, max: number) {
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+function decodeHtmlEntities(input: string): string {
+  let s = String(input ?? "");
+
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+
+  s = s.replace(/&([a-zA-Z]+);/g, (m, name) => {
+    const k = String(name || "").toLowerCase();
+    return k in named ? named[k] : m;
+  });
+
+  s = s.replace(/&#(\d+);/g, (m, num) => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (m, hex) => {
+    const n = parseInt(hex, 16);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  return s;
+}
+
+function stripHtml(html: string): string {
+  const withBreaks = String(html ?? "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*p\s*>/gi, "\n")
+    .replace(/<\/\s*div\s*>/gi, "\n")
+    .replace(/<\/\s*section\s*>/gi, "\n")
+    .replace(/<\/\s*h[1-6]\s*>/gi, "\n")
+    .replace(/<\s*li\s*>/gi, "\n- ")
+    .replace(/<\/\s*li\s*>/gi, "\n")
+    .replace(/<\/\s*ul\s*>/gi, "\n")
+    .replace(/<\/\s*ol\s*>/gi, "\n")
+    .replace(/<\/\s*tr\s*>/gi, "\n")
+    .replace(/<\/\s*td\s*>/gi, " | ")
+    .replace(/<\/\s*th\s*>/gi, " | ");
+
+  return decodeHtmlEntities(withBreaks)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
 }
 
 function baseHeaders(serviceKey: string) {
@@ -488,6 +547,9 @@ Deno.serve(async (req) => {
           const digest = await sha256Base64Url(base);
           const external_id = `rss:${source_code}:${digest.slice(0, 20)}`;
 
+          const descriptionHtml = it.description ? String(it.description) : null;
+          const descriptionText = descriptionHtml ? stripHtml(descriptionHtml) : null;
+
           return {
             job_source_id,
             external_id,
@@ -506,8 +568,8 @@ Deno.serve(async (req) => {
             salary_currency: null,
             salary_period: null,
 
-            description_html: null,
-            description_text: null,
+            description_html: descriptionHtml,
+            description_text: descriptionText,
 
             apply_url: it.link,
             source_url: it.link,
@@ -530,7 +592,7 @@ Deno.serve(async (req) => {
               feed_url,
               guid: it.guid,
               original_link: it.link,
-              description: it.description ? it.description.slice(0, 2000) : null,
+              description: descriptionHtml ? descriptionHtml.slice(0, 2000) : null,
             } satisfies Json,
           };
         }),

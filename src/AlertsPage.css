@@ -17,7 +17,7 @@
 .alerts-hero{
   border-radius: 22px;
   padding: 22px;
-  background: linear-gradient(135deg, #0b4cc2 0%, #0a3aa5 38%, #071f63 100%);
+  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 38%, #071f63 100%);
   color: #fff;
   box-shadow: var(--shadow-lg);
   position: relative;

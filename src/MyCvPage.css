@@ -81,11 +81,10 @@
 }
 
 .actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  justify-content: space-between;
   margin-top: 10px;
 }
 
@@ -94,13 +93,28 @@
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
+  min-width: 0;
 }
 
 .actions-right {
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .actions-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .actions-left,
+  .actions-right {
+    width: 100%;
+  }
+  .actions-right .btn {
+    width: 100%;
+  }
 }
 
 .muted {
@@ -133,6 +147,27 @@
   color: #fff;
 }
 
+/* Force visibility even if global .btn overrides */
+.mycv-shell .btn.btn-primary {
+  background: linear-gradient(135deg, #0b5cff 0%, #1446d4 100%);
+  border-color: rgba(11, 92, 255, 0.75);
+  color: #fff;
+  min-width: 180px;
+  height: 44px;
+  box-shadow: 0 12px 26px rgba(11, 92, 255, 0.22);
+}
+.mycv-shell .btn.btn-primary:hover {
+  box-shadow: 0 16px 34px rgba(11, 92, 255, 0.26);
+}
+.mycv-shell .btn.btn-secondary {
+  background: #fff;
+  border-color: #e1e6ef;
+  color: #111827;
+}
+.mycv-shell .btn.btn-secondary:hover {
+  border-color: #cfd7e6;
+}
+
 .btn-danger {
   background: #ff4d4d;
   border-color: #ff4d4d;
@@ -161,6 +196,7 @@
   font-size: 12px;
   font-weight: 600;
   color: #0b3fa8;
+  text-transform: lowercase;
 }
 
 .kv {
@@ -176,6 +212,72 @@
 .small {
   font-size: 12px;
   color: #6b7280;
+}
+
+.microcopy {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.skillGroups {
+  display: grid;
+  gap: 10px;
+}
+
+.skillGroupTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 6px;
+}
+
+.cardHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cardTag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0b3fa8;
+  background: #eef4ff;
+  border: 1px solid #d9e6ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.cvSections {
+  display: grid;
+  gap: 10px;
+}
+
+.cvSection {
+  border: 1px solid #e7edf7;
+  background: #f9fbff;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.cvSectionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 6px;
+}
+
+.cvSectionBody {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #111827;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .cvFormatted {

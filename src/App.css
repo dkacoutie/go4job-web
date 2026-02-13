@@ -3,11 +3,11 @@
    ========================= */
 
 :root{
-  --text: #0f172a;
-  --muted: rgba(15,23,42,0.62);
+  --text: rgba(15, 23, 42, 0.96);
+  --muted: rgba(15, 23, 42, 0.65);
 
-  --brand-600: #0b4cc2;
-  --brand-700: #0a3aa5;
+  --brand-600: #2563eb;
+  --brand-700: #1d4ed8;
 
   --container: 1120px;
   --gutter-x: 22px;
@@ -18,7 +18,7 @@
   --shadow-lg: 0 28px 70px rgba(2,6,23,.14);
 
   --hairline: 1px solid rgba(15,23,42,.10);
-  --ring: 0 0 0 4px rgba(0,82,204,0.12);
+  --ring: 0 0 0 4px rgba(37,99,235,0.18);
 }
 
 @media (max-width: 520px){
@@ -31,7 +31,7 @@ html, body{ height: 100%; }
 body{
   margin: 0;
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -43,13 +43,13 @@ a{ color: inherit; text-decoration: none; }
    Buttons (global .btn)
 ========================= */
 .btn{
-  height: 42px;
+  height: 40px;
   border-radius: 12px;
   padding: 0 14px;
   border: 1px solid rgba(15,23,42,0.12);
   background: #fff;
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 700;
   transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease, border-color 120ms ease;
   display: inline-flex;
   align-items: center;
@@ -67,21 +67,21 @@ a{ color: inherit; text-decoration: none; }
 }
 
 .btnPrimary{
-  background: linear-gradient(135deg, #0052cc 0%, #1d4ed8 100%);
+  background: linear-gradient(180deg, var(--brand-600), var(--brand-700));
   color: #fff;
-  border-color: rgba(0,82,204,0.65);
-  box-shadow: 0 16px 30px rgba(0,82,204,0.24);
+  border-color: rgba(37,99,235,0.45);
+  box-shadow: 0 12px 26px rgba(37,99,235,0.25);
 }
 .btnPrimary:hover{
-  box-shadow: 0 18px 36px rgba(0,82,204,0.28);
+  box-shadow: 0 16px 34px rgba(37,99,235,0.28);
 }
 
 .btnGhost{
-  background: rgba(255,255,255,0.74);
+  background: rgba(255,255,255,0.9);
   border-color: rgba(15,23,42,0.14);
-  box-shadow: 0 14px 34px rgba(2,6,23,0.07);
+  box-shadow: 0 10px 26px rgba(2,6,23,0.06);
 }
-.btnGhost:hover{ background: rgba(255,255,255,0.92); }
+.btnGhost:hover{ background: rgba(255,255,255,1); }
 
 /* Wide / pill helpers */
 .btnWide{ width: 100%; border-radius: 999px; }
@@ -103,7 +103,7 @@ a{ color: inherit; text-decoration: none; }
 ========================= */
 .input{
   height: 44px;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(15,23,42,.12);
   padding: 0 12px;
   outline: none;
@@ -113,8 +113,8 @@ a{ color: inherit; text-decoration: none; }
   box-shadow: 0 1px 0 rgba(255,255,255,.85) inset;
 }
 .input:focus{
-  border-color: rgba(0,82,204,.52);
-  box-shadow: 0 0 0 4px rgba(0,82,204,.11), 0 1px 0 rgba(255,255,255,.85) inset;
+  border-color: rgba(37,99,235,.52);
+  box-shadow: 0 0 0 4px rgba(37,99,235,.14), 0 1px 0 rgba(255,255,255,.85) inset;
 }
 
 /* Label helper */

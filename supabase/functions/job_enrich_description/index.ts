@@ -58,8 +58,40 @@ function nowMs() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
+function decodeHtmlEntities(input: string): string {
+  let s = String(input ?? "");
+
+  const named: Record<string, string> = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+
+  s = s.replace(/&([a-zA-Z]+);/g, (m, name) => {
+    const k = String(name || "").toLowerCase();
+    return k in named ? named[k] : m;
+  });
+
+  s = s.replace(/&#(\d+);/g, (m, num) => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (m, hex) => {
+    const n = parseInt(hex, 16);
+    if (!Number.isFinite(n)) return m;
+    try { return String.fromCodePoint(n); } catch { return m; }
+  });
+
+  return s;
+}
+
 function cleanText(input: string): string {
-  return (input ?? "")
+  return decodeHtmlEntities(input ?? "")
     .replace(/\u00a0/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")

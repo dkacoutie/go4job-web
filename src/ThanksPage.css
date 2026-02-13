@@ -1,0 +1,55 @@
+/* Thanks page - premium */
+
+.thanks-shell {
+  min-height: 70vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 0 44px;
+}
+
+.thanks-card {
+  width: min(720px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-sm);
+  padding: 22px;
+}
+
+.thanks-kicker {
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--brand-700);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.thanks-title {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.thanks-message {
+  margin: 0 0 16px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.thanks-meta {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+
+.thanks-actions {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

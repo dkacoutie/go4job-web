@@ -60,6 +60,7 @@ type JobRow = {
   experience_years_min?: number | null;
   experience_years_max?: number | null;
 };
+
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (err && typeof err === "object" && "message" in err) {
@@ -73,7 +74,6 @@ function toNumberOrNull(v: unknown) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : null;
 }
-
 
 function norm(s: string) {
   return (s ?? "").toLowerCase().trim();
@@ -514,9 +514,9 @@ export default function JobRadarFeedPage() {
         if (jobMax != null) ok = ok && cvExpValue <= jobMax + 2;
         expOk = ok;
         if (ok) {
-          if (jobMin != null) expReason = `ExpÃ©rience â‰¥ ${jobMin} ans`;
-          else if (jobMax != null) expReason = `ExpÃ©rience â‰¤ ${jobMax} ans`;
-          else expReason = `ExpÃ©rience ${cvExpValue} ans`;
+          if (jobMin != null) expReason = `Expérience ≥ ${jobMin} ans`;
+          else if (jobMax != null) expReason = `Expérience ≤ ${jobMax} ans`;
+          else expReason = `Expérience ${cvExpValue} ans`;
         }
       }
 
@@ -549,7 +549,7 @@ export default function JobRadarFeedPage() {
           kwCount,
           signalCount,
           expOk: scored.expOk,
-          why
+          why,
         };
       })
       .filter((x): x is MatchRow => Boolean(x))
@@ -608,54 +608,78 @@ export default function JobRadarFeedPage() {
     <div className="jr-shell">
       <main className="jr-main">
         <section className="jr-hero">
-          <h1>JobRadar</h1>
+          <div className="jr-heroTop">
+            <div>
+              <div className="jr-kicker">JobRadar</div>
+              <h1>Priorité aux meilleures opportunités</h1>
+              <p>Matching intelligent basé sur tes alertes et ton CV.</p>
+            </div>
 
-          <p>
-            Tes offres matchées à partir de tes alertes.
-            <span className="jr-pillHero">
-              {alerts.length} alerte{alerts.length > 1 ? "s" : ""} active{alerts.length > 1 ? "s" : ""}
-            </span>
-            <span className="jr-pillHero">
-              {displayed.length} offre{displayed.length > 1 ? "s" : ""}
-            </span>
-          </p>
+            <div className="jr-pillRow" aria-label="Statistiques">
+              <span className="jr-pillHero">
+                {alerts.length} alerte{alerts.length > 1 ? "s" : ""} active{alerts.length > 1 ? "s" : ""}
+              </span>
+              <span className="jr-pillHero">
+                {displayed.length} offre{displayed.length > 1 ? "s" : ""}
+              </span>
+              <span className="jr-pillHero jr-pillStrong">
+                {topCount} top match{topCount > 1 ? "s" : ""}
+              </span>
+            </div>
+          </div>
 
-          <div className="jr-searchRow" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <input
-              className="input"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filtrer (ex: data analyst, react, project manager...)"
-            />
+          <div className="jr-searchRow">
+            <div className="jr-searchInput">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M10.5 3a7.5 7.5 0 015.95 12.1l3.23 3.23a1 1 0 01-1.42 1.42l-3.23-3.23A7.5 7.5 0 1110.5 3zm0 2a5.5 5.5 0 100 11 5.5 5.5 0 000-11z"
+                  fill="currentColor"
+                />
+              </svg>
+              <input
+                className="input"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Filtrer (ex: data analyst, react, project manager...)"
+                aria-label="Filtrer les offres"
+              />
+              {q ? (
+                <button className="jr-clearBtn" type="button" onClick={() => setQ("")} aria-label="Effacer le filtre">
+                  ×
+                </button>
+              ) : null}
+            </div>
 
-            <div className="jr-modeToggle" style={{ display: "flex", gap: 8 }}>
+            <div className="jr-modeToggle" role="tablist" aria-label="Mode de matching">
               <button
-                className={matchMode === "strict" ? "btn btnPrimary" : "btn btnGhost"}
+                className={matchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => setMatchMode("strict")}
                 disabled={busy || topCount === 0}
                 title={topCount === 0 ? "Aucun Top match pour l’instant" : "Offres les plus pertinentes pour toi"}
+                aria-pressed={matchMode === "strict"}
               >
                 Top matchs ({topCount})
               </button>
 
               <button
-                className={matchMode === "large" ? "btn btnPrimary" : "btn btnGhost"}
+                className={matchMode === "large" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => setMatchMode("large")}
                 disabled={busy}
                 title="Afficher plus d'opportunités"
+                aria-pressed={matchMode === "large"}
               >
                 Explorer ({exploreCount})
               </button>
             </div>
 
-            <button className="btn btnGhost" onClick={load} disabled={busy} type="button">
-              {busy ? "Chargement…" : "Rafraîchir"}
+            <button className="jrBtn jrBtnOutline" onClick={load} disabled={busy} type="button">
+              {busy ? "Chargement..." : "Rafraîchir"}
             </button>
           </div>
 
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.85 }}>
+          <div className="jr-subline">
             {matchMode === "strict"
               ? `Top matchs : priorité à la pertinence (≥ ${STRICT_MIN_PERCENT}%).`
               : "Explorer : plus d’offres, critères moins stricts."}
@@ -665,12 +689,28 @@ export default function JobRadarFeedPage() {
         {errorMsg && <div className="jr-error">Erreur : {errorMsg}</div>}
 
         {busy ? (
-          <div className="jr-empty">Chargement des offres…</div>
+          <div className="jr-skeletonWrap" aria-live="polite">
+            <div className="jr-skeletonRow">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div className="jr-skeletonCard" key={`sk_${i}`}>
+                  <div className="sk-title" />
+                  <div className="sk-line" />
+                  <div className="sk-line short" />
+                  <div className="sk-chipRow">
+                    <span />
+                    <span />
+                  </div>
+                  <div className="sk-btn" />
+                </div>
+              ))}
+            </div>
+            <div className="sr-only">Chargement des offres...</div>
+          </div>
         ) : alerts.length === 0 ? (
           <div className="jr-empty">
             Tu n’as pas encore d’alertes actives. Crée une alerte pour activer le matching.
             <div style={{ marginTop: 10 }}>
-              <button className="btn btnPrimary" onClick={() => navigate("/jobradar/alerts")} type="button">
+              <button className="jrBtn jrBtnPrimary" onClick={() => navigate("/jobradar/alerts")} type="button">
                 Créer une alerte
               </button>
             </div>
@@ -679,11 +719,11 @@ export default function JobRadarFeedPage() {
           <div className="jr-empty">
             Aucune offre à afficher pour le moment.
             <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button className="btn btnGhost" type="button" onClick={() => navigate("/jobradar/alerts")}>
+              <button className="jrBtn jrBtnGhost" type="button" onClick={() => navigate("/jobradar/alerts")}>
                 Ajuster mes alertes
               </button>
-              <button className="btn btnGhost" type="button" onClick={() => navigate("/jobradar/applications")}>
-                Voir Mes candidatures →
+              <button className="jrBtn jrBtnGhost" type="button" onClick={() => navigate("/jobradar/applications")}>
+                Voir mes candidatures →
               </button>
             </div>
           </div>
@@ -713,7 +753,7 @@ export default function JobRadarFeedPage() {
                       <span className="jr-score">{signalCount ? `${p}% pertinent` : "—"}</span>
                     </div>
                     {signalCount && (why.alert.length > 0 || why.cv.length > 0) ? (
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
+                      <div className="jr-why">
                         {why.alert.length > 0 && (
                           <span>
                             Alertes : {why.alert.join(" · ")}
@@ -735,13 +775,13 @@ export default function JobRadarFeedPage() {
                     </div>
 
                     <div className="jr-chips">
-                      {job.remote_type && <span className="chip">{job.remote_type}</span>}
+                      {job.remote_type && <span className="chip chipStrong">{job.remote_type}</span>}
                       {job.country && <span className="chip">{job.country}</span>}
                     </div>
 
                     <div className="jr-cardActions">
                       <button
-                        className="jrBtn jrBtnPrimary"
+                        className="jr-ctaSm"
                         onClick={(e) => {
                           e.stopPropagation();
                           addToApplications(job.id);
@@ -750,7 +790,7 @@ export default function JobRadarFeedPage() {
                         title="Ajouter dans Mes candidatures (À postuler)"
                         type="button"
                       >
-                        {isAdding ? "Ajout…" : "Ajouter"}
+                        {isAdding ? "Ajout..." : "Ajouter"}
                       </button>
 
                       <div className="jr-footerActions">
@@ -766,7 +806,7 @@ export default function JobRadarFeedPage() {
                         </button>
 
                         <button
-                          className="jrBtn jrBtnDangerOutline"
+                          className="jr-dangerOutline"
                           onClick={(e) => {
                             e.stopPropagation();
                             dismissJob(job.id);
@@ -775,7 +815,7 @@ export default function JobRadarFeedPage() {
                           title="Masquer cette offre du feed"
                           type="button"
                         >
-                          {isDismissing ? "…" : "Décliner"}
+                          {isDismissing ? "..." : "Décliner"}
                         </button>
                       </div>
                     </div>
@@ -786,8 +826,8 @@ export default function JobRadarFeedPage() {
 
             <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
               {hasMore ? (
-                <button className="btn btnGhost" onClick={loadMore} disabled={loadingMore} type="button">
-                  {loadingMore ? "Chargement…" : "Charger plus"}
+                <button className="jrBtn jrBtnGhost" onClick={loadMore} disabled={loadingMore} type="button">
+                  {loadingMore ? "Chargement..." : "Charger plus"}
                 </button>
               ) : (
                 <span style={{ opacity: 0.7, fontSize: 13 }}>Fin de la liste</span>
@@ -799,11 +839,3 @@ export default function JobRadarFeedPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
