@@ -42,7 +42,9 @@ async function isAdminUser(supabaseAdmin: any, userId: string): Promise<boolean>
       .eq("user_id", userId)
       .maybeSingle();
     if (!profErr && prof?.is_admin === true) return true;
-  } catch {}
+  } catch {
+    // ignore
+  }
 
   // fallback admin_users
   try {
@@ -52,7 +54,9 @@ async function isAdminUser(supabaseAdmin: any, userId: string): Promise<boolean>
       .eq("user_id", userId)
       .maybeSingle();
     if (!adminErr && adminRow?.user_id) return true;
-  } catch {}
+  } catch {
+    // ignore
+  }
 
   return false;
 }

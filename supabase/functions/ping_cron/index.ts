@@ -1,6 +1,6 @@
 // supabase/functions/ping_cron/index.ts
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async () => {
   try {
     const body = JSON.stringify({ ok: true, ts: new Date().toISOString() });
 

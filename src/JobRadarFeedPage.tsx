@@ -690,7 +690,7 @@ export default function JobRadarFeedPage() {
         ) : (
           <>
             <div className="jr-grid">
-              {displayed.map(({ job, p, kwCount, signalCount, why }) => {
+              {displayed.map(({ job, p, signalCount, why }) => {
                 const isAdding = addingJobId === job.id;
                 const isDismissing = dismissingJobId === job.id;
 
@@ -799,6 +799,7 @@ export default function JobRadarFeedPage() {
     </div>
   );
 }
+
 
 
 

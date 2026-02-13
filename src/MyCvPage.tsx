@@ -121,7 +121,7 @@ export default function MyCvPage() {
       } | null = null;
 
       if (cvFile) {
-        const safeName = cvFile.name.replace(/[^\w.\-]/g, "_");
+        const safeName = cvFile.name.replace(/[^\\w.-]/g, "_");
         const path = `${userId}/${Date.now()}_${safeName}`;
         const { error: upErr } = await supabase
           .storage
@@ -431,5 +431,6 @@ export default function MyCvPage() {
     </div>
   );
 }
+
 
 
