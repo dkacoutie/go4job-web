@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 type SkillsByCategory = {
   hard: string[];
@@ -6,6 +7,12 @@ type SkillsByCategory = {
   tools: string[];
   languages: string[];
   other: string[];
+};
+
+type CvExtractRequest = {
+  cv_text?: unknown;
+  file_path?: unknown;
+  bucket?: unknown;
 };
 
 // ---------- Skills extraction (intelligent + pertinent) ----------
@@ -367,6 +374,82 @@ function flattenSkills(byCat: SkillsByCategory): string[] {
   return [...byCat.hard, ...byCat.tools, ...byCat.soft, ...byCat.languages, ...byCat.other].slice(0, 120);
 }
 
+function titleizeSection(key: string) {
+  const cleaned = key
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "Section";
+  return cleaned
+    .split(" ")
+    .map((w) => (w.length <= 2 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()))
+    .join(" ");
+}
+
+function buildFormattedText(sections: Record<string, string>, raw: string) {
+  const keys = Object.keys(sections || {});
+  if (!keys.length) return raw;
+
+  const out: string[] = [];
+  for (const k of keys) {
+    const title = k === "body" ? "CV" : titleizeSection(k);
+    const content = (sections[k] ?? "").trim();
+    if (!content) continue;
+    out.push(`## ${title}\n${content}`);
+  }
+  return out.join("\n\n").trim() || raw;
+}
+
+function isPdfBytes(bytes: Uint8Array) {
+  return bytes.length >= 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+}
+
+function extractTextFromBinary(bytes: Uint8Array) {
+  const decoded = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  const matches = decoded.match(/[A-Za-z0-9À-ÖØ-öø-ÿ][A-Za-z0-9À-ÖØ-öø-ÿ\s@.,;:+()'"-]{20,}/g);
+  if (matches && matches.length) return matches.map((m) => m.trim()).join("\n");
+  return decoded;
+}
+
+function getSupabaseClient(req: Request) {
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
+
+  if (!url) return null;
+
+  if (authHeader && anon) {
+    return createClient(url, anon, {
+      auth: { persistSession: false },
+      global: { headers: { Authorization: authHeader } },
+    });
+  }
+
+  if (service) {
+    return createClient(url, service, { auth: { persistSession: false } });
+  }
+
+  return null;
+}
+
+async function loadTextFromStorage(req: Request, filePath: string, bucket = "cvs") {
+  const sb = getSupabaseClient(req);
+  if (!sb) return { ok: false as const, error: "supabase_client_unavailable" };
+
+  const { data, error } = await sb.storage.from(bucket).download(filePath);
+  if (error || !data) return { ok: false as const, error: error?.message ?? "download_failed" };
+
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  const text = extractTextFromBinary(bytes);
+
+  if (isPdfBytes(bytes) && (!text || text.length < 30)) {
+    return { ok: false as const, error: "pdf_text_extraction_failed" };
+  }
+
+  return { ok: true as const, text };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 204, headers: corsHeaders });
@@ -376,14 +459,27 @@ serve(async (req) => {
     return jsonResponse(405, { ok: false, error: "method_not_allowed" });
   }
 
-  let body: { cv_text?: unknown } | null = null;
+  let body: CvExtractRequest | null = null;
   try {
-    body = await req.json();
+    body = (await req.json()) as CvExtractRequest;
   } catch {
     return jsonResponse(400, { ok: false, error: "invalid_json_body" });
   }
 
-  const rawCv = typeof body?.cv_text === "string" ? body.cv_text : "";
+  let rawCv = typeof body?.cv_text === "string" ? body.cv_text : "";
+  const filePath = typeof body?.file_path === "string" ? body.file_path.trim() : "";
+  const bucket = typeof body?.bucket === "string" ? body.bucket.trim() : "cvs";
+
+  if (!rawCv || rawCv.trim().length < 30) {
+    if (filePath) {
+      const fromStorage = await loadTextFromStorage(req, filePath, bucket);
+      if (!fromStorage.ok) {
+        return jsonResponse(400, { ok: false, error: fromStorage.error || "storage_read_failed" });
+      }
+      rawCv = fromStorage.text;
+    }
+  }
+
   if (!rawCv || rawCv.trim().length < 30) {
     return jsonResponse(400, { ok: false, error: "cv_text_missing_or_too_short" });
   }
@@ -395,6 +491,7 @@ serve(async (req) => {
   const skills_by_category = extractSkillsByCategory(sections, cleaned);
   const skills = flattenSkills(skills_by_category);
   const contact = detectContact(cleaned);
+  const formatted_text = buildFormattedText(sections, cleaned);
 
   const stats = {
     chars: cleaned.length,
@@ -408,6 +505,8 @@ serve(async (req) => {
     skills_by_category,
     sections,
     stats,
+    formatted_text,
+    raw_text: cleaned,
     truncated,
     match: { keyword_score: null },
   });

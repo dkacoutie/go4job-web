@@ -12,6 +12,8 @@ type CvExtractResponse = {
   ok: boolean;
   contact?: { email?: string | null; phone?: string | null };
   skills?: string[];
+  formatted_text?: string;
+  raw_text?: string;
   skills_by_category?: {
     hard?: string[];
     soft?: string[];
@@ -81,6 +83,8 @@ export default function MyCvPage() {
         ok: true,
         contact: (data as any).contact ?? {},
         skills: (data as any).skills ?? [],
+        formatted_text: (data as any).cv_json?.formatted_text ?? undefined,
+        raw_text: (data as any).cv_text ?? "",
         sections: (data as any).cv_json?.sections ?? undefined,
         stats: (data as any).cv_json?.stats ?? undefined
       });
@@ -124,7 +128,7 @@ export default function MyCvPage() {
       }
 
       const { data, error } = await supabase.functions.invoke("cv_extract", {
-        body: { cv_text: text }
+        body: { cv_text: text, file_path: uploaded?.path ?? null }
       });
 
       if (error) throw error;
@@ -136,7 +140,8 @@ export default function MyCvPage() {
       const contact = parsed?.contact ?? {};
       const cvJson = {
         sections: parsed?.sections ?? {},
-        stats: parsed?.stats ?? {}
+        stats: parsed?.stats ?? {},
+        formatted_text: parsed?.formatted_text ?? null
       };
 
       const { data: existing, error: exErr } = await supabase
@@ -386,6 +391,16 @@ export default function MyCvPage() {
             </div>
           </div>
 
+          <div className="card">
+            <h3>CV formaté</h3>
+            <div className="cvFormatted">
+              {result?.formatted_text
+                ? result.formatted_text
+                : (cvText ? cvText : "—")}
+            </div>
+          </div>
+
+
           {/* Option pro : stats détectées */}
           <div className="card">
             <h3>Stats</h3>
@@ -404,3 +419,5 @@ export default function MyCvPage() {
     </div>
   );
 }
+
+
