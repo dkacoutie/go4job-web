@@ -9,6 +9,34 @@ type AuthLocationState = {
   from?: string;
 };
 
+function GoogleIcon() {
+  return (
+    <svg
+      className="googleIcon"
+      viewBox="0 0 533.5 544.3"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="#4285F4"
+        d="M533.5 278.4c0-17.4-1.5-34.1-4.3-50.4H272v95.4h146.9c-6.3 34-25 62.7-53.4 82v68h86.4c50.6-46.6 81.6-115.3 81.6-195z"
+      />
+      <path
+        fill="#34A853"
+        d="M272 544.3c72.6 0 133.6-24.1 178.2-65.7l-86.4-68c-24 16.1-54.7 25.6-91.8 25.6-70.7 0-130.6-47.7-152-111.4H32.7v69.8C77.1 479.2 168.3 544.3 272 544.3z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M120 324.8c-10.9-32.5-10.9-67.8 0-100.3V154.7H32.7c-37.4 74.7-37.4 163.9 0 238.6l87.3-68.5z"
+      />
+      <path
+        fill="#EA4335"
+        d="M272 107.7c39.5-.6 77.3 14 106.3 40.9l79.2-79.2C413.6 24.9 343.5-1.5 272 0 168.3 0 77.1 65.1 32.7 154.7L120 224.5C141.4 160.8 201.3 113.1 272 107.7z"
+      />
+    </svg>
+  );
+}
+
 const REDIRECT_STORAGE_KEY = "go4job_auth_redirect_to";
 
 function isSafeInternalPath(path: unknown): path is string {
@@ -198,9 +226,7 @@ export default function AuthPage() {
             }}
           >
             <button className="btn btnSecondary wFull btnGoogle" type="button" onClick={handleGoogle}>
-              <span className="googleIcon" aria-hidden="true">
-                G
-              </span>
+              <GoogleIcon />
               Continuer avec Google
             </button>
 
