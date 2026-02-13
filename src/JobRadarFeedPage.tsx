@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
 import { supabase } from "./lib/supabaseClient";
@@ -247,7 +247,7 @@ export default function JobRadarFeedPage() {
     return Array.from(map.values());
   }
 
-  async function fetchJobsRange(from: number, to: number) {
+  const fetchJobsRange = useCallback(async (from: number, to: number) => {
     const { data, error } = await supabase
       .from("jobs")
       .select(
@@ -281,9 +281,9 @@ export default function JobRadarFeedPage() {
 
     if (error) throw error;
     return (data ?? []) as JobRow[];
-  }
+  }, []);
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!userId) return;
 
     setBusy(true);
@@ -359,7 +359,7 @@ export default function JobRadarFeedPage() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [fetchJobsRange, userId]);
 
   async function loadMore() {
     if (!userId) return;
@@ -386,7 +386,7 @@ export default function JobRadarFeedPage() {
 
   useEffect(() => {
     if (!loading && session && userId) load();
-  }, [loading, session, userId]);
+  }, [loading, session, userId, load]);
 
   async function addToApplications(jobId: string) {
     if (!userId) {
@@ -492,8 +492,8 @@ export default function JobRadarFeedPage() {
         if (jobMax != null) ok = ok && cvExpValue <= jobMax + 2;
         expOk = ok;
         if (ok) {
-          if (jobMin != null) expReason = `Expérience ≥ ${jobMin} ans`;
-          else if (jobMax != null) expReason = `Expérience ≤ ${jobMax} ans`;
+          if (jobMin != null) expReason = `Expérience >= ${jobMin} ans`;
+          else if (jobMax != null) expReason = `Expérience <= ${jobMax} ans`;
           else expReason = `Expérience ${cvExpValue} ans`;
         }
       }
@@ -626,7 +626,7 @@ export default function JobRadarFeedPage() {
                 type="button"
                 onClick={() => setMatchMode("strict")}
                 disabled={busy || topCount === 0}
-                title={topCount === 0 ? "Aucun Top match pour l’instant" : "Offres les plus pertinentes pour toi"}
+                title={topCount === 0 ? "Aucun Top match pour l'instant" : "Offres les plus pertinentes pour toi"}
                 aria-pressed={matchMode === "strict"}
               >
                 Top matchs ({topCount})
@@ -651,12 +651,19 @@ export default function JobRadarFeedPage() {
 
           <div className="jr-subline">
             {matchMode === "strict"
-              ? `Top matchs : priorité à la pertinence (≥ ${STRICT_MIN_PERCENT}%).`
-              : "Explorer : plus d’offres, critères moins stricts."}
+              ? `Top matchs : priorité à la pertinence (>= ${STRICT_MIN_PERCENT}%).`
+              : "Explorer : plus d'offres, critères moins stricts."}
           </div>
         </section>
 
-        {errorMsg && <div className="jr-error">Erreur : {errorMsg}</div>}
+        {errorMsg && (
+          <div className="jr-error">
+            <div className="jr-errorText">Erreur : {errorMsg}</div>
+            <button className="jrBtn jrBtnGhost" onClick={load} type="button">
+              Réessayer
+            </button>
+          </div>
+        )}
 
         {busy ? (
           <div className="jr-skeletonWrap" aria-live="polite">
@@ -678,8 +685,11 @@ export default function JobRadarFeedPage() {
           </div>
         ) : alerts.length === 0 ? (
           <div className="jr-empty">
-            Tu n’as pas encore d’alertes actives. Crée une alerte pour activer le matching.
-            <div style={{ marginTop: 10 }}>
+            <div className="jr-emptyTitle">Aucune alerte active</div>
+            <div className="jr-emptySub">
+              Crée une alerte pour activer le matching et recevoir des offres pertinentes.
+            </div>
+            <div className="jr-emptyActions">
               <button className="jrBtn jrBtnPrimary" onClick={() => navigate("/jobradar/alerts")} type="button">
                 Créer une alerte
               </button>
@@ -687,8 +697,11 @@ export default function JobRadarFeedPage() {
           </div>
         ) : displayed.length === 0 ? (
           <div className="jr-empty">
-            Aucune offre à afficher pour le moment.
-            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="jr-emptyTitle">Aucune offre pour le moment</div>
+            <div className="jr-emptySub">
+              Essaie d'élargir tes critères ou d'ajuster tes alertes.
+            </div>
+            <div className="jr-emptyActions">
               <button className="jrBtn jrBtnGhost" type="button" onClick={() => navigate("/jobradar/alerts")}>
                 Ajuster mes alertes
               </button>
@@ -703,6 +716,8 @@ export default function JobRadarFeedPage() {
               {displayed.map(({ job, p, signalCount, why }) => {
                 const isAdding = addingJobId === job.id;
                 const isDismissing = dismissingJobId === job.id;
+                const scoreClass =
+                  p >= 80 ? "jr-score jr-scoreStrong" : p >= 60 ? "jr-score jr-scoreMid" : "jr-score";
 
                 return (
                   <div
@@ -720,33 +735,37 @@ export default function JobRadarFeedPage() {
                   >
                     <div className="jr-cardTop">
                       <div className="jr-title">{job.title ?? "—"}</div>
-                      <span className="jr-score">{signalCount ? `${p}% pertinent` : "—"}</span>
+                      <span className={scoreClass}>{signalCount ? `${p}% pertinent` : "—"}</span>
                     </div>
+                    <div className="jr-meta">
+                      <span className="jr-company">{job.company_name ?? "—"}</span>
+                      <span className="jr-metaSep">•</span>
+                      <span className="jr-location">{job.location ?? job.country ?? "—"}</span>
+                    </div>
+
                     {signalCount && (why.alert.length > 0 || why.cv.length > 0) ? (
                       <div className="jr-why">
                         {why.alert.length > 0 && (
-                          <span>
-                            Alertes : {why.alert.join(" · ")}
+                          <span className="jr-whyTag">
+                            Alertes: {why.alert.join(" · ")}
                             {why.restAlert > 0 ? ` (+${why.restAlert})` : ""}
                           </span>
                         )}
                         {why.cv.length > 0 && (
-                          <span>
-                            {why.alert.length > 0 ? " · " : ""}
-                            CV : {why.cv.join(" · ")}
+                          <span className="jr-whyTag">
+                            CV: {why.cv.join(" · ")}
                             {why.restCv > 0 ? ` (+${why.restCv})` : ""}
                           </span>
                         )}
                       </div>
                     ) : null}
 
-                    <div className="jr-meta">
-                      {(job.company_name ?? "—") + " · " + (job.location ?? job.country ?? "—")}
-                    </div>
-
                     <div className="jr-chips">
                       {job.remote_type && <span className="chip chipStrong">{job.remote_type}</span>}
                       {job.country && <span className="chip">{job.country}</span>}
+                      {job.experience_years_min != null && (
+                        <span className="chip chipSoft">Exp. {job.experience_years_min}+ ans</span>
+                      )}
                     </div>
 
                     <div className="jr-cardActions">
@@ -769,11 +788,11 @@ export default function JobRadarFeedPage() {
                           onClick={(e) => {
                             e.stopPropagation();
                             openJob(job.id);
-                          }}
-                          type="button"
-                        >
-                          Détail →
-                        </button>
+                        }}
+                        type="button"
+                      >
+                        Détail →
+                      </button>
 
                         <button
                           className="jr-dangerOutline"
