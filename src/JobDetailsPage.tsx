@@ -19,6 +19,7 @@ type JobRow = {
 
   description_text?: string | null;
   description_html?: string | null;
+  job_json?: Record<string, unknown> | null;
 
   sort_at?: string | null;
   published_at?: string | null;
@@ -56,15 +57,15 @@ function isUuid(v: unknown): v is string {
 function statusLabel(s: ApplicationStatus) {
   switch (s) {
     case "saved":
-      return "À postuler";
+      return "A postuler";
     case "queued":
       return "En file";
     case "in_progress":
       return "En cours";
     case "submitted":
-      return "Envoyée";
+      return "Envoyee";
     case "failed":
-      return "Échouée";
+      return "Echouee";
     default:
       return s;
   }
@@ -100,24 +101,21 @@ function firstDate(job: JobRow) {
 }
 
 /**
- * Sanitizer côté navigateur (mieux que regex) :
- * - supprime script/style/iframe/object/embed/link/meta
- * - supprime attributs on*
- * - supprime href/src dangereux (javascript:, data:)
+ * Browser sanitizer:
+ * - remove script/style/iframe/object/embed/link/meta
+ * - remove on* attributes
+ * - remove href/src dangerous schemes (javascript:, data:)
  */
 function sanitizeHtmlBasic(html: string): string {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html ?? "", "text/html");
 
-    // remove dangerous tags
     const badSelectors = "script,style,iframe,object,embed,link,meta";
     doc.querySelectorAll(badSelectors).forEach((n) => n.remove());
 
-    // scrub attributes
     const all = doc.body.querySelectorAll<HTMLElement>("*");
     all.forEach((el) => {
-      // remove on* handlers
       [...el.attributes].forEach((attr) => {
         const name = attr.name.toLowerCase();
         const value = (attr.value ?? "").trim().toLowerCase();
@@ -127,17 +125,12 @@ function sanitizeHtmlBasic(html: string): string {
           return;
         }
 
-        // block javascript:/data: in href/src
         if ((name === "href" || name === "src") && (value.startsWith("javascript:") || value.startsWith("data:"))) {
           el.removeAttribute(attr.name);
           return;
         }
-
-        // optionnel: éviter style inline (si tu veux vraiment "propre", décommente)
-        // if (name === "style") el.removeAttribute(attr.name);
       });
 
-      // optionnel: sécuriser liens
       if (el.tagName.toLowerCase() === "a") {
         el.setAttribute("rel", "noopener noreferrer");
         el.setAttribute("target", "_blank");
@@ -146,7 +139,6 @@ function sanitizeHtmlBasic(html: string): string {
 
     return doc.body.innerHTML;
   } catch {
-    // fallback si DOMParser indisponible
     return (html ?? "")
       .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
       .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "");
@@ -168,6 +160,49 @@ function stripHtmlToText(html: string): string {
   }
 }
 
+function pickFirstString(value: unknown, keys: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function extractDescFromJobJson(jobJson?: Record<string, unknown> | null) {
+  if (!jobJson) return { html: "", text: "" };
+
+  const direct = pickFirstString(jobJson, [
+    "description_html",
+    "description",
+    "description_text",
+    "content",
+    "job_description",
+    "details",
+    "summary",
+    "body",
+  ]);
+
+  const nestedJob = (jobJson as Record<string, unknown>)?.job;
+  const nested = pickFirstString(nestedJob, [
+    "description_html",
+    "description",
+    "description_text",
+    "content",
+    "job_description",
+    "details",
+    "summary",
+    "body",
+  ]);
+
+  const raw = (direct ?? nested ?? "").trim();
+  if (!raw) return { html: "", text: "" };
+
+  const looksLikeHtml = /<[^>]+>/.test(raw);
+  return looksLikeHtml ? { html: raw, text: "" } : { html: "", text: raw };
+}
+
 export default function JobDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -181,7 +216,6 @@ export default function JobDetailsPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Redirect si pas connecté
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
   }, [loading, session, navigate]);
@@ -194,7 +228,7 @@ export default function JobDetailsPage() {
       setJob(null);
       setApp(null);
       setBusy(false);
-      setErrorMsg("ID d’offre invalide (UUID attendu).");
+      setErrorMsg("ID d'offre invalide (UUID attendu).");
       return;
     }
 
@@ -217,6 +251,7 @@ export default function JobDetailsPage() {
           source_url,
           description_text,
           description_html,
+          job_json,
           sort_at,
           published_at,
           posted_at,
@@ -271,9 +306,13 @@ export default function JobDetailsPage() {
   const desc = useMemo(() => {
     const text = (job?.description_text ?? "").trim();
     const htmlRaw = (job?.description_html ?? "").trim();
-    const html = htmlRaw ? sanitizeHtmlBasic(htmlRaw) : "";
-    const fallbackText = !text && html ? stripHtmlToText(html) : "";
-    return { text, html, fallbackText };
+    const jsonDesc = extractDescFromJobJson(job?.job_json ?? null);
+
+    const htmlSource = htmlRaw || jsonDesc.html || "";
+    const html = htmlSource ? sanitizeHtmlBasic(htmlSource) : "";
+    const textSource = text || jsonDesc.text || "";
+    const fallbackText = !textSource && html ? stripHtmlToText(html) : "";
+    return { text: textSource, html, fallbackText };
   }, [job]);
 
   async function postuler() {
@@ -285,7 +324,7 @@ export default function JobDetailsPage() {
     }
 
     if (!applyLink) {
-      setErrorMsg("Aucun lien de candidature (apply_url/source_url) n’est disponible pour cette offre.");
+      setErrorMsg("Aucun lien de candidature (apply_url/source_url) n'est disponible pour cette offre.");
       return;
     }
 
@@ -293,7 +332,6 @@ export default function JobDetailsPage() {
     setErrorMsg(null);
 
     try {
-      // ✅ passer en in_progress (upsert car unique (user_id, job_id))
       const { error } = await supabase
         .from("applications")
         .upsert(
@@ -366,7 +404,7 @@ export default function JobDetailsPage() {
         {errorMsg && <div className="jd-error">Erreur : {errorMsg}</div>}
 
         {busy ? (
-          <div className="jd-empty">Chargement de l’offre…</div>
+          <div className="jd-empty">Chargement de l'offre...</div>
         ) : !job ? (
           <div className="jd-empty">Offre introuvable.</div>
         ) : (
@@ -388,13 +426,13 @@ export default function JobDetailsPage() {
                     {statusLabel(app.status)}
                   </span>
                 )}
-                {date && <span className="chip jd-date">Publié : {date.toLocaleDateString()}</span>}
+                {date && <span className="chip jd-date">Publie : {date.toLocaleDateString()}</span>}
               </div>
             </div>
 
             <div className="jd-actions">
               <button className="btn btnPrimary" disabled={actionBusy} onClick={postuler}>
-                {actionBusy ? "Ouverture…" : "Postuler / Soumettre"}
+                {actionBusy ? "Ouverture..." : "Postuler / Soumettre"}
               </button>
 
               <div className="jd-actionsRow">
@@ -402,9 +440,9 @@ export default function JobDetailsPage() {
                   className="btn btnGhost"
                   disabled={actionBusy}
                   onClick={markSubmitted}
-                  title="Confirmer candidature envoyée"
+                  title="Confirmer candidature envoyee"
                 >
-                  Marquer envoyée
+                  Marquer envoyee
                 </button>
 
                 {app && (
@@ -430,7 +468,14 @@ export default function JobDetailsPage() {
                 ) : desc.fallbackText ? (
                   <div style={{ whiteSpace: "pre-wrap" }}>{desc.fallbackText}</div>
                 ) : (
-                  <span className="jd-muted">Aucune description disponible.</span>
+                  <div className="jd-noDesc">
+                    <span className="jd-muted">Description indisponible.</span>
+                    {applyLink && (
+                      <a className="btn btnPrimary jd-applyBtn" href={applyLink} target="_blank" rel="noreferrer">
+                        Voir l'offre
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

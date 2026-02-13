@@ -124,6 +124,19 @@
   white-space: pre-wrap;
 }
 
+.jd-noDesc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.jd-applyBtn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
 .jd-muted {
   color: var(--jd-muted);
 }
