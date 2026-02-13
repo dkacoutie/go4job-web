@@ -1,27 +1,33 @@
 :root {
-  /* Typo */
-  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  /* Typography */
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* Brand */
-  --brand-700: #003a99;
-  --brand-600: #0052cc; /* ton bleu */
-  --brand-500: #2f6fff;
+  --brand-800: #071f63;
+  --brand-700: #0a3aa5;
+  --brand-600: #0b4cc2;
+  --brand-500: #2563eb;
+  --brand-400: #60a5fa;
 
   /* Neutrals */
-  --bg: #f6f8fc;
+  --bg: #f5f7fb;
+  --bg-soft: #eef3ff;
   --panel: #ffffff;
   --text: #0b1220;
   --muted: #5b677a;
   --border: rgba(15, 23, 42, 0.10);
 
   /* UI */
+  --shadow-sm: 0 10px 24px rgba(2, 6, 23, 0.08);
   --shadow: 0 18px 45px rgba(2, 6, 23, 0.12);
-  --shadow-sm: 0 10px 24px rgba(2, 6, 23, 0.10);
+  --shadow-lg: 0 28px 70px rgba(2, 6, 23, 0.14);
   --radius: 16px;
   --radius-sm: 12px;
 
-  /* Sizing */
+  /* Layout */
   --container: 1200px;
+  --gutter-x: 22px;
+  --gutter-y: 16px;
 
   /* Focus ring */
   --ring: 0 0 0 4px rgba(0, 82, 204, 0.18);
@@ -46,123 +52,10 @@ button, input, select, textarea { font-family: inherit; }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: none; }
 
-/* Buttons (harmonisés) */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-
-  padding: 10px 14px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 1;
-
-  cursor: pointer;
-  transition: transform .08s ease, background .15s ease, border-color .15s ease, opacity .15s ease;
-}
-
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: .6; cursor: not-allowed; }
-
-.btnPrimary {
-  background: var(--brand-600);
-  color: #fff;
-}
-.btnPrimary:hover { background: var(--brand-700); }
-
-.btnGhost {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text);
-}
-.btnGhost:hover { background: rgba(15, 23, 42, 0.04); }
-
-/* Inputs */
-.input {
-  width: 100%;
-  padding: 11px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  outline: none;
-  font-size: 14px;
-}
-.input:focus { box-shadow: var(--ring); border-color: rgba(0, 82, 204, 0.35); }
-
-/* Chips */
-.chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.03);
-  color: var(--text);
-  font-weight: 700;
-  font-size: 12px;
-}
-
-/* Pills (stats) */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(0, 82, 204, 0.10);
-  color: var(--brand-700);
-  font-weight: 800;
-  font-size: 12px;
-}
-
-/* Simple utility */
+/* Utility */
 .container {
   width: min(var(--container), calc(100% - 32px));
   margin: 0 auto;
 }
 
-/* Optional: text selection */
-::selection {
-  background: rgba(0, 82, 204, 0.18);
-}
-/* =========================================================
-   SAFETY OVERRIDE — empêche les CTA primaires d'avoir un texte invisible
-   (si un autre CSS écrase la couleur)
-========================================================= */
-html body button.btn.btnPrimary,
-html body a.btn.btnPrimary,
-html body .btn.btnPrimary {
-  color: #fff !important;
-  -webkit-text-fill-color: #fff !important;
-}
-
-html body button.btn.btnPrimary:hover,
-html body a.btn.btnPrimary:hover,
-html body .btn.btnPrimary:hover {
-  color: #fff !important;
-  -webkit-text-fill-color: #fff !important;
-}
-/* =========================================================
-   HARD FIX — empêche .btnPrimary d'être écrasé par d'autres CSS
-   (bouton "vide" sauf au hover = background écrasé)
-========================================================= */
-html body .btn.btnPrimary,
-html body a.btn.btnPrimary,
-html body .btnPrimary.btn {
-  background: var(--brand-600) !important;
-  border-color: rgba(0, 82, 204, 0.35) !important;
-  color: #fff !important;
-  -webkit-text-fill-color: #fff !important;
-}
-
-html body .btn.btnPrimary:hover,
-html body a.btn.btnPrimary:hover,
-html body .btnPrimary.btn:hover {
-  background: var(--brand-700) !important;
-  color: #fff !important;
-  -webkit-text-fill-color: #fff !important;
-}
+::selection { background: rgba(0, 82, 204, 0.18); }

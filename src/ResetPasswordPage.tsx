@@ -20,7 +20,6 @@ export default function ResetPasswordPage() {
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
@@ -70,10 +69,8 @@ export default function ResetPasswordPage() {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
 
-      setInfoMsg("Mot de passe mis à jour ✅ Tu peux te reconnecter.");
-      // Optionnel mais propre : on déconnecte la session de recovery
+      setInfoMsg("Mot de passe mis à jour. Tu peux te reconnecter.");
       await supabase.auth.signOut();
-      // Puis on renvoie vers /auth
       navigate("/auth", { replace: true });
     } catch (e: unknown) {
       setErrorMsg(getErrorMessage(e));
@@ -106,7 +103,6 @@ export default function ResetPasswordPage() {
       </div>
 
       <div className="auth-main">
-        {/* LEFT / HERO (réutilise le style AuthPage) */}
         <section className="hero">
           <div className="hero-content">
             <h1 className="heroTitle">Réinitialisation</h1>
@@ -120,7 +116,6 @@ export default function ResetPasswordPage() {
           </div>
         </section>
 
-        {/* RIGHT / FORM */}
         <aside className="card">
           <h2>Nouveau mot de passe</h2>
           <p className="sub">Minimum 6 caractères.</p>
@@ -158,25 +153,12 @@ export default function ResetPasswordPage() {
               />
             </label>
 
-            {errorMsg && <div className="error">{errorMsg}</div>}
-            {infoMsg && <div className="foot">{infoMsg}</div>}
+            {errorMsg && <div className="alert">{errorMsg}</div>}
+            {infoMsg && <div className="alert success">{infoMsg}</div>}
 
-            <div className="authActions">
-              <button className="btn btnPrimary wFull" disabled={!canReset || busy || !session} type="submit">
-                {busy ? "Mise à jour..." : "Mettre à jour le mot de passe"}
-              </button>
-
-              <button
-                className="btn btnSecondary wFull"
-                type="button"
-                disabled={busy}
-                onClick={() => navigate("/auth", { replace: true })}
-              >
-                Retour
-              </button>
-            </div>
-
-            <div className="foot">Si le lien est expiré, redemande un nouveau lien.</div>
+            <button className="btn btnPrimary btnWide" type="submit" disabled={!canReset || busy}>
+              {busy ? "Mise à jour..." : "Mettre à jour"}
+            </button>
           </form>
         </aside>
       </div>

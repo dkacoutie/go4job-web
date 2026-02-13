@@ -15,15 +15,15 @@ export default function PrivacyPage() {
       <ul>
         <li>Informations de compte (nom, email, mot de passe)</li>
         <li>CV et informations professionnelles</li>
-        <li>Préférences de recherche d&apos;emploi</li>
+        <li>Préférences de recherche d'emploi</li>
         <li>Historique des candidatures</li>
       </ul>
 
       <h2>2. Utilisation des données</h2>
       <p>Vos données sont utilisées pour :</p>
       <ul>
-        <li>Fournir nos services de recherche d&apos;emploi</li>
-        <li>Personnaliser les recommandations d&apos;offres</li>
+        <li>Fournir nos services de recherche d'emploi</li>
+        <li>Personnaliser les recommandations d'offres</li>
         <li>Générer des CV et lettres de motivation adaptés</li>
         <li>Envoyer des candidatures en votre nom (avec votre consentement)</li>
         <li>Améliorer nos algorithmes et services</li>
@@ -51,7 +51,7 @@ export default function PrivacyPage() {
       <ul>
         <li>Accéder à vos données personnelles</li>
         <li>Rectifier des informations inexactes</li>
-        <li>Supprimer vos données (droit à l&apos;oubli)</li>
+        <li>Supprimer vos données (droit à l'oubli)</li>
         <li>Limiter le traitement de vos données</li>
         <li>Exporter vos données (portabilité)</li>
         <li>Vous opposer au traitement</li>
@@ -62,8 +62,8 @@ export default function PrivacyPage() {
       <ul>
         <li>Maintenir votre session de connexion</li>
         <li>Mémoriser vos préférences</li>
-        <li>Analyser l&apos;utilisation de la plateforme</li>
-        <li>Améliorer l&apos;expérience utilisateur</li>
+        <li>Analyser l'utilisation de la plateforme</li>
+        <li>Améliorer l'expérience utilisateur</li>
       </ul>
 
       <h2>7. Conservation des données</h2>
@@ -81,7 +81,10 @@ export default function PrivacyPage() {
       </p>
 
       <h2>9. Modifications</h2>
-      <p>Nous pouvons modifier cette politique de confidentialité. Les changements importants vous seront notifiés par email.</p>
+      <p>
+        Nous pouvons modifier cette politique de confidentialité. Les changements importants vous seront notifiés par
+        email.
+      </p>
 
       <h2>10. Contact</h2>
       <p>

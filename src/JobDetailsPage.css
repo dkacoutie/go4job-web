@@ -2,15 +2,15 @@
   --jd-max: 1120px;
   --jd-pad: 16px;
 
-  --jd-card: #ffffff;
-  --jd-border: rgba(15, 23, 42, 0.12);
-  --jd-text: rgba(15, 23, 42, 0.95);
-  --jd-muted: rgba(15, 23, 42, 0.70);
+  --jd-card: var(--panel);
+  --jd-border: var(--border);
+  --jd-text: var(--text);
+  --jd-muted: var(--muted);
   --jd-surface: rgba(15, 23, 42, 0.04);
 
-  --jd-radius: 14px;
-  --jd-shadow: 0 10px 25px rgba(2, 6, 23, 0.08);
-  --jd-shadow2: 0 12px 35px rgba(2, 6, 23, 0.12);
+  --jd-radius: var(--radius);
+  --jd-shadow: var(--shadow-sm);
+  --jd-shadow2: var(--shadow);
 }
 
 .jd-shell {

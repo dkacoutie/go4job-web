@@ -9,7 +9,7 @@ type Social = {
 };
 
 function SocialIcon({ name }: { name: Social["icon"] }) {
-  // SVG simples (monochromes) -> la couleur est gérée par CSS via currentColor
+  // SVG simples (monochromes) -> la couleur est geree par CSS via currentColor
   switch (name) {
     case "linkedin":
       return (
@@ -43,7 +43,7 @@ function SocialIcon({ name }: { name: Social["icon"] }) {
 export default function AppLayout() {
   const year = new Date().getFullYear();
 
-  // ✅ Remplace ces URLs par les tiens quand tu les auras (pour l’instant, placeholders)
+  // Remplace ces URLs par les tiens quand tu les auras (pour l'instant, placeholders)
   const socials: Social[] = [
     { label: "LinkedIn", href: "https://www.linkedin.com", icon: "linkedin" },
     { label: "Facebook", href: "https://www.facebook.com", icon: "facebook" },
@@ -65,7 +65,7 @@ export default function AppLayout() {
         </main>
       </div>
 
-      {/* Footer “site” */}
+      {/* Footer "site" */}
       <footer className="site-footer" aria-label="Pied de page">
         <div className="app-container">
           <div className="site-footer__grid">
@@ -73,10 +73,9 @@ export default function AppLayout() {
             <section className="site-footer__brand" aria-label="Go4Job">
               <div className="site-footer__logoText">Go4Job</div>
               <p className="site-footer__desc">
-                JobRadar — alertes et suivi de candidatures, pensés pour les talents d’Afrique. Simple, rapide, et fiable.
+                JobRadar — alertes et suivi de candidatures, pensés pour les talents d'Afrique. Simple, rapide, et fiable.
               </p>
 
-              {/* ✅ Icônes réseaux */}
               <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">
                 {socials.map((s) => (
                   <a
@@ -94,9 +93,9 @@ export default function AppLayout() {
               </div>
             </section>
 
-            {/* Fonctionnalités */}
-            <nav className="site-footer__col" aria-label="Fonctionnalités">
-              <div className="site-footer__title">Fonctionnalités</div>
+            {/* Fonctionnalites */}
+            <nav className="site-footer__col" aria-label="Fonctionnalites">
+              <div className="site-footer__title">Fonctionnalites</div>
               <ul className="site-footer__list">
                 <li>
                   <Link className="site-footer__link" to="/jobradar/feed">
@@ -140,8 +139,6 @@ export default function AppLayout() {
                     Mon profil
                   </Link>
                 </li>
-
-                {/* ✅ Fix: Support/Contact ouvre la page contact (pas mailto) */}
                 <li>
                   <Link className="site-footer__link" to="/contact">
                     Support / Contact
@@ -150,13 +147,13 @@ export default function AppLayout() {
               </ul>
             </nav>
 
-            {/* Légal */}
-            <nav className="site-footer__col" aria-label="Légal">
-              <div className="site-footer__title">Légal</div>
+            {/* Legal */}
+            <nav className="site-footer__col" aria-label="Legal">
+              <div className="site-footer__title">Legal</div>
               <ul className="site-footer__list">
                 <li>
                   <Link className="site-footer__link" to="/terms">
-                    Conditions d’utilisation
+                    Conditions d'utilisation
                   </Link>
                 </li>
                 <li>
@@ -173,14 +170,14 @@ export default function AppLayout() {
             </nav>
           </div>
 
-          <div className="site-footer__bottom" aria-label="Informations légales">
+          <div className="site-footer__bottom" aria-label="Informations legales">
             <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
 
             <div className="site-footer__copy">
               Contact: <strong>contact@go4job.org</strong> | <strong>+225 01 51 67 67 67</strong>
             </div>
 
-            <div className="site-footer__note">Plateforme de recherche d’emploi assistée par l’IA.</div>
+            <div className="site-footer__note">Plateforme de recherche d'emploi assistée par l'IA.</div>
           </div>
         </div>
       </footer>

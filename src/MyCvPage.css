@@ -26,7 +26,7 @@
 
 .mycv-subtitle {
   margin: 0 0 18px;
-  color: #5b6678;
+  color: var(--muted);
 }
 
 .mycv-grid {
@@ -37,22 +37,18 @@
 }
 
 @media (max-width: 920px) {
-  .mycv-grid {
-    grid-template-columns: 1fr;
-  }
+  .mycv-grid { grid-template-columns: 1fr; }
 }
 
 .card {
-  background: #fff;
-  border: 1px solid #e7e7e7;
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
-.card h3 {
-  margin: 0 0 10px;
-}
+.card h3 { margin: 0 0 10px; }
 
 .field {
   display: grid;
@@ -62,17 +58,17 @@
 
 .label {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--muted);
 }
 
 .input,
 .textarea {
   width: 100%;
-  border: 1px solid #d9dde5;
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
   outline: none;
-  background: #fff;
+  background: var(--panel);
 }
 
 .textarea {
@@ -83,19 +79,13 @@
 .actions-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
   margin-top: 10px;
 }
 
-.actions-left {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
+.actions-left,
 .actions-right {
   display: flex;
   gap: 10px;
@@ -103,48 +93,21 @@
   align-items: center;
 }
 
+.actions-right .btnPrimary {
+  min-width: 220px;
+}
+
 .muted {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 13px;
-}
-
-.btn {
-  border-radius: 999px;
-  padding: 10px 14px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: #f3f4f6;
-  border-color: #e5e7eb;
-  color: #111827;
-}
-
-.btn-primary {
-  background: #0b5cff;
-  border-color: #0b5cff;
-  color: #fff;
-}
-
-.btn-danger {
-  background: #ff4d4d;
-  border-color: #ff4d4d;
-  color: #fff;
 }
 
 .alert {
   margin-top: 12px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid #ffb3b3;
-  background: #ffecec;
+  border: 1px solid rgba(255, 60, 60, 0.28);
+  background: rgba(255, 60, 60, 0.08);
 }
 
 .pills {
@@ -156,24 +119,22 @@
 .pill {
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid #d9e6ff;
-  background: #f0f6ff;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.08);
   font-size: 12px;
   font-weight: 600;
-  color: #0b3fa8;
+  color: rgba(11, 76, 194, 0.98);
 }
 
 .kv {
   display: grid;
   gap: 6px;
-  color: #111827;
+  color: var(--text);
 }
 
-.kv b {
-  color: #374151;
-}
+.kv b { color: rgba(15, 23, 42, 0.82); }
 
 .small {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--muted);
 }

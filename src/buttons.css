@@ -1,6 +1,6 @@
 /* =========================================================
    Go4Job - Button safety overrides (global)
-   Objectif : empêcher un CSS global de rendre le texte invisible.
+   Goal: prevent any CSS from making button text invisible.
 ========================================================= */
 
 button,
@@ -10,20 +10,16 @@ button,
 .btnSecondary,
 .btnDanger,
 a.btn {
-  -webkit-text-fill-color: currentColor; /* utile si un style WebKit casse la couleur */
+  -webkit-text-fill-color: currentColor;
 }
 
-/* Assure que les boutons primaires gardent bien le texte blanc */
-.btnPrimary {
-  color: #fff !important;
-}
+/* Primary buttons must keep white text */
+.btnPrimary { color: #fff !important; }
 
-/* Assure que les boutons "danger" gardent le texte blanc */
-.btnDanger {
-  color: #fff !important;
-}
+/* Danger buttons must keep white text */
+.btnDanger { color: #fff !important; }
 
-/* Assure que les liens-boutons ne deviennent pas "transparent" */
+/* Links that look like buttons keep their color */
 a.btn,
 a.btn:visited {
   color: inherit;

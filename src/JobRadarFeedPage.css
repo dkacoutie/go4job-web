@@ -4,23 +4,23 @@
   --jr-max: 1120px;
   --jr-pad: 16px;
 
-  --jr-card: #ffffff;
-  --jr-border: rgba(15, 23, 42, 0.12);
+  --jr-card: var(--panel);
+  --jr-border: var(--border);
 
-  --jr-text: rgba(15, 23, 42, 0.95);
-  --jr-muted: rgba(15, 23, 42, 0.70);
+  --jr-text: var(--text);
+  --jr-muted: var(--muted);
 
-  --jr-radius: 14px;
-  --jr-shadow: 0 10px 25px rgba(2, 6, 23, 0.08);
-  --jr-shadow2: 0 12px 35px rgba(2, 6, 23, 0.12);
+  --jr-radius: var(--radius);
+  --jr-shadow: var(--shadow-sm);
+  --jr-shadow2: var(--shadow);
 
   --jr-focus: rgba(59, 130, 246, 0.25);
 
   --jr-surface: rgba(15, 23, 42, 0.04);
 
   /* premium blues */
-  --jr-blue1: #2563eb; /* blue-600 */
-  --jr-blue2: #1d4ed8; /* blue-700 */
+  --jr-blue1: var(--brand-500);
+  --jr-blue2: var(--brand-600);
   --jr-blueGlow: rgba(37, 99, 235, 0.25);
 
   /* danger */

@@ -192,7 +192,7 @@ export default function MyCvPage() {
     <div className="mycv-shell">
       <div className="mycv-top">
         <div className="mycv-title">
-          <button className="btn btn-secondary" type="button" onClick={() => navigate("/")}>
+          <button className="btn btnGhost" type="button" onClick={() => navigate("/")}>
             ← Retour
           </button>
           <h1>Mon CV</h1>
@@ -207,23 +207,17 @@ export default function MyCvPage() {
         {/* LEFT: editor */}
         <div className="card">
           <div className="field">
-            <span className="label">Nom/Label du CV</span>
-            <input
-              className="input"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="ex: CV FR, CV EN…"
-            />
+            <label className="label">Nom/Label du CV</label>
+            <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
 
           <div className="field">
-            <span className="label">CV (texte)</span>
+            <label className="label">CV (texte)</label>
             <textarea
               className="textarea"
               value={cvText}
               onChange={(e) => setCvText(e.target.value)}
-              rows={14}
-              placeholder="Colle ici le texte de ton CV..."
+              placeholder="Colle ton CV ici (texte brut)…"
             />
           </div>
 
@@ -233,73 +227,74 @@ export default function MyCvPage() {
                 {chars} caractères · {lines} lignes
               </span>
 
-              <button className="btn btn-secondary" type="button" onClick={loadActiveCv} disabled={busy}>
+              <button className="btn btnGhost" type="button" onClick={loadActiveCv} disabled={busy}>
                 Recharger
               </button>
 
-              <button className="btn btn-secondary" type="button" onClick={archiveActiveCv} disabled={busy}>
+              <button className="btn btnGhost" type="button" onClick={archiveActiveCv} disabled={busy}>
                 Archiver
               </button>
             </div>
 
             <div className="actions-right">
-              <button className="btn btn-primary" type="button" onClick={analyzeAndSave} disabled={busy}>
+              <button className="btn btnPrimary" type="button" onClick={analyzeAndSave} disabled={busy}>
                 {busy ? "Analyse..." : "Analyser & enregistrer"}
               </button>
             </div>
           </div>
 
-          {err && (
-            <div className="alert">
-              <b>Erreur :</b> {err}
-            </div>
-          )}
-
-          <div className="small" style={{ marginTop: 10 }}>
-            Astuce : colle ton CV en texte brut (Word/PDF → copier-coller).
-          </div>
+          {err && <div className="alert">{err}</div>}
+          <div className="small">Astuce : tu peux importer un PDF/TXT ou coller le texte.</div>
         </div>
 
         {/* RIGHT: results */}
-        <div style={{ display: "grid", gap: 16 }}>
-          <div className="card">
-            <h3>Contact détecté</h3>
-            <div className="kv">
-              <div>
-                <b>Email :</b> {result?.contact?.email ?? "—"}
-              </div>
-              <div>
-                <b>Téléphone :</b> {result?.contact?.phone ?? "—"}
-              </div>
+        <div className="card">
+          <h3>Contact détecté</h3>
+          <div className="kv">
+            <div>
+              <b>Email :</b> {result?.contact?.email ?? "—"}
+            </div>
+            <div>
+              <b>Téléphone :</b> {result?.contact?.phone ?? "—"}
             </div>
           </div>
 
-          <div className="card">
-            <h3>Compétences extraites</h3>
-            <div className="pills">
-              {(result?.skills ?? []).length === 0 ? (
-                <span className="muted">—</span>
-              ) : (
-                (result?.skills ?? []).map((s) => (
-                  <span key={s} className="pill">
-                    {s}
-                  </span>
-                ))
-              )}
-            </div>
+          <h3 style={{ marginTop: 16 }}>Compétences extraites</h3>
+          <div className="pills">
+            {(result?.skills ?? []).length === 0 && <span className="muted">—</span>}
+            {(result?.skills ?? []).map((s, i) => (
+              <span className="pill" key={`${s}-${i}`}>{s}</span>
+            ))}
           </div>
 
-          {/* Option pro : stats détectées */}
-          <div className="card">
-            <h3>Stats</h3>
-            <div className="kv">
-              <div>
-                <b>Texte collé :</b> {chars} caractères · {lines} lignes
-              </div>
-              <div>
-                <b>Analyse :</b>{" "}
-                {result?.stats?.chars ?? "—"} caractères · {result?.stats?.lines ?? "—"} lignes
-              </div>
+          <h3 style={{ marginTop: 16 }}>CV formaté</h3>
+          <div className="kv">
+            {result?.sections ? (
+              Object.entries(result.sections).map(([k, v]) => (
+                <div key={k}>
+                  <b>{k}</b>
+                  <div className="small" style={{ whiteSpace: "pre-wrap" }}>{v}</div>
+                </div>
+              ))
+            ) : (
+              <span className="muted">—</span>
+            )}
+          </div>
+
+          <div className="small" style={{ marginTop: 10 }}>
+            Ces infos servent à améliorer le score de matching.
+          </div>
+
+          <h3 style={{ marginTop: 16 }}>Stats</h3>
+          <div className="kv">
+            <div>
+              <b>Texte collé :</b> {result?.stats?.chars ?? chars} caractères · {result?.stats?.lines ?? lines} lignes
+            </div>
+            <div>
+              <b>Analyse :</b> {result?.stats?.chars ?? chars} caractères · {result?.stats?.lines ?? lines} lignes
+            </div>
+            <div>
+              <b>Expérience estimée :</b> —
             </div>
           </div>
         </div>

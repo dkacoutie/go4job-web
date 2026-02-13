@@ -2,15 +2,15 @@
   --app-max: 1120px;
   --app-pad: 16px;
 
-  --app-card: #ffffff;
-  --app-border: rgba(15, 23, 42, 0.12);
+  --app-card: var(--panel);
+  --app-border: var(--border);
 
-  --app-text: rgba(15, 23, 42, 0.95);
-  --app-muted: rgba(15, 23, 42, 0.70);
+  --app-text: var(--text);
+  --app-muted: var(--muted);
 
-  --app-radius: 14px;
-  --app-shadow: 0 10px 25px rgba(2, 6, 23, 0.08);
-  --app-shadow2: 0 12px 35px rgba(2, 6, 23, 0.12);
+  --app-radius: var(--radius);
+  --app-shadow: var(--shadow-sm);
+  --app-shadow2: var(--shadow);
 
   --app-surface: rgba(15, 23, 42, 0.04);
   --app-surface2: rgba(15, 23, 42, 0.06);
