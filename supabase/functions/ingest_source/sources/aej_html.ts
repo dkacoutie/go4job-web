@@ -99,6 +99,27 @@ function extractTitle(html: string, text: string): string {
   return lines.find((l) => l.length > 6 && l.length < 120) ?? "Offre d'emploi";
 }
 
+function extractTitleFromText(text: string): string {
+  const normalized = normalizeText(text).replace(/\s+/g, " ").trim();
+
+  let m = normalized.match(
+    /intitule du poste\s*:?\s*(.+?)(?:\s+reference|\s+lieu de travail|\s+nombre de poste|\s+date de cloture|\s+type de contrat|\s+sexe|\s+secteur d'activite|\s+entreprise|$)/i,
+  );
+  if (m && m[1]) return m[1].trim();
+
+  m = normalized.match(
+    /sexe\s+(?:masculin|feminin|masculin\s+feminin|feminin\s+masculin)\s+(.+?)(?:\s+type de contrat|\s+secteur d'activite|\s+date de cloture|\s+entreprise|$)/i,
+  );
+  if (m && m[1]) {
+    return m[1]
+      .replace(/\b(stage|stage de qualification|cdd|cdi|alternance|apprentissage|volontariat)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return "";
+}
+
 function extractDescription(text: string, title: string): string {
   const lower = text.toLowerCase();
   const tLower = title.toLowerCase();
@@ -140,25 +161,17 @@ function parseAejDetail(html: string, url: string): AejItem {
   ];
 
   const genericTitle = extractTitle(html, text);
-  const titledByField =
-    extractBetween(text, "Intitule du poste", labels) ||
+  const titledByField = extractBetween(text, "Intitule du poste", labels) ||
     extractBetween(text, "Poste", labels) ||
     extractBetween(text, "Metier", labels);
+  const titledByRegex = extractTitleFromText(text);
 
   let title = genericTitle;
   if (/details de l'emploi/i.test(genericTitle) && titledByField) {
     title = titledByField;
   }
-
-  if (/details de l'emploi/i.test(title)) {
-    const afterSexe = extractBetween(text, "Sexe", labels);
-    const cleaned = afterSexe
-      .replace(/\b(MASCULIN|FEMININ)\b/gi, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (cleaned.length >= 4 && cleaned.length <= 120) {
-      title = cleaned;
-    }
+  if (/details de l'emploi/i.test(title) && titledByRegex) {
+    title = titledByRegex;
   }
   const reference = extractBetween(text, "Reference", labels) || null;
   const location = extractBetween(text, "Lieu de travail", labels) || null;
