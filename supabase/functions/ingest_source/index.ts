@@ -246,7 +246,6 @@ Deno.serve(async (req) => {
           expires_at: null,
           updated_at: now,
           last_seen_at: now,
-          sort_at: now,
           is_active: true,
           is_expired: false,
           job_json: {
@@ -379,7 +378,6 @@ Deno.serve(async (req) => {
         scraped_at: now,
         updated_at: now,
         last_seen_at: now,
-        sort_at: publishedIso ?? now,
         is_active: true,
         is_expired: false,
         job_type: jobType,
