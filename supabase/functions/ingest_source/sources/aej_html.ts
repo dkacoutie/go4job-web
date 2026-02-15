@@ -70,19 +70,24 @@ function parseDateFr(raw: string): string | null {
   return iso.toISOString();
 }
 
+function normalizeText(raw: string): string {
+  return raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function extractBetween(text: string, label: string, labels: string[]) {
-  const lower = text.toLowerCase();
-  const l = label.toLowerCase();
+  const normalized = normalizeText(text);
+  const lower = normalized.toLowerCase();
+  const l = normalizeText(label).toLowerCase();
   const start = lower.indexOf(l);
   if (start === -1) return "";
   const after = start + l.length;
   let end = text.length;
   for (const next of labels) {
     if (next === label) continue;
-    const idx = lower.indexOf(next.toLowerCase(), after);
+    const idx = lower.indexOf(normalizeText(next).toLowerCase(), after);
     if (idx !== -1 && idx < end) end = idx;
   }
-  return text.slice(after, end).replace(/\s+/g, " ").trim();
+  return normalized.slice(after, end).replace(/\s+/g, " ").trim();
 }
 
 function extractTitle(html: string, text: string): string {
@@ -120,25 +125,45 @@ function parseAejDetail(html: string, url: string): AejItem {
   const labels = [
     "Lieu de travail",
     "Reference",
+    "Intitule du poste",
+    "Poste",
+    "Metier",
     "Nombre de poste",
     "Date de cloture",
-    "Date de clôture",
     "Diplome",
-    "Diplôme",
     "Type de contrat",
     "Experience professionnelle",
-    "Expérience professionnelle",
     "Niveau d'etude",
-    "Niveau d'étude",
     "Sexe",
+    "Secteur d'activite",
+    "Entreprise",
   ];
 
-  const title = extractTitle(html, text);
+  const genericTitle = extractTitle(html, text);
+  const titledByField =
+    extractBetween(text, "Intitule du poste", labels) ||
+    extractBetween(text, "Poste", labels) ||
+    extractBetween(text, "Metier", labels);
+
+  let title = genericTitle;
+  if (/details de l'emploi/i.test(genericTitle) && titledByField) {
+    title = titledByField;
+  }
+
+  if (/details de l'emploi/i.test(title)) {
+    const afterSexe = extractBetween(text, "Sexe", labels);
+    const cleaned = afterSexe
+      .replace(/\b(MASCULIN|FEMININ)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleaned.length >= 4 && cleaned.length <= 120) {
+      title = cleaned;
+    }
+  }
   const reference = extractBetween(text, "Reference", labels) || null;
   const location = extractBetween(text, "Lieu de travail", labels) || null;
   const contractType = extractBetween(text, "Type de contrat", labels) || null;
-  const closingRaw = extractBetween(text, "Date de clôture", labels) ||
-    extractBetween(text, "Date de cloture", labels);
+  const closingRaw = extractBetween(text, "Date de cloture", labels);
   const expiresAt = closingRaw ? parseDateFr(closingRaw) : null;
 
   const desc = extractDescription(text, title);
