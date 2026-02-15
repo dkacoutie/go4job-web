@@ -1,6 +1,7 @@
 // supabase/functions/ingest_source/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { fetchAejItems } from "./sources/aej_html.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 
@@ -289,6 +290,91 @@ Deno.serve(async (req) => {
 
     if (!jobSource) {
       return json({ ok: false, error: "job_source_not_found" }, 404);
+    }
+
+    if (jobSource.ingest_method === "aej_html") {
+      if (jobSource.is_active === false) {
+        return json({ ok: false, error: "job_source_inactive" }, 400);
+      }
+
+      const listUrl = jobSource.ingest_config?.list_url ||
+        "https://www.agenceemploijeunes.ci/site/offres-emplois";
+      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)));
+      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
+      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+
+      const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
+
+      if (dry_run) {
+        return json({
+          ok: true,
+          source_code,
+          limit: maxItems,
+          dry_run: true,
+          status: "dry_run_parsed",
+          list_url: data.list_url,
+          parsed: data.parsed,
+          sample: data.items.slice(0, 3),
+        });
+      }
+
+      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const now = new Date().toISOString();
+
+      const rows = data.items.map((it) => {
+        const desc = it.description_text || "";
+        const jobType = detectJobType(it.title, `${desc} ${it.contract_type ?? ""}`);
+
+        return {
+          job_source_id: jobSource.id,
+          external_id: it.external_id,
+          title: it.title,
+          company_name: null,
+          location: it.location || jobSource.region || null,
+          country: jobSource.country || "Cote d'Ivoire",
+          remote_type: null,
+          contract_type: it.contract_type || null,
+          seniority: null,
+          salary_min: null,
+          salary_max: null,
+          salary_currency: null,
+          salary_period: null,
+          description_html: it.description_html,
+          description_text: it.description_text,
+          apply_url: it.source_url,
+          source_url: it.source_url,
+          tags: [],
+          posted_at: null,
+          published_at: null,
+          expires_at: it.expires_at,
+          scraped_at: now,
+          updated_at: now,
+          last_seen_at: now,
+          is_active: !it.is_expired,
+          is_expired: it.is_expired,
+          job_type: jobType,
+          job_json: {
+            source_code,
+            list_url: data.list_url,
+            reference: it.reference,
+          },
+        };
+      });
+
+      const { error: upErr } = await supabase.from("jobs").upsert(rows, { onConflict: "external_id" });
+      if (upErr) {
+        return json({ ok: false, error: "jobs_upsert_failed", message: upErr.message }, 500);
+      }
+
+      return json({
+        ok: true,
+        source_code,
+        limit: maxItems,
+        dry_run: false,
+        status: "aej_upserted",
+        parsed: data.parsed,
+        upserted: rows.length,
+      });
     }
 
     if (jobSource.ingest_method !== "rss_generic") {
