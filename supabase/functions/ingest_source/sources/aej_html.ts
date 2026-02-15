@@ -30,6 +30,9 @@ async function fetchHtml(url: string) {
 
 function htmlToText(html: string): string {
   return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<\/li>/gi, "\n")
@@ -112,7 +115,8 @@ function extractTitleFromText(text: string): string {
   );
   if (m && m[1]) {
     return m[1]
-      .replace(/\b(stagiaire|stage|stage de qualification|cdd|cdi|alternance|apprentissage|volontariat)\b/gi, " ")
+      .replace(/\b(masculin|feminin)\b/gi, " ")
+      .replace(/\b(stagiaire|stage|stage de qualification|qualification|cdd|cdi|alternance|apprentissage|volontariat)\b/gi, " ")
       .replace(/\b(en|de|du|des|la|le|les)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -181,7 +185,9 @@ function parseAejDetail(html: string, url: string): AejItem {
   const closingRaw = extractBetween(text, "Date de cloture", labels);
   const expiresAt = closingRaw ? parseDateFr(closingRaw) : null;
 
-  const desc = extractDescription(text, title);
+  const detailStart = normalizeText(text).toLowerCase().indexOf("lieu de travail");
+  const scopedText = detailStart >= 0 ? text.slice(detailStart) : text;
+  const desc = extractDescription(scopedText, title);
   const isExpired = /offre d'emploi a expir/i.test(text) || /offre a expir/i.test(text) ||
     /expir/i.test(text);
 
