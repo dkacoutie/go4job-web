@@ -19,11 +19,14 @@ alter table public.jobs
 
 create index if not exists jobs_job_type_idx on public.jobs (job_type);
 
--- Upsert RSS sources without violating feed_url uniqueness
+-- Helper notes:
+-- 1) Update by code (preferred)
+-- 2) Update by feed_url only when code is null
+-- 3) Insert only if code/feed_url not present
+
 -- ReliefWeb
 update public.job_sources
-set code='reliefweb_jobs',
-    name='ReliefWeb Jobs',
+set name='ReliefWeb Jobs',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"http://reliefweb.int/jobs/rss.xml","limit":50}'::jsonb,
@@ -31,7 +34,19 @@ set code='reliefweb_jobs',
     country=null,
     region='Africa/Global',
     priority=85
-where trim(both from ingest_config->>'feed_url') = 'http://reliefweb.int/jobs/rss.xml';
+where code='reliefweb_jobs';
+
+update public.job_sources
+set name='ReliefWeb Jobs',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"http://reliefweb.int/jobs/rss.xml","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Africa/Global',
+    priority=85
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'http://reliefweb.int/jobs/rss.xml';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'reliefweb_jobs', 'ReliefWeb Jobs', 'rss_generic', 'ready', '{"feed_url":"http://reliefweb.int/jobs/rss.xml","limit":50}', true, null, 'Africa/Global', 85
@@ -40,8 +55,7 @@ where not exists (select 1 from public.job_sources where code='reliefweb_jobs')
 
 -- Remotive
 update public.job_sources
-set code='remotive',
-    name='Remotive',
+set name='Remotive',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://remotive.com/feed","limit":50}'::jsonb,
@@ -49,7 +63,19 @@ set code='remotive',
     country=null,
     region='Global Remote',
     priority=70
-where trim(both from ingest_config->>'feed_url') = 'https://remotive.com/feed';
+where code='remotive';
+
+update public.job_sources
+set name='Remotive',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://remotive.com/feed","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=70
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://remotive.com/feed';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'remotive', 'Remotive', 'rss_generic', 'ready', '{"feed_url":"https://remotive.com/feed","limit":50}', true, null, 'Global Remote', 70
@@ -58,8 +84,7 @@ where not exists (select 1 from public.job_sources where code='remotive')
 
 -- We Work Remotely
 update public.job_sources
-set code='weworkremotely',
-    name='We Work Remotely',
+set name='We Work Remotely',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://weworkremotely.com/remote-jobs.rss","limit":50}'::jsonb,
@@ -67,7 +92,19 @@ set code='weworkremotely',
     country=null,
     region='Global Remote',
     priority=70
-where trim(both from ingest_config->>'feed_url') = 'https://weworkremotely.com/remote-jobs.rss';
+where code='weworkremotely';
+
+update public.job_sources
+set name='We Work Remotely',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://weworkremotely.com/remote-jobs.rss","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=70
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://weworkremotely.com/remote-jobs.rss';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'weworkremotely', 'We Work Remotely', 'rss_generic', 'ready', '{"feed_url":"https://weworkremotely.com/remote-jobs.rss","limit":50}', true, null, 'Global Remote', 70
@@ -76,8 +113,7 @@ where not exists (select 1 from public.job_sources where code='weworkremotely')
 
 -- Himalayas
 update public.job_sources
-set code='himalayas',
-    name='Himalayas',
+set name='Himalayas',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://himalayas.app/jobs/rss","limit":50}'::jsonb,
@@ -85,7 +121,19 @@ set code='himalayas',
     country=null,
     region='Global Remote',
     priority=65
-where trim(both from ingest_config->>'feed_url') = 'https://himalayas.app/jobs/rss';
+where code='himalayas';
+
+update public.job_sources
+set name='Himalayas',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://himalayas.app/jobs/rss","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=65
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://himalayas.app/jobs/rss';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'himalayas', 'Himalayas', 'rss_generic', 'ready', '{"feed_url":"https://himalayas.app/jobs/rss","limit":50}', true, null, 'Global Remote', 65
@@ -94,8 +142,7 @@ where not exists (select 1 from public.job_sources where code='himalayas')
 
 -- Empllo
 update public.job_sources
-set code='empllo',
-    name='Empllo',
+set name='Empllo',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://empllo.com/feeds/remote-jobs.rss","limit":50}'::jsonb,
@@ -103,7 +150,19 @@ set code='empllo',
     country=null,
     region='Global Remote',
     priority=60
-where trim(both from ingest_config->>'feed_url') = 'https://empllo.com/feeds/remote-jobs.rss';
+where code='empllo';
+
+update public.job_sources
+set name='Empllo',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://empllo.com/feeds/remote-jobs.rss","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=60
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://empllo.com/feeds/remote-jobs.rss';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'empllo', 'Empllo', 'rss_generic', 'ready', '{"feed_url":"https://empllo.com/feeds/remote-jobs.rss","limit":50}', true, null, 'Global Remote', 60
@@ -112,8 +171,7 @@ where not exists (select 1 from public.job_sources where code='empllo')
 
 -- RemoteYeah
 update public.job_sources
-set code='remoteyeah',
-    name='RemoteYeah',
+set name='RemoteYeah',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://remoteyeah.com/rss.xml","limit":50}'::jsonb,
@@ -121,7 +179,19 @@ set code='remoteyeah',
     country=null,
     region='Global Remote',
     priority=60
-where trim(both from ingest_config->>'feed_url') = 'https://remoteyeah.com/rss.xml';
+where code='remoteyeah';
+
+update public.job_sources
+set name='RemoteYeah',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://remoteyeah.com/rss.xml","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=60
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://remoteyeah.com/rss.xml';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'remoteyeah', 'RemoteYeah', 'rss_generic', 'ready', '{"feed_url":"https://remoteyeah.com/rss.xml","limit":50}', true, null, 'Global Remote', 60
@@ -130,8 +200,7 @@ where not exists (select 1 from public.job_sources where code='remoteyeah')
 
 -- WorkAnywhere
 update public.job_sources
-set code='workanywhere',
-    name='WorkAnywhere',
+set name='WorkAnywhere',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://workanywhere.pro/rss.xml","limit":50}'::jsonb,
@@ -139,7 +208,19 @@ set code='workanywhere',
     country=null,
     region='Global Remote',
     priority=55
-where trim(both from ingest_config->>'feed_url') = 'https://workanywhere.pro/rss.xml';
+where code='workanywhere';
+
+update public.job_sources
+set name='WorkAnywhere',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://workanywhere.pro/rss.xml","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=55
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://workanywhere.pro/rss.xml';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'workanywhere', 'WorkAnywhere', 'rss_generic', 'ready', '{"feed_url":"https://workanywhere.pro/rss.xml","limit":50}', true, null, 'Global Remote', 55
@@ -148,8 +229,7 @@ where not exists (select 1 from public.job_sources where code='workanywhere')
 
 -- Real Work From Anywhere
 update public.job_sources
-set code='realwfa',
-    name='Real Work From Anywhere',
+set name='Real Work From Anywhere',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://www.realworkfromanywhere.com/rss.xml","limit":50}'::jsonb,
@@ -157,7 +237,19 @@ set code='realwfa',
     country=null,
     region='Global Remote',
     priority=55
-where trim(both from ingest_config->>'feed_url') = 'https://www.realworkfromanywhere.com/rss.xml';
+where code='realwfa';
+
+update public.job_sources
+set name='Real Work From Anywhere',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://www.realworkfromanywhere.com/rss.xml","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=55
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://www.realworkfromanywhere.com/rss.xml';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'realwfa', 'Real Work From Anywhere', 'rss_generic', 'ready', '{"feed_url":"https://www.realworkfromanywhere.com/rss.xml","limit":50}', true, null, 'Global Remote', 55
@@ -166,8 +258,7 @@ where not exists (select 1 from public.job_sources where code='realwfa')
 
 -- HireWeb3
 update public.job_sources
-set code='hireweb3',
-    name='HireWeb3',
+set name='HireWeb3',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://hireweb3.io/job/rss","limit":50}'::jsonb,
@@ -175,7 +266,19 @@ set code='hireweb3',
     country=null,
     region='Global Remote',
     priority=50
-where trim(both from ingest_config->>'feed_url') = 'https://hireweb3.io/job/rss';
+where code='hireweb3';
+
+update public.job_sources
+set name='HireWeb3',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://hireweb3.io/job/rss","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global Remote',
+    priority=50
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://hireweb3.io/job/rss';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'hireweb3', 'HireWeb3', 'rss_generic', 'ready', '{"feed_url":"https://hireweb3.io/job/rss","limit":50}', true, null, 'Global Remote', 50
@@ -184,8 +287,7 @@ where not exists (select 1 from public.job_sources where code='hireweb3')
 
 -- Workable
 update public.job_sources
-set code='workable',
-    name='Workable Board',
+set name='Workable Board',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://www.workable.com/boards/workable.xml","limit":50}'::jsonb,
@@ -193,7 +295,19 @@ set code='workable',
     country=null,
     region='Global',
     priority=45
-where trim(both from ingest_config->>'feed_url') = 'https://www.workable.com/boards/workable.xml';
+where code='workable';
+
+update public.job_sources
+set name='Workable Board',
+    ingest_method='rss_generic',
+    ingest_status='ready',
+    ingest_config='{"feed_url":"https://www.workable.com/boards/workable.xml","limit":50}'::jsonb,
+    is_active=true,
+    country=null,
+    region='Global',
+    priority=45
+where code is null
+  and trim(both from ingest_config->>'feed_url') = 'https://www.workable.com/boards/workable.xml';
 
 insert into public.job_sources (code, name, ingest_method, ingest_status, ingest_config, is_active, country, region, priority)
 select 'workable', 'Workable Board', 'rss_generic', 'ready', '{"feed_url":"https://www.workable.com/boards/workable.xml","limit":50}', true, null, 'Global', 45
