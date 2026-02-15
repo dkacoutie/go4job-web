@@ -394,10 +394,10 @@ export default function JobDetailsPage() {
       <main className="jd-main">
         <div className="jd-topbar">
           <button className="btn btnGhost" onClick={() => navigate(-1)}>
-            ← Retour
+            {"<-"} Retour
           </button>
           <button className="btn btnGhost" onClick={() => navigate("/jobradar/feed")}>
-            Feed JobRadar →
+            Feed JobRadar {"->"}
           </button>
         </div>
 
@@ -413,10 +413,10 @@ export default function JobDetailsPage() {
               <div>
                 <h1 className="jd-title">{job.title ?? "Offre"}</h1>
                 <div className="jd-sub">
-                  {(job.company_name ?? "—") +
-                    " · " +
-                    (job.location ?? job.country ?? "—") +
-                    (job.remote_type ? ` · ${job.remote_type}` : "")}
+                  {(job.company_name ?? "-") +
+                    " | " +
+                    (job.location ?? job.country ?? "-") +
+                    (job.remote_type ? ` | ${job.remote_type}` : "")}
                 </div>
               </div>
 
@@ -453,7 +453,7 @@ export default function JobDetailsPage() {
               </div>
 
               <button className="btn btnGhost" onClick={() => navigate("/jobradar/applications")}>
-                Voir mes candidatures →
+                Voir mes candidatures {"->"}
               </button>
             </div>
 

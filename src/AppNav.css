@@ -297,7 +297,7 @@
      Mobile: scroll horizontal
      ========================= */
   
-  @media (max-width: 900px){
+@media (max-width: 900px){
     .appnav{
       flex-wrap: wrap;
       gap: 10px;
@@ -340,4 +340,34 @@
       max-width: 180px;
     }
   }
+
+/* =========================
+   Mobile dropdown safety
+   ========================= */
+
+.appnav__backdrop{
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.10);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  z-index: 70;
+}
+
+.appnav--menuOpen .appnav__backdrop{
+  display: block;
+}
+
+.appnav__menu{
+  z-index: 80;
+}
+
+@media (max-width: 900px){
+  .appnav--menuOpen .appnav__links,
+  .appnav--menuOpen .appnav__right{
+    overflow: visible;
+  }
+}
   

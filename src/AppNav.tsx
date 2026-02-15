@@ -117,7 +117,7 @@ export default function AppNav() {
 
     setIsSigningOut(true);
     try {
-      // ✅ 1) Logout local (fiable, ne dépend pas du réseau)
+      // 1) Logout local (fiable, ne depend pas du reseau)
       const { error: localErr } = await supabase.auth.signOut({ scope: "local" });
 
       if (localErr) {
@@ -125,13 +125,13 @@ export default function AppNav() {
 
         // fallback: nettoyage manuel du storage key
         try {
-          localStorage.removeItem("go4job.auth"); // storageKey défini dans supabaseClient.ts
+          localStorage.removeItem("go4job.auth");
         } catch {
           // ignore
         }
       }
 
-      // ✅ 2) Optionnel : tenter la révocation globale (peut échouer selon navigateur)
+      // 2) Optionnel : tenter la revocation globale (peut echouer selon navigateur)
       const { error: globalErr } = await supabase.auth.signOut();
       if (globalErr) console.warn("[signOut global] error:", globalErr);
     } catch (e) {
@@ -147,13 +147,24 @@ export default function AppNav() {
       closeMenus();
       setIsSigningOut(false);
 
-      // ✅ Force le prochain login à tomber sur le feed (tests)
+      // Force le prochain login a tomber sur le feed (tests)
       navigate("/auth", { replace: true, state: { from: "/jobradar/feed" } });
     }
   };
 
+  const isMenuOpen = openMenu !== null;
+
   return (
-    <div className="appnav">
+    <div className={`appnav${isMenuOpen ? " appnav--menuOpen" : ""}`}>
+      {isMenuOpen && (
+        <button
+          type="button"
+          className="appnav__backdrop"
+          aria-label="Fermer le menu"
+          onClick={closeMenus}
+        />
+      )}
+
       <button
         className="appnav__brand"
         onClick={() => navigate("/")}
@@ -163,7 +174,7 @@ export default function AppNav() {
         <img className="appnav__logo" src={go4jobLogo} alt="Go4Job" />
       </button>
 
-      {/* Nav principale (seulement si connecté) */}
+      {/* Nav principale (seulement si connecte) */}
       {session && (
         <nav className="appnav__links" aria-label="Navigation">
           <button
@@ -267,7 +278,7 @@ export default function AppNav() {
                   onClick={onSignOut}
                   disabled={isSigningOut}
                 >
-                  {isSigningOut ? "Déconnexion..." : "Se déconnecter"}
+                  {isSigningOut ? "Deconnexion..." : "Se deconnecter"}
                 </button>
               </div>
             )}
