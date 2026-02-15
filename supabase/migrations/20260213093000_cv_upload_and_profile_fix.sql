@@ -211,31 +211,40 @@ begin
 end $$;
 
 -- STORAGE RLS (cvs bucket)
-alter table storage.objects enable row level security;
 do $$
 begin
-  if not exists (
-    select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_select_own'
-  ) then
-    create policy cvs_objects_select_own on storage.objects
-      for select using (bucket_id = 'cvs' and owner = auth.uid());
-  end if;
-  if not exists (
-    select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_insert_own'
-  ) then
-    create policy cvs_objects_insert_own on storage.objects
-      for insert with check (bucket_id = 'cvs' and owner = auth.uid());
-  end if;
-  if not exists (
-    select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_update_own'
-  ) then
-    create policy cvs_objects_update_own on storage.objects
-      for update using (bucket_id = 'cvs' and owner = auth.uid());
-  end if;
-  if not exists (
-    select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_delete_own'
-  ) then
-    create policy cvs_objects_delete_own on storage.objects
-      for delete using (bucket_id = 'cvs' and owner = auth.uid());
-  end if;
+  begin
+    execute 'alter table storage.objects enable row level security';
+  exception when insufficient_privilege then
+    raise notice 'skip storage.objects RLS (not owner)';
+  end;
+
+  begin
+    if not exists (
+      select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_select_own'
+    ) then
+      create policy cvs_objects_select_own on storage.objects
+        for select using (bucket_id = 'cvs' and owner = auth.uid());
+    end if;
+    if not exists (
+      select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_insert_own'
+    ) then
+      create policy cvs_objects_insert_own on storage.objects
+        for insert with check (bucket_id = 'cvs' and owner = auth.uid());
+    end if;
+    if not exists (
+      select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_update_own'
+    ) then
+      create policy cvs_objects_update_own on storage.objects
+        for update using (bucket_id = 'cvs' and owner = auth.uid());
+    end if;
+    if not exists (
+      select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='cvs_objects_delete_own'
+    ) then
+      create policy cvs_objects_delete_own on storage.objects
+        for delete using (bucket_id = 'cvs' and owner = auth.uid());
+    end if;
+  exception when insufficient_privilege then
+    raise notice 'skip storage.objects policies (not owner)';
+  end;
 end $$;

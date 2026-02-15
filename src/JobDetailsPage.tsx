@@ -19,6 +19,19 @@ type JobRow = {
 
   description_text?: string | null;
   description_html?: string | null;
+  official_desc?: string | null;
+  desc_source?: string | null;
+  desc_quality?: number | null;
+  desc_updated_at?: string | null;
+  desc_last_error?: string | null;
+
+  ai_description?: string | null;
+  ai_description_model?: string | null;
+  ai_description_updated_at?: string | null;
+  ai_description_quality?: number | null;
+  ai_description_status?: string | null;
+  ai_description_error?: string | null;
+
   job_json?: Record<string, unknown> | null;
 
   sort_at?: string | null;
@@ -37,6 +50,8 @@ type AppRow = {
   submitted_at?: string | null;
   error_message?: string | null;
 };
+
+const MIN_DESC_LEN = 400;
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -216,6 +231,9 @@ export default function JobDetailsPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState<string | null>(null);
+
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
   }, [loading, session, navigate]);
@@ -251,6 +269,17 @@ export default function JobDetailsPage() {
           source_url,
           description_text,
           description_html,
+          official_desc,
+          desc_source,
+          desc_quality,
+          desc_updated_at,
+          desc_last_error,
+          ai_description,
+          ai_description_model,
+          ai_description_updated_at,
+          ai_description_quality,
+          ai_description_status,
+          ai_description_error,
           job_json,
           sort_at,
           published_at,
@@ -304,15 +333,31 @@ export default function JobDetailsPage() {
   }, [job]);
 
   const desc = useMemo(() => {
-    const text = (job?.description_text ?? "").trim();
+    const officialText = (job?.official_desc ?? "").trim();
+    const text = officialText || (job?.description_text ?? "").trim();
     const htmlRaw = (job?.description_html ?? "").trim();
     const jsonDesc = extractDescFromJobJson(job?.job_json ?? null);
 
     const htmlSource = htmlRaw || jsonDesc.html || "";
     const html = htmlSource ? sanitizeHtmlBasic(htmlSource) : "";
-    const textSource = text || jsonDesc.text || "";
-    const fallbackText = !textSource && html ? stripHtmlToText(html) : "";
-    return { text: textSource, html, fallbackText };
+    const htmlText = html ? stripHtmlToText(html) : "";
+    const jsonText = (jsonDesc.text ?? "").trim();
+
+    const baseText = text || htmlText || jsonText;
+    const baseLen = baseText.trim().length;
+
+    const scrapedOk = baseLen >= MIN_DESC_LEN;
+    const aiText = (job?.ai_description ?? "").trim();
+    const aiOk = job?.ai_description_status === "ok" && aiText.length > 0;
+
+    return {
+      scrapedOk,
+      aiOk,
+      baseText,
+      html,
+      aiText,
+      baseLen,
+    };
   }, [job]);
 
   async function postuler() {
@@ -389,6 +434,52 @@ export default function JobDetailsPage() {
     }
   }
 
+  async function generateNow() {
+    if (!id || !isUuid(id)) return;
+    if (!userId) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+
+    setAiBusy(true);
+    setAiMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("user_generate_ai_desc", {
+        body: { job_id: id },
+      });
+      if (error) throw error;
+      if (data?.ok) {
+        setAiMsg("Generation lancee.");
+      } else {
+        setAiMsg(data?.error ? String(data.error) : "Generation en echec.");
+      }
+      await load();
+    } catch (e) {
+      setAiMsg(getErrorMessage(e));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  const descBadge = () => {
+    if (!job) return null;
+    if (desc.scrapedOk) {
+      return (
+        <span className="chip jd-src jd-srcScraped">
+          Source: Site officiel
+        </span>
+      );
+    }
+    if (desc.aiOk) {
+      return (
+        <span className="chip jd-src jd-srcAi">
+          Description generee par IA
+        </span>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="jd-shell">
       <main className="jd-main">
@@ -460,24 +551,60 @@ export default function JobDetailsPage() {
             <div className="jd-body">
               <h3>Description</h3>
 
+              <div className="jd-descMeta">
+                {descBadge()}
+                {desc.scrapedOk && job.desc_quality != null && (
+                  <span className="chip jd-quality">Qualite: {job.desc_quality}</span>
+                )}
+                {!desc.scrapedOk && desc.aiOk && job.ai_description_quality != null && (
+                  <span className="chip jd-quality">Qualite: {job.ai_description_quality}</span>
+                )}
+                {desc.scrapedOk && job.desc_updated_at && (
+                  <span className="jd-dateSmall">
+                    Mis a jour: {new Date(job.desc_updated_at).toLocaleDateString()}
+                  </span>
+                )}
+                {!desc.scrapedOk && desc.aiOk && job.ai_description_updated_at && (
+                  <span className="jd-dateSmall">
+                    Genere: {new Date(job.ai_description_updated_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
               <div className="jd-desc">
-                {desc.html ? (
-                  <div className="jd-html" dangerouslySetInnerHTML={{ __html: desc.html }} />
-                ) : desc.text ? (
-                  <div style={{ whiteSpace: "pre-wrap" }}>{desc.text}</div>
-                ) : desc.fallbackText ? (
-                  <div style={{ whiteSpace: "pre-wrap" }}>{desc.fallbackText}</div>
+                {desc.scrapedOk ? (
+                  desc.html ? (
+                    <div className="jd-html" dangerouslySetInnerHTML={{ __html: desc.html }} />
+                  ) : (
+                    <div style={{ whiteSpace: "pre-wrap" }}>{desc.baseText}</div>
+                  )
+                ) : desc.aiOk ? (
+                  <div style={{ whiteSpace: "pre-wrap" }}>{desc.aiText}</div>
                 ) : (
                   <div className="jd-noDesc">
-                    <span className="jd-muted">Description indisponible.</span>
-                    {applyLink && (
-                      <a className="btn btnPrimary jd-applyBtn" href={applyLink} target="_blank" rel="noreferrer">
-                        Voir l'offre
-                      </a>
-                    )}
+                    <div>
+                      <span className="jd-muted">Description en cours de generation...</span>
+                      <div className="jd-genNote">
+                        La description sera enrichie automatiquement si le site source ne fournit pas assez de details.
+                      </div>
+                    </div>
+                    <button className="btn btnPrimary jd-applyBtn" onClick={generateNow} disabled={aiBusy}>
+                      {aiBusy ? "Generation..." : "Generer maintenant"}
+                    </button>
+                    {aiMsg && <div className="jd-aiMsg">{aiMsg}</div>}
                   </div>
                 )}
               </div>
+
+              {!desc.scrapedOk && !desc.aiOk && job.desc_last_error && (
+                <div className="jd-descHint">Derniere tentative: {job.desc_last_error}</div>
+              )}
+
+              {!desc.scrapedOk && !desc.aiOk && applyLink && (
+                <a className="btn btnGhost jd-sourceBtn" href={applyLink} target="_blank" rel="noreferrer">
+                  Voir l'offre source
+                </a>
+              )}
             </div>
           </section>
         )}

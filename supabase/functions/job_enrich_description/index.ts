@@ -7,7 +7,12 @@ type JobRow = {
   apply_url: string | null;
   description_text: string | null;
   description_html: string | null;
+  official_desc: string | null;
+  desc_source: string | null;
+  ai_description_status: string | null;
 };
+
+const MIN_DESC_LEN = 400;
 
 function json(status: number, body: unknown, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -92,6 +97,29 @@ function safeTruncate(input: string, max: number) {
   return input.slice(0, max).trim();
 }
 
+function computeQuality(text: string) {
+  const len = text.length;
+  let score = Math.min(80, Math.round(len / 10));
+  if (/\n|\r/.test(text)) score += 6;
+  if (/(mission|responsabilit|profil|requirements|qualification)/i.test(text)) score += 8;
+  if (/[-*•]\s+/.test(text)) score += 6;
+  return Math.min(100, score);
+}
+
+function currentDescText(job: JobRow) {
+  const official = (job.official_desc ?? "").trim();
+  if (official) return official;
+  const text = (job.description_text ?? "").trim();
+  if (text) return text;
+  const html = (job.description_html ?? "").trim();
+  if (!html) return "";
+  return stripHtmlToText(html);
+}
+
+function isSufficient(text: string) {
+  return text.trim().length >= MIN_DESC_LEN;
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = {
     "access-control-allow-origin": "*",
@@ -116,10 +144,8 @@ Deno.serve(async (req) => {
   if (provided !== expected && bearer !== expected) return json(401, { ok: false, error: "Unauthorized" }, corsHeaders);
 
   const url = new URL(req.url);
-  const limit = Math.max(1, Math.min(20, Number(url.searchParams.get("limit") ?? 5)));
-  const dryRun =
-    url.searchParams.get("dry_run") === "1" ||
-    url.searchParams.get("dry_run") === "true";
+  const limit = Math.max(1, Math.min(30, Number(url.searchParams.get("limit") ?? 8)));
+  const dryRun = url.searchParams.get("dry_run") === "1" || url.searchParams.get("dry_run") === "true";
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -134,20 +160,38 @@ Deno.serve(async (req) => {
 
   const { data: rows, error: selectErr } = await supabase
     .from("jobs")
-    .select("id, source_url, apply_url, description_text, description_html")
-    .or("description_text.is.null,description_text.eq.,description_html.is.null,description_html.eq.")
+    .select(
+      "id, source_url, apply_url, description_text, description_html, official_desc, desc_source, ai_description_status"
+    )
+    .eq("is_active", true)
+    .eq("is_expired", false)
     .not("source_url", "is", null)
     .order("updated_at", { ascending: true })
-    .limit(limit);
+    .limit(limit * 3);
 
   if (selectErr) return json(500, { ok: false, error: selectErr.message }, corsHeaders);
 
   const jobs = (rows ?? []) as JobRow[];
   const results: Array<Record<string, unknown>> = [];
+  let processed = 0;
 
   for (const job of jobs) {
+    if (processed >= limit) break;
+
+    const current = currentDescText(job);
+    if (isSufficient(current)) {
+      results.push({ id: job.id, ok: true, skipped: "already_sufficient" });
+      continue;
+    }
+
     const targetUrl = job.source_url || job.apply_url;
-    if (!targetUrl) continue;
+    if (!targetUrl) {
+      results.push({ id: job.id, ok: false, error: "missing_source_url" });
+      continue;
+    }
+
+    processed += 1;
+    const nowIso = new Date().toISOString();
 
     try {
       const controller = new AbortController();
@@ -165,6 +209,14 @@ Deno.serve(async (req) => {
       clearTimeout(timeout);
 
       if (!res.ok) {
+        if (!dryRun) {
+          const patch: Record<string, unknown> = {
+            desc_last_error: `fetch_failed:${res.status}`,
+            desc_updated_at: nowIso,
+          };
+          if (job.ai_description_status !== "ok") patch.ai_description_status = "pending";
+          await supabase.from("jobs").update(patch).eq("id", job.id);
+        }
         results.push({ id: job.id, url: targetUrl, ok: false, status: res.status });
         continue;
       }
@@ -175,35 +227,52 @@ Deno.serve(async (req) => {
       const nextText = safeTruncate(extracted.text || "", 20000);
       const nextHtml = safeTruncate(extracted.html || "", 50000);
 
-      if (!nextText && !nextHtml) {
-        results.push({ id: job.id, url: targetUrl, ok: false, error: "no_description" });
-        continue;
-      }
+      const quality = computeQuality(nextText);
+      const sufficient = isSufficient(nextText);
 
       if (dryRun) {
         results.push({
           id: job.id,
           url: targetUrl,
           ok: true,
+          quality,
+          sufficient,
           preview: nextText.slice(0, 220),
         });
         continue;
       }
 
       const patch: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
+        desc_updated_at: nowIso,
+        desc_quality: quality,
+        desc_source: nextText ? "scraped" : "none",
+        desc_last_error: null,
       };
 
+      if (nextText) patch.official_desc = nextText;
       if (!job.description_text && nextText) patch.description_text = nextText;
       if (!job.description_html && nextHtml) patch.description_html = nextHtml;
+
+      if (!sufficient && job.ai_description_status !== "ok") {
+        patch.ai_description_status = "pending";
+      }
 
       const { error: upErr } = await supabase.from("jobs").update(patch).eq("id", job.id);
       if (upErr) {
         results.push({ id: job.id, url: targetUrl, ok: false, error: upErr.message });
       } else {
-        results.push({ id: job.id, url: targetUrl, ok: true });
+        results.push({ id: job.id, url: targetUrl, ok: true, quality, sufficient });
       }
     } catch (e) {
+      if (!dryRun) {
+        const patch: Record<string, unknown> = {
+          desc_last_error: String(e).slice(0, 300),
+          desc_updated_at: nowIso,
+        };
+        if (job.ai_description_status !== "ok") patch.ai_description_status = "pending";
+        await supabase.from("jobs").update(patch).eq("id", job.id);
+      }
       results.push({ id: job.id, url: targetUrl, ok: false, error: String(e) });
     }
   }
@@ -213,7 +282,7 @@ Deno.serve(async (req) => {
     {
       ok: true,
       dry_run: dryRun,
-      processed: jobs.length,
+      processed,
       results,
     },
     corsHeaders,
