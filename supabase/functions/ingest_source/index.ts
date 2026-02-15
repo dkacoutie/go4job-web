@@ -122,7 +122,7 @@ function stripHtml(html: string): string {
 
 function parseTitleCompany(rawTitle: string) {
   const title = rawTitle.trim();
-  const separators = [" @ ", " - ", " | ", " — ", " – "];
+  const separators = [" @ ", " - ", " | "];
   for (const sep of separators) {
     if (title.includes(sep)) {
       const parts = title.split(sep).map((p) => p.trim()).filter(Boolean);
@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // job_source_id (temporaire en dur pour valider l'ingestion)
+      // job_source_id (fixed seed for this source)
       const job_source_id = "ed25b64d-ace6-4296-8985-46702d58785d";
 
       const now = new Date().toISOString();
@@ -211,11 +211,10 @@ Deno.serve(async (req) => {
       let inserted = 0;
       let updated = 0;
 
-      // Upsert manuel : check -> insert ou patch
+      // Upsert manually: check -> insert or patch
       for (const it of data.items) {
         const external_id = it.external_id;
 
-        // 1) existe deja ?
         const checkUrl =
           `${jobsBase}?select=id&job_source_id=eq.${job_source_id}` +
           `&external_id=eq.${encodeURIComponent(external_id)}&limit=1`;
