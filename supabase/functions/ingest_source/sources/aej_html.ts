@@ -112,7 +112,8 @@ function extractTitleFromText(text: string): string {
   );
   if (m && m[1]) {
     return m[1]
-      .replace(/\b(stage|stage de qualification|cdd|cdi|alternance|apprentissage|volontariat)\b/gi, " ")
+      .replace(/\b(stagiaire|stage|stage de qualification|cdd|cdi|alternance|apprentissage|volontariat)\b/gi, " ")
+      .replace(/\b(en|de|du|des|la|le|les)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -167,10 +168,11 @@ function parseAejDetail(html: string, url: string): AejItem {
   const titledByRegex = extractTitleFromText(text);
 
   let title = genericTitle;
-  if (/details de l'emploi/i.test(genericTitle) && titledByField) {
+  const isDetails = normalizeText(genericTitle).toLowerCase().includes("details de l'emploi");
+  if (isDetails && titledByField) {
     title = titledByField;
   }
-  if (/details de l'emploi/i.test(title) && titledByRegex) {
+  if (isDetails && titledByRegex) {
     title = titledByRegex;
   }
   const reference = extractBetween(text, "Reference", labels) || null;
