@@ -1,3 +1,5 @@
+import { XMLParser } from "npm:fast-xml-parser@4.4.1";
+
 export type RssItem = {
   title: string;
   link: string;
@@ -7,23 +9,21 @@ export type RssItem = {
   content: string;
 };
 
-function textOf(el: Element | null) {
-  if (!el) return "";
-  return (el.textContent ?? "").trim();
-}
-
-function firstText(parent: Element, selectors: string[]) {
-  for (const sel of selectors) {
-    const el = parent.querySelector(sel);
-    const t = textOf(el);
-    if (t) return t;
+function asText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  if (typeof v === "number") return String(v);
+  if (typeof v === "object") {
+    const anyV = v as Record<string, unknown>;
+    const t = anyV.text ?? anyV["#text"] ?? anyV["_"] ?? "";
+    if (typeof t === "string") return t.trim();
   }
   return "";
 }
 
-function attrOf(el: Element | null, name: string) {
-  if (!el) return "";
-  return (el.getAttribute(name) ?? "").trim();
+function arrify<T>(v: T | T[] | null | undefined): T[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
 }
 
 function parseDate(raw: string) {
@@ -33,19 +33,26 @@ function parseDate(raw: string) {
   return d.toISOString();
 }
 
-function getContentEncoded(parent: Element) {
-  const els = parent.getElementsByTagName("content:encoded");
-  if (els && els.length) return textOf(els[0]);
-  return "";
+function pickAtomLink(link: unknown): string {
+  const links = arrify(link as any);
+  if (!links.length) return "";
+  for (const l of links) {
+    if (typeof l === "string") return l.trim();
+    const rel = asText((l as any).rel);
+    const href = asText((l as any).href);
+    if (href && (!rel || rel === "alternate")) return href;
+  }
+  const first = links[0] as any;
+  return asText(first?.href) || asText(first);
 }
 
-function parseRssItem(item: Element): RssItem {
-  const title = firstText(item, ["title"]) || "Untitled";
-  const link = firstText(item, ["link"]) || "";
-  const guid = firstText(item, ["guid"]) || null;
-  const published = firstText(item, ["pubDate", "date", "dc:date"]);
-  const description = firstText(item, ["description", "summary"]);
-  const content = getContentEncoded(item);
+function parseRssItem(item: any): RssItem {
+  const title = asText(item?.title) || "Untitled";
+  const link = asText(item?.link);
+  const guid = asText(item?.guid) || null;
+  const published = asText(item?.pubDate) || asText(item?.date);
+  const description = asText(item?.description) || asText(item?.summary);
+  const content = asText(item?.encoded) || asText(item?.content);
 
   return {
     title,
@@ -57,19 +64,13 @@ function parseRssItem(item: Element): RssItem {
   };
 }
 
-function parseAtomEntry(entry: Element): RssItem {
-  const title = firstText(entry, ["title"]) || "Untitled";
-
-  let link = "";
-  const linkEl =
-    entry.querySelector("link[rel='alternate']") ||
-    entry.querySelector("link");
-  if (linkEl) link = attrOf(linkEl, "href") || textOf(linkEl);
-
-  const guid = firstText(entry, ["id"]) || null;
-  const published = firstText(entry, ["published", "updated"]);
-  const summary = firstText(entry, ["summary"]);
-  const content = firstText(entry, ["content"]);
+function parseAtomEntry(entry: any): RssItem {
+  const title = asText(entry?.title) || "Untitled";
+  const link = pickAtomLink(entry?.link);
+  const guid = asText(entry?.id) || null;
+  const published = asText(entry?.published) || asText(entry?.updated);
+  const summary = asText(entry?.summary);
+  const content = asText(entry?.content) || summary;
 
   return {
     title,
@@ -96,20 +97,24 @@ export async function fetchRssFeedItems(feedUrl: string, limit = 50) {
   }
 
   const xml = await res.text();
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, "application/xml");
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "",
+    removeNSPrefix: true,
+    textNodeName: "text",
+    trimValues: true,
+  });
+  const data = parser.parse(xml) as any;
 
-  const isAtom = !!doc.querySelector("feed");
   const items: RssItem[] = [];
-
-  if (isAtom) {
-    const entries = Array.from(doc.querySelectorAll("entry"));
+  if (data?.feed?.entry) {
+    const entries = arrify(data.feed.entry);
     for (const entry of entries) {
       items.push(parseAtomEntry(entry));
       if (items.length >= capped) break;
     }
   } else {
-    const rssItems = Array.from(doc.querySelectorAll("item"));
+    const rssItems = arrify(data?.rss?.channel?.item || data?.channel?.item);
     for (const it of rssItems) {
       items.push(parseRssItem(it));
       if (items.length >= capped) break;
