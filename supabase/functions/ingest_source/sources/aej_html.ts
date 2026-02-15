@@ -121,12 +121,15 @@ function parseAejDetail(html: string, url: string): AejItem {
     "Lieu de travail",
     "Reference",
     "Nombre de poste",
+    "Date de cloture",
     "Date de clôture",
+    "Diplome",
     "Diplôme",
     "Type de contrat",
+    "Experience professionnelle",
     "Expérience professionnelle",
-    "Niveau d'étude",
     "Niveau d'etude",
+    "Niveau d'étude",
     "Sexe",
   ];
 
@@ -134,11 +137,13 @@ function parseAejDetail(html: string, url: string): AejItem {
   const reference = extractBetween(text, "Reference", labels) || null;
   const location = extractBetween(text, "Lieu de travail", labels) || null;
   const contractType = extractBetween(text, "Type de contrat", labels) || null;
-  const closingRaw = extractBetween(text, "Date de clôture", labels);
+  const closingRaw = extractBetween(text, "Date de clôture", labels) ||
+    extractBetween(text, "Date de cloture", labels);
   const expiresAt = closingRaw ? parseDateFr(closingRaw) : null;
 
   const desc = extractDescription(text, title);
-  const isExpired = /offre d'emploi a expir/i.test(text) || /offre a expir/i.test(text);
+  const isExpired = /offre d'emploi a expir/i.test(text) || /offre a expir/i.test(text) ||
+    /expir/i.test(text);
 
   const idMatch = url.match(/offres-emplois\/(\d+)/);
   const fallbackId = idMatch ? idMatch[1] : String(Math.random()).slice(2, 10);
