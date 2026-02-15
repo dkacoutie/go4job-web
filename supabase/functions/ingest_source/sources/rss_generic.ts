@@ -114,7 +114,11 @@ export async function fetchRssFeedItems(feedUrl: string, limit = 50) {
       if (items.length >= capped) break;
     }
   } else {
-    const rssItems = arrify(data?.rss?.channel?.item || data?.channel?.item);
+    const rssItems = arrify(
+      data?.rss?.channel?.item ||
+        data?.channel?.item ||
+        data?.RDF?.item,
+    );
     for (const it of rssItems) {
       items.push(parseRssItem(it));
       if (items.length >= capped) break;
