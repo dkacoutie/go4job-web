@@ -20,24 +20,13 @@ alter table public.jobs
 create index if not exists jobs_job_type_idx on public.jobs (job_type);
 
 -- Helper notes:
--- 0) If feed_url row exists and code is taken by another row, free the code.
--- 1) Claim feed_url row (set code + metadata).
--- 2) If feed_url row doesn't exist, update by code (set feed_url + metadata).
+-- 1) Update by feed_url (no code change) to avoid conflicts.
+-- 2) Update by code only if feed_url doesn't already exist.
 -- 3) Insert only if neither code nor feed_url exists.
 
 -- ReliefWeb
 update public.job_sources
-set code = null
-where code = 'reliefweb_jobs'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'http://reliefweb.int/jobs/rss.xml'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='reliefweb_jobs',
-    name='ReliefWeb Jobs',
+set name='ReliefWeb Jobs',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"http://reliefweb.int/jobs/rss.xml","limit":50}'::jsonb,
@@ -66,17 +55,7 @@ where not exists (select 1 from public.job_sources where code='reliefweb_jobs')
 
 -- Remotive
 update public.job_sources
-set code = null
-where code = 'remotive'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://remotive.com/feed'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='remotive',
-    name='Remotive',
+set name='Remotive',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://remotive.com/feed","limit":50}'::jsonb,
@@ -105,17 +84,7 @@ where not exists (select 1 from public.job_sources where code='remotive')
 
 -- We Work Remotely
 update public.job_sources
-set code = null
-where code = 'weworkremotely'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://weworkremotely.com/remote-jobs.rss'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='weworkremotely',
-    name='We Work Remotely',
+set name='We Work Remotely',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://weworkremotely.com/remote-jobs.rss","limit":50}'::jsonb,
@@ -144,17 +113,7 @@ where not exists (select 1 from public.job_sources where code='weworkremotely')
 
 -- Himalayas
 update public.job_sources
-set code = null
-where code = 'himalayas'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://himalayas.app/jobs/rss'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='himalayas',
-    name='Himalayas',
+set name='Himalayas',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://himalayas.app/jobs/rss","limit":50}'::jsonb,
@@ -183,17 +142,7 @@ where not exists (select 1 from public.job_sources where code='himalayas')
 
 -- Empllo
 update public.job_sources
-set code = null
-where code = 'empllo'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://empllo.com/feeds/remote-jobs.rss'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='empllo',
-    name='Empllo',
+set name='Empllo',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://empllo.com/feeds/remote-jobs.rss","limit":50}'::jsonb,
@@ -222,17 +171,7 @@ where not exists (select 1 from public.job_sources where code='empllo')
 
 -- RemoteYeah
 update public.job_sources
-set code = null
-where code = 'remoteyeah'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://remoteyeah.com/rss.xml'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='remoteyeah',
-    name='RemoteYeah',
+set name='RemoteYeah',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://remoteyeah.com/rss.xml","limit":50}'::jsonb,
@@ -261,17 +200,7 @@ where not exists (select 1 from public.job_sources where code='remoteyeah')
 
 -- WorkAnywhere
 update public.job_sources
-set code = null
-where code = 'workanywhere'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://workanywhere.pro/rss.xml'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='workanywhere',
-    name='WorkAnywhere',
+set name='WorkAnywhere',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://workanywhere.pro/rss.xml","limit":50}'::jsonb,
@@ -300,17 +229,7 @@ where not exists (select 1 from public.job_sources where code='workanywhere')
 
 -- Real Work From Anywhere
 update public.job_sources
-set code = null
-where code = 'realwfa'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://www.realworkfromanywhere.com/rss.xml'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='realwfa',
-    name='Real Work From Anywhere',
+set name='Real Work From Anywhere',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://www.realworkfromanywhere.com/rss.xml","limit":50}'::jsonb,
@@ -339,17 +258,7 @@ where not exists (select 1 from public.job_sources where code='realwfa')
 
 -- HireWeb3
 update public.job_sources
-set code = null
-where code = 'hireweb3'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://hireweb3.io/job/rss'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='hireweb3',
-    name='HireWeb3',
+set name='HireWeb3',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://hireweb3.io/job/rss","limit":50}'::jsonb,
@@ -378,17 +287,7 @@ where not exists (select 1 from public.job_sources where code='hireweb3')
 
 -- Workable
 update public.job_sources
-set code = null
-where code = 'workable'
-  and exists (
-    select 1 from public.job_sources j2
-    where trim(both from j2.ingest_config->>'feed_url') = 'https://www.workable.com/boards/workable.xml'
-      and j2.id <> public.job_sources.id
-  );
-
-update public.job_sources
-set code='workable',
-    name='Workable Board',
+set name='Workable Board',
     ingest_method='rss_generic',
     ingest_status='ready',
     ingest_config='{"feed_url":"https://www.workable.com/boards/workable.xml","limit":50}'::jsonb,
