@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Go4Job — Merci</title>
+    <meta name="robots" content="noindex,nofollow" />
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
+      .wrap { max-width: 720px; margin: 0 auto; padding: 40px 16px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 16px; padding: 20px; }
+      .h { font-size: 22px; margin: 0 0 8px; }
+      .p { margin: 0 0 10px; color: #374151; line-height: 1.4; }
+      .muted { color: #6b7280; font-size: 13px; }
+      .badge { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 13px; margin-top: 10px; }
+      .ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+      .err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+      a.btn { display:inline-block; margin-top: 16px; padding: 10px 14px; border-radius: 12px; border: 1px solid #e5e7eb; text-decoration: none; color: #111827; }
+      .small { font-size: 12px; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1 class="h" id="title">Merci !</h1>
+        <p class="p" id="msg">Ton retour a bien été pris en compte.</p>
+        <div id="badge" class="badge ok" style="display:none"></div>
+
+        <p class="muted small" id="details"></p>
+
+        <a class="btn" href="/">Retour à Go4Job</a>
+      </div>
+      <p class="muted" style="margin-top:14px">
+        Astuce : tu peux fermer cette page et revenir à ton email.
+      </p>
+    </div>
+
+    <script>
+      const qp = new URLSearchParams(window.location.search);
+      const status = qp.get("status") || "ok";
+      const reason = qp.get("reason") || "";
+      const action = qp.get("action") || "";
+      const feedback = qp.get("feedback") || "";
+      const jobId = qp.get("job_id") || "";
+
+      const titleEl = document.getElementById("title");
+      const msgEl = document.getElementById("msg");
+      const badgeEl = document.getElementById("badge");
+      const detailsEl = document.getElementById("details");
+
+      function setBadge(kind, text) {
+        badgeEl.style.display = "inline-block";
+        badgeEl.className = "badge " + (kind === "ok" ? "ok" : "err");
+        badgeEl.textContent = text;
+      }
+
+      // Message principal
+      if (status === "ok") {
+        if (action === "up") {
+          titleEl.textContent = "Merci 👍";
+          msgEl.textContent = "Super ! On utilise ton 👍 pour améliorer le matching.";
+          setBadge("ok", "Feedback enregistré");
+        } else if (action === "down") {
+          titleEl.textContent = "Merci 👎";
+          msgEl.textContent = "Merci ! Ton 👎 nous aide à filtrer les offres moins pertinentes.";
+          setBadge("ok", "Feedback enregistré");
+        } else if (reason === "already_used") {
+          titleEl.textContent = "Merci ✅";
+          msgEl.textContent = "Ce lien a déjà été utilisé, mais c’est bon : ton feedback est déjà enregistré.";
+          setBadge("ok", "Déjà pris en compte");
+        } else {
+          titleEl.textContent = "Merci ✅";
+          msgEl.textContent = "Ton retour a bien été pris en compte.";
+          setBadge("ok", "OK");
+        }
+      } else {
+        titleEl.textContent = "Oups…";
+        if (reason === "expired") {
+          msgEl.textContent = "Ce lien a expiré. Reçois un nouveau digest et réessaie.";
+        } else if (reason === "invalid_token") {
+          msgEl.textContent = "Lien invalide. Vérifie que tu as ouvert le lien complet depuis l’email.";
+        } else if (reason === "missing_token") {
+          msgEl.textContent = "Lien incomplet. Ouvre le lien depuis l’email.";
+        } else {
+          msgEl.textContent = "Une erreur est survenue. Réessaie depuis l’email (ou le prochain digest).";
+        }
+        setBadge("err", "Erreur");
+      }
+
+      // Détails (debug léger)
+      const parts = [];
+      if (reason) parts.push("reason=" + reason);
+      if (action) parts.push("action=" + action);
+      if (feedback) parts.push("feedback=" + feedback);
+      if (jobId) parts.push("job_id=" + jobId);
+      detailsEl.textContent = parts.length ? ("Détails: " + parts.join(" • ")) : "";
+    </script>
+  </body>
+</html>
