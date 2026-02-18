@@ -32,6 +32,7 @@ type JobRow = {
   created_at?: string | null;
   updated_at?: string | null;
   description_text?: string | null;
+  description_html?: string | null;
   official_desc?: string | null;
   tags?: string[] | null;
   job_skills?: string[] | null;
@@ -41,6 +42,18 @@ type JobRow = {
   experience_years_max?: number | null;
   source_url?: string | null;
   external_id?: string | null;
+  ai_description?: string | null;
+  ai_description_status?: string | null;
+  ai_description_quality?: number | null;
+  ai_description_model?: string | null;
+  ai_description_error?: string | null;
+  ai_description_updated_at?: string | null;
+};
+
+type DigestItem = {
+  job: JobRow;
+  summary_fr: string;
+  language?: string | null;
 };
 
 const MAX_ITEMS = 8;
@@ -49,12 +62,26 @@ const TOP_MIN = 65;
 const EXP_MIN = 50;
 const EXP_MAX = 64;
 const JOB_LIMIT = 600;
+const AI_DESC_MIN_QUALITY = 0.65;
+const SUMMARY_MAX_SENTENCES = 3;
+const SUMMARY_MAX_CHARS = 420;
 
 const STOP_WORDS = new Set([
   "de","des","du","la","le","les","un","une","et","en","a","au","aux","pour","avec","sans","sur","dans","chez","ou",
   "the","a","an","and","or","for","with","without","in","on","at","to","from",
   "remote","remotely","hybrid","freelance","intern","internship","stage","alternance","junior","senior",
+  "poste","mission","missions","role","responsibilities","responsibility","experience","skills","competences",
+  "company","entreprise","team","equipe","equipee","profile","profil",
 ]);
+
+const FR_HINTS = [
+  " le "," la "," les "," des "," pour "," avec "," poste "," mission "," responsabilite "," competences ",
+  "experience ","experiences ","gestion ","budget ","equipe ","formation ","diplome ","sante ","finance ",
+];
+const EN_HINTS = [
+  " the "," and "," with "," for "," position "," responsibilities "," skills "," experience "," team "," manager ",
+  "role ","benefits ","requirements ",
+];
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -131,6 +158,117 @@ function pickFirstName(profile: Record<string, unknown> | null, meta: Record<str
   return null;
 }
 
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function decodeHtmlEntities(s: string) {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function stripHtml(html: string) {
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, " "));
+}
+
+function collapseWhitespace(s: string) {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function splitSentences(text: string): string[] {
+  return collapseWhitespace(text)
+    .replace(/([.!?])\s+/g, "$1|")
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function clampSentences(text: string, maxSentences = SUMMARY_MAX_SENTENCES, maxChars = SUMMARY_MAX_CHARS) {
+  const sentences = splitSentences(text);
+  let out = sentences.slice(0, maxSentences).join(" ");
+  if (out.length > maxChars) out = out.slice(0, maxChars).trim() + "…";
+  return out;
+}
+
+function detectLanguage(text: string): string | null {
+  const t = ` ${normalizeText(text)} `;
+  let fr = 0;
+  let en = 0;
+
+  for (const h of FR_HINTS) if (t.includes(normalizeText(h))) fr += 1;
+  for (const h of EN_HINTS) if (t.includes(normalizeText(h))) en += 1;
+
+  if (/[àâäçéèêëîïôöùûüÿ]/i.test(text)) fr += 2;
+
+  if (fr >= en + 1) return "FR";
+  if (en >= fr + 1) return "EN";
+  return null;
+}
+
+function extractKeywordsFromText(text: string): string[] {
+  const t = canonicalize(text);
+  if (!t) return [];
+  const tokens = t
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean)
+    .filter((w) => w.length >= 4)
+    .filter((w) => !STOP_WORDS.has(w));
+  return uniq(tokens).slice(0, 5);
+}
+
+function buildSummaryFr(job: JobRow): string {
+  const ai = clean(job.ai_description);
+  if (ai && job.ai_description_status === "done" && (job.ai_description_quality ?? 0) >= AI_DESC_MIN_QUALITY) {
+    return clampSentences(stripHtml(ai), SUMMARY_MAX_SENTENCES, SUMMARY_MAX_CHARS);
+  }
+
+  const baseText = clean(job.description_text) ||
+    clean(stripHtml(job.description_html ?? "")) ||
+    clean(job.official_desc) ||
+    clean(job.title) ||
+    "";
+
+  const title = clean(job.title) || "Ce poste";
+  const company = clean(job.company_name);
+  const location = clean(job.location) || clean(job.country);
+
+  let s1 = title;
+  if (company) s1 += ` chez ${company}`;
+  if (location) s1 += ` (${location})`;
+  s1 += ".";
+
+  const keywords = extractKeywordsFromText(baseText);
+  const s2 = keywords.length
+    ? `Points cles: ${keywords.join(", ")}.`
+    : "Consulte l'annonce pour les missions et competences demandees.";
+
+  return clampSentences(`${s1} ${s2}`, 2, SUMMARY_MAX_CHARS);
+}
+
+function buildItems(list: JobRow[]): DigestItem[] {
+  return list.map((job) => {
+    const baseText =
+      clean(job.description_text) ||
+      clean(stripHtml(job.description_html ?? "")) ||
+      clean(job.official_desc) ||
+      clean(job.title) ||
+      "";
+    const language = baseText ? detectLanguage(baseText) : null;
+    const summary = buildSummaryFr(job);
+    return { job, summary_fr: summary, language };
+  });
+}
+
 function buildEmailHtml(params: {
   salutation: string;
   preview: string;
@@ -138,23 +276,29 @@ function buildEmailHtml(params: {
   topTitle: string;
   exploreTitle: string;
   exploreHelper: string;
-  top: JobRow[];
-  explore: JobRow[];
+  top: DigestItem[];
+  explore: DigestItem[];
   appBaseUrl: string;
 }) {
   const { preview, intro, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl } = params;
 
-  const itemHtml = (job: JobRow) => {
-    const title = job.title ?? "Offre";
-    const company = job.company_name ? ` • ${job.company_name}` : "";
-    const location = job.location ? ` • ${job.location}` : "";
+  const itemHtml = (item: DigestItem) => {
+    const job = item.job;
+    const title = escapeHtml(job.title ?? "Offre");
+    const company = job.company_name ? ` • ${escapeHtml(job.company_name)}` : "";
+    const location = job.location ? ` • ${escapeHtml(job.location)}` : "";
     const date = formatDate(job.published_at || job.posted_at || job.scraped_at || job.created_at) || "";
     const link = job.source_url || `${appBaseUrl}/jobradar/jobs/${job.id}`;
+    const summary = item.summary_fr ? escapeHtml(item.summary_fr) : "";
+    const langBadge = item.language
+      ? `<span style="display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;background:#f1f5f9;color:#0f172a;font-size:11px;">Langue: ${item.language}</span>`
+      : "";
     return `
       <div style="padding:12px 0;border-bottom:1px solid #eef1f5;">
-        <div style="font-size:15px;font-weight:600;color:#0f172a;">${title}${company}</div>
+        <div style="font-size:15px;font-weight:600;color:#0f172a;">${title}${company}${langBadge}</div>
         <div style="font-size:13px;color:#64748b;margin-top:4px;">${location}${date ? " • " + date : ""}</div>
-        <div style="margin-top:6px;">
+        ${summary ? `<div style="margin-top:8px;font-size:13px;line-height:1.55;color:#0f172a;"><b>Résumé FR :</b> ${summary}</div>` : ""}
+        <div style="margin-top:8px;">
           <a href="${link}" style="color:#2563eb;text-decoration:none;font-weight:600;">Voir l’offre</a>
         </div>
       </div>
@@ -165,9 +309,9 @@ function buildEmailHtml(params: {
   const exploreHtml = explore.map(itemHtml).join("");
 
   return `
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${preview}</div>
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preview)}</div>
   <div style="background:#f6f8fb;padding:24px 0;">
-    <div style="max-width:620px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.08);overflow:hidden;">
+    <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.08);overflow:hidden;">
       <div style="padding:20px 24px;border-bottom:1px solid #eef1f5;">
         <div style="font-size:16px;color:#0f172a;line-height:1.5;">
           ${intro}
@@ -198,6 +342,24 @@ function buildEmailHtml(params: {
     </div>
   </div>
   `;
+}
+
+async function logStatus(
+  supabase: ReturnType<typeof createClient>,
+  payload: {
+    user_id?: string | null;
+    to_email: string;
+    channel: string;
+    digest_date: string;
+    status: string;
+    provider?: string;
+    provider_id?: string | null;
+    error?: string | null;
+  },
+) {
+  await supabase
+    .from("notification_logs")
+    .upsert(payload, { onConflict: "to_email,channel,digest_date" });
 }
 
 serve(async (req) => {
@@ -232,7 +394,7 @@ serve(async (req) => {
   const resendKey = clean(Deno.env.get("RESEND_API_KEY"));
   const resendFrom = clean(Deno.env.get("RESEND_FROM"));
   const resendReplyTo = clean(Deno.env.get("RESEND_REPLY_TO"));
-  const appBaseUrl = clean(Deno.env.get("APP_BASE_URL")) || "https://jobradar.go4jobapp.com";
+  const appBaseUrl = clean(Deno.env.get("APP_BASE_URL")) || "https://jobradar.go4jobapp.com/";
 
   if (!resendKey || !resendFrom) {
     return json(500, { ok: false, error: "missing_resend_config" });
@@ -254,10 +416,12 @@ serve(async (req) => {
     .select(`
       id, title, company_name, location, country, remote_type,
       published_at, posted_at, scraped_at, created_at, updated_at,
-      description_text, official_desc,
+      description_text, description_html, official_desc,
       tags, job_skills, required_skills, optional_skills,
       experience_years_min, experience_years_max,
-      source_url, external_id
+      source_url, external_id,
+      ai_description, ai_description_status, ai_description_quality,
+      ai_description_model, ai_description_error, ai_description_updated_at
     `)
     .eq("is_active", true)
     .eq("is_expired", false)
@@ -286,7 +450,7 @@ serve(async (req) => {
         ...(j.tags ?? []),
       ]
         .filter(Boolean)
-        .join(" ")
+        .join(" "),
     );
     jobHay.set(j.id, hay);
   }
@@ -467,7 +631,7 @@ serve(async (req) => {
 
     const allItems = [...selectedTop, ...selectedExplore];
     if (allItems.length === 0) {
-      await supabase.from("notification_logs").insert({
+      await logStatus(supabase, {
         user_id: user?.id ?? null,
         to_email: toEmail,
         channel: "email",
@@ -493,8 +657,8 @@ serve(async (req) => {
       topTitle: "Top matchs (≥ 65)",
       exploreTitle: "Explorer (50–64)",
       exploreHelper: "Tu peux aussi explorer ces opportunités proches de ton profil.",
-      top: selectedTop,
-      explore: selectedExplore,
+      top: buildItems(selectedTop),
+      explore: buildItems(selectedExplore),
       appBaseUrl,
     });
 
@@ -529,7 +693,7 @@ serve(async (req) => {
     try { data = await resp.json(); } catch { data = {}; }
 
     if (!resp.ok) {
-      await supabase.from("notification_logs").insert({
+      await logStatus(supabase, {
         user_id: user?.id ?? null,
         to_email: toEmail,
         channel: "email",
@@ -542,7 +706,7 @@ serve(async (req) => {
       continue;
     }
 
-    await supabase.from("notification_logs").insert({
+    await logStatus(supabase, {
       user_id: user?.id ?? null,
       to_email: toEmail,
       channel: "email",
