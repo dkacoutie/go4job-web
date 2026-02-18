@@ -4,8 +4,11 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import "./MyCvPage.css";
 
+// @ts-ignore: external module has no types in build environment
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
+// @ts-ignore: worker url module has no types
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker?url";
+// @ts-ignore: browser bundle has no types
 import * as mammoth from "mammoth/mammoth.browser";
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
