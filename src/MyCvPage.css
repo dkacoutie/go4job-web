@@ -177,3 +177,30 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+.cv-structured {
+  margin-top: 8px;
+}
+
+.cv-section {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.cv-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.cv-section-body {
+  white-space: pre-line;
+  line-height: 1.55;
+  font-size: 13px;
+  color: var(--text);
+}

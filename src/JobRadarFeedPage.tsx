@@ -61,6 +61,13 @@ type JobRow = {
   experience_years_max?: number | null;
 };
 
+type CvSaveResponse = {
+  ok: boolean;
+  data?: any;
+  error?: string;
+  message?: string;
+};
+
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (err && typeof err === "object" && "message" in err) {
@@ -201,6 +208,31 @@ export default function JobRadarFeedPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  async function invokeCvSave(action: "get_active", payload?: any) {
+    const { data, error } = await supabase.functions.invoke("cv_save", {
+      body: { action, payload },
+    });
+
+    if (error) {
+      let msg = error.message ?? "Erreur Edge Function";
+      const anyErr = error as any;
+      if (anyErr?.context instanceof Response) {
+        const t = await anyErr.context.text();
+        if (t) {
+          try {
+            const j = JSON.parse(t);
+            msg = j?.error || j?.message || t;
+          } catch {
+            msg = t;
+          }
+        }
+      }
+      throw new Error(msg);
+    }
+
+    return data as CvSaveResponse;
+  }
+
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
   }, [loading, session, navigate]);
@@ -300,26 +332,26 @@ export default function JobRadarFeedPage() {
       if (aErr) throw aErr;
       setAlerts((aData ?? []) as AlertRow[]);
 
-      const { data: cvData, error: cvErr } = await supabase
-        .from("user_cvs")
-        .select("skills, cv_json")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (cvErr) {
-        setCvSkills([]);
-        setCvExp(null);
-      } else {
-        setCvSkills(Array.isArray((cvData as any)?.skills) ? (cvData as any).skills : []);
-        const cvJson = (cvData as any)?.cv_json ?? {};
-        const expMin = toNumberOrNull(cvJson?.experience_years_min);
-        const expMax = toNumberOrNull(cvJson?.experience_years_max);
-        if (expMin != null || expMax != null) {
-          setCvExp({ min: expMin, max: expMax });
+      try {
+        const res = await invokeCvSave("get_active");
+        if (res?.ok && res?.data) {
+          const cvData = res.data;
+          setCvSkills(Array.isArray(cvData?.skills) ? cvData.skills : []);
+          const cvJson = cvData?.cv_json ?? {};
+          const expMin = toNumberOrNull(cvJson?.experience_years_min);
+          const expMax = toNumberOrNull(cvJson?.experience_years_max);
+          if (expMin != null || expMax != null) {
+            setCvExp({ min: expMin, max: expMax });
+          } else {
+            setCvExp(null);
+          }
         } else {
+          setCvSkills([]);
           setCvExp(null);
         }
+      } catch {
+        setCvSkills([]);
+        setCvExp(null);
       }
 
       const fetchedJobs = await fetchJobsRange(0, PAGE_SIZE - 1);

@@ -4,6 +4,12 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import "./MyCvPage.css";
 
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
+import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker?url";
+import * as mammoth from "mammoth/mammoth.browser";
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
+
 type CvExtractResponse = {
   ok: boolean;
   contact?: { email?: string | null; phone?: string | null };
@@ -18,6 +24,15 @@ type CvExtractResponse = {
   sections?: Record<string, string>;
   stats?: { chars?: number; lines?: number };
   match?: { keyword_score?: number };
+  error?: string;
+  message?: string;
+};
+
+type CvSaveResponse = {
+  ok: boolean;
+  data?: any;
+  error?: string;
+  message?: string;
 };
 
 type FileMeta = {
@@ -36,6 +51,133 @@ function formatBytes(v: number) {
 
 function safeFileName(name: string) {
   return name.replace(/[^a-z0-9._-]+/gi, "_");
+}
+
+function normalizeKey(s: string) {
+  return (s ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function improveReadableText(raw: string) {
+  let t = String(raw ?? "").replace(/\r/g, "\n").replace(/\u00a0/g, " ");
+  t = t.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!t) return "";
+
+  const lines = t.split(/\r\n|\r|\n/).length;
+  const density = t.length / Math.max(1, lines);
+  if (lines >= 10 && density < 180) return t;
+
+  t = t.replace(/\s*[\u2022\u00b7]\s*/g, "\n- ");
+  t = t.replace(
+    /\b(PROFIL|EXPERIENCE PROFESSIONNELLE|EXP[\u00C9E]RIENCE PROFESSIONNELLE|EXPERIENCE|EXP[\u00C9E]RIENCE|FORMATION|EDUCATION|COMP[\u00C9E]TENCES|COMPETENCES|SKILLS|LANGUES|LANGUAGES|CONTACT|OBJECTIF|POSTE VISE|POSTE VIS[\u00C9E])\b\s*[:\uFF1A-]?\s*/gi,
+    "\n\n$1\n",
+  );
+  t = t.replace(/([.!?])\s+(?=[A-Z])/g, "$1\n");
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t.trim();
+}
+
+function stripDangerousChars(input: string) {
+  return String(input ?? "")
+    .replace(/\uFEFF/g, "")
+    .replace(/\u0000/g, "")
+    .replace(/[\uD800-\uDFFF]/g, "")
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, "");
+}
+
+const SECTION_LABELS: Record<string, string> = {
+  profil: "Profil",
+  experience: "Experiences",
+  "experience professionnelle": "Experiences",
+  formation: "Formation",
+  education: "Formation",
+  competences: "Competences",
+  skills: "Competences",
+  langues: "Langues",
+  languages: "Langues",
+  contact: "Contact",
+  body: "Resume",
+};
+
+function formatSectionTitle(raw: string) {
+  const k = normalizeKey(raw);
+  return SECTION_LABELS[k] ?? (raw || "Resume");
+}
+
+function isPdf(f: File) {
+  return f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+}
+
+function isDocx(f: File) {
+  return (
+    f.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    f.name.toLowerCase().endsWith(".docx")
+  );
+}
+
+function isTxt(f: File) {
+  return f.type === "text/plain" || f.name.toLowerCase().endsWith(".txt");
+}
+
+async function extractTextFromPdf(f: File) {
+  const buf = await f.arrayBuffer();
+  const pdf = await getDocument({ data: buf }).promise;
+  let out = "";
+
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+
+    let lastY: number | null = null;
+    let lastX: number | null = null;
+    let line = "";
+    const lines: string[] = [];
+
+    for (const it of content.items as any[]) {
+      const str = String(it?.str ?? "").trim();
+      if (!str) continue;
+
+      const x = typeof it?.transform?.[4] === "number" ? it.transform[4] : null;
+      const y = typeof it?.transform?.[5] === "number" ? it.transform[5] : null;
+
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) {
+        if (line) lines.push(line.trim());
+        line = "";
+      }
+
+      if (lastX !== null && x !== null && x < lastX && y !== null && lastY !== null && Math.abs(y - lastY) < 2) {
+        if (line) lines.push(line.trim());
+        line = "";
+      }
+
+      line += (line ? " " : "") + str;
+      lastY = y ?? lastY;
+      lastX = x ?? lastX;
+    }
+
+    if (line) lines.push(line.trim());
+    out += lines.join("\n") + "\n";
+  }
+
+  return out.trim();
+}
+
+async function extractTextFromDocx(f: File) {
+  const buf = await f.arrayBuffer();
+  const res = await mammoth.extractRawText({ arrayBuffer: buf });
+  return (res?.value ?? "").trim();
+}
+
+async function extractTextFromFile(f: File) {
+  if (isPdf(f)) return await extractTextFromPdf(f);
+  if (isDocx(f)) return await extractTextFromDocx(f);
+  if (isTxt(f)) return await f.text();
+  return "";
 }
 
 export default function MyCvPage() {
@@ -65,25 +207,67 @@ export default function MyCvPage() {
     return t.split(/\r\n|\r|\n/).length;
   }, [cvText]);
 
+  const structuredSections = useMemo(() => {
+    const sections = result?.sections ?? {};
+    const entries: Array<{ title: string; body: string }> = [];
+    const seen = new Set<string>();
+
+    for (const [k, v] of Object.entries(sections)) {
+      const body = (v ?? "").trim();
+      if (!body || body.length < 40) continue;
+      const nk = normalizeKey(k);
+      if (nk === "body") continue;
+      if (seen.has(nk)) continue;
+      seen.add(nk);
+      entries.push({ title: formatSectionTitle(k), body });
+    }
+
+    if (entries.length === 0 && sections.body) {
+      entries.push({ title: "Resume", body: sections.body });
+    }
+
+    return entries.slice(0, 8);
+  }, [result?.sections]);
+
+  async function invokeCvSave(action: "get_active" | "upsert" | "archive", payload?: any) {
+    const { data, error } = await supabase.functions.invoke("cv_save", {
+      body: { action, payload },
+    });
+
+    if (error) {
+      let msg = error.message ?? "Erreur Edge Function";
+      const anyErr = error as any;
+      if (anyErr?.context instanceof Response) {
+        const t = await anyErr.context.text();
+        if (t) {
+          try {
+            const j = JSON.parse(t);
+            msg = j?.error || j?.message || t;
+          } catch {
+            msg = t;
+          }
+        }
+      }
+      throw new Error(msg);
+    }
+
+    return data as CvSaveResponse;
+  }
+
   async function loadActiveCv() {
     if (!userId) return;
     setErr(null);
 
-    const { data, error } = await supabase
-      .from("user_cvs")
-      .select("id,label,cv_text,cv_json,skills,skills_by_category,contact,is_active,updated_at,file_path,file_name,file_size,mime_type")
-      .eq("user_id", userId)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error) {
-      setErr(error.message);
+    const res = await invokeCvSave("get_active");
+    if (!res?.ok) {
+      setErr(res?.error || res?.message || "Erreur lors du chargement du CV");
       return;
     }
 
+    const data = res?.data ?? null;
     if (data) {
       setLabel((data as any).label ?? "CV");
-      setCvText((data as any).cv_text ?? "");
+      setCvText(improveReadableText((data as any).cv_text ?? ""));
       setResult({
         ok: true,
         contact: (data as any).contact ?? {},
@@ -130,23 +314,19 @@ export default function MyCvPage() {
     setErr(null);
 
     try {
-      let text = cvText.trim();
+      const existingText = cvText.trim();
+      let text = existingText;
       let fileText = "";
       let fileInfo: any = null;
 
-      const { data: existing, error: exErr } = await supabase
-        .from("user_cvs")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (exErr) throw exErr;
-
       if (file) {
+        if (!isPdf(file) && !isTxt(file) && !isDocx(file)) {
+          throw new Error("Format non supporte. Utilise PDF, DOCX ou TXT.");
+        }
+
         fileInfo = await uploadCvFile(file);
         try {
-          fileText = (await file.text()) ?? "";
+          fileText = improveReadableText(stripDangerousChars((await extractTextFromFile(file)) ?? ""));
         } catch {
           fileText = "";
         }
@@ -156,10 +336,14 @@ export default function MyCvPage() {
         text = fileText.trim();
       }
 
+      text = improveReadableText(stripDangerousChars(text));
+      if ((!existingText || existingText.length < 50) && text && text !== cvText) {
+        setCvText(text);
+      }
+
       if (!text || text.length < 50) {
-        // store file metadata even if text extraction failed
         if (fileInfo) {
-          const payload = {
+          await invokeCvSave("upsert", {
             label,
             cv_text: text || null,
             cv_json: {},
@@ -167,17 +351,7 @@ export default function MyCvPage() {
             skills_by_category: {},
             contact: {},
             ...fileInfo,
-          };
-
-          if (existing?.id) {
-            await supabase.from("user_cvs").update(payload).eq("id", existing.id);
-          } else {
-            await supabase.from("user_cvs").insert({
-              user_id: userId,
-              is_active: true,
-              ...payload,
-            });
-          }
+          });
         }
         throw new Error("Impossible de lire le texte du CV. Si c'est un PDF scanne, colle le texte manuellement.");
       }
@@ -186,9 +360,31 @@ export default function MyCvPage() {
         body: { cv_text: text },
       });
 
-      if (error) throw error;
+      if (error) {
+        let msg = error.message ?? "Erreur Edge Function";
+        const anyErr = error as any;
+        if (anyErr?.context instanceof Response) {
+          const t = await anyErr.context.text();
+          if (t) {
+            try {
+              const j = JSON.parse(t);
+              msg = j?.error || j?.message || t;
+            } catch {
+              msg = t;
+            }
+          }
+        }
+        if (msg.includes("non-2xx")) {
+          msg = "Erreur serveur lors de l'analyse. Reessaie dans quelques instants.";
+        }
+        throw new Error(msg);
+      }
 
       const parsed = data as CvExtractResponse;
+      if (parsed && parsed.ok === false) {
+        throw new Error(parsed.error || parsed.message || "Analyse impossible");
+      }
+
       setResult(parsed);
 
       const skills = Array.isArray(parsed?.skills) ? parsed.skills : [];
@@ -199,7 +395,7 @@ export default function MyCvPage() {
         stats: parsed?.stats ?? {},
       };
 
-      const payload = {
+      await invokeCvSave("upsert", {
         label,
         cv_text: text,
         cv_json: cvJson,
@@ -207,19 +403,7 @@ export default function MyCvPage() {
         skills_by_category: skillsByCategory,
         contact,
         ...(fileInfo ?? {}),
-      };
-
-      if (existing?.id) {
-        const { error: upErr } = await supabase.from("user_cvs").update(payload).eq("id", existing.id);
-        if (upErr) throw upErr;
-      } else {
-        const { error: insErr } = await supabase.from("user_cvs").insert({
-          user_id: userId,
-          is_active: true,
-          ...payload,
-        });
-        if (insErr) throw insErr;
-      }
+      });
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -237,20 +421,7 @@ export default function MyCvPage() {
     setErr(null);
 
     try {
-      const { data: existing, error: exErr } = await supabase
-        .from("user_cvs")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      if (exErr) throw exErr;
-
-      if (existing?.id) {
-        const { error } = await supabase.from("user_cvs").update({ is_active: false }).eq("id", existing.id);
-        if (error) throw error;
-      }
-
+      await invokeCvSave("archive");
       setCvText("");
       setResult(null);
       setFile(null);
@@ -280,19 +451,16 @@ export default function MyCvPage() {
     <div className="mycv-shell">
       <div className="mycv-top">
         <div className="mycv-title">
-          <button className="btn btnGhost" type="button" onClick={() => navigate("/")}>
-            ← Retour
-          </button>
+          <button className="btn btnGhost" type="button" onClick={() => navigate("/")}>Retour</button>
           <h1>Mon CV</h1>
         </div>
       </div>
 
       <p className="mycv-subtitle">
-        Importe ton CV (PDF/TXT) ou colle le texte. Clique <b>Analyser & enregistrer</b> pour extraire tes competences.
+        Importe ton CV (PDF/TXT/DOCX) ou colle le texte. Clique <b>Analyser & enregistrer</b> pour extraire tes competences.
       </p>
 
       <div className="mycv-grid">
-        {/* LEFT: editor */}
         <div className="card">
           <div className="field">
             <label className="label">Nom/Label du CV</label>
@@ -300,13 +468,13 @@ export default function MyCvPage() {
           </div>
 
           <div className="field">
-            <label className="label">Importer un fichier CV (PDF/TXT)</label>
-            <input className="input mycv-file" type="file" accept=".pdf,.txt" onChange={onFileChange} />
+            <label className="label">Importer un fichier CV (PDF/TXT/DOCX)</label>
+            <input className="input mycv-file" type="file" accept=".pdf,.txt,.docx" onChange={onFileChange} />
             {fileMeta && (
               <div className="file-meta">
                 <span>{fileMeta.name}</span>
-                <span>• {formatBytes(fileMeta.size)}</span>
-                {fileMeta.type ? <span>• {fileMeta.type}</span> : null}
+                <span> - {formatBytes(fileMeta.size)}</span>
+                {fileMeta.type ? <span> - {fileMeta.type}</span> : null}
                 <button className="btn btnGhost btnSm" type="button" onClick={() => { setFile(null); setFileMeta(null); }}>
                   Retirer
                 </button>
@@ -327,7 +495,7 @@ export default function MyCvPage() {
           <div className="actions-row">
             <div className="actions-left">
               <span className="muted">
-                {chars} caracteres · {lines} lignes
+                {chars} caracteres - {lines} lignes
               </span>
 
               <button className="btn btnGhost" type="button" onClick={loadActiveCv} disabled={busy}>
@@ -350,15 +518,14 @@ export default function MyCvPage() {
           <div className="small">Astuce : si le PDF est scanne, colle le texte manuellement.</div>
         </div>
 
-        {/* RIGHT: results */}
         <div className="card">
           <h3>Contact detecte</h3>
           <div className="kv">
             <div>
-              <b>Email :</b> {result?.contact?.email ?? "—"}
+              <b>Email :</b> {result?.contact?.email ?? "-"}
             </div>
             <div>
-              <b>Telephone :</b> {result?.contact?.phone ?? "—"}
+              <b>Telephone :</b> {result?.contact?.phone ?? "-"}
             </div>
           </div>
 
@@ -388,9 +555,21 @@ export default function MyCvPage() {
             </div>
           ) : (
             <div className="pills">
-              {(result?.skills ?? []).length === 0 && <span className="muted">—</span>}
+              {(result?.skills ?? []).length === 0 && <span className="muted">-</span>}
               {(result?.skills ?? []).map((s, i) => (
                 <span className="pill" key={`${s}-${i}`}>{s}</span>
+              ))}
+            </div>
+          )}
+
+          {structuredSections.length > 0 && (
+            <div className="cv-structured">
+              <h3 style={{ marginTop: 16 }}>Resume structure</h3>
+              {structuredSections.map((s) => (
+                <div className="cv-section" key={s.title}>
+                  <div className="cv-section-title">{s.title}</div>
+                  <div className="cv-section-body">{s.body}</div>
+                </div>
               ))}
             </div>
           )}
@@ -402,13 +581,13 @@ export default function MyCvPage() {
           <h3 style={{ marginTop: 16 }}>Stats</h3>
           <div className="kv">
             <div>
-              <b>Texte colle :</b> {result?.stats?.chars ?? chars} caracteres · {result?.stats?.lines ?? lines} lignes
+              <b>Texte colle :</b> {result?.stats?.chars ?? chars} caracteres - {result?.stats?.lines ?? lines} lignes
             </div>
             <div>
-              <b>Analyse :</b> {result?.stats?.chars ?? chars} caracteres · {result?.stats?.lines ?? lines} lignes
+              <b>Analyse :</b> {result?.stats?.chars ?? chars} caracteres - {result?.stats?.lines ?? lines} lignes
             </div>
             <div>
-              <b>Experience estimee :</b> —
+              <b>Experience estimee :</b> -
             </div>
           </div>
         </div>
