@@ -147,6 +147,35 @@
   color: rgba(11, 76, 194, 0.98);
 }
 
+.pill-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pill-remove {
+  border: none;
+  background: transparent;
+  color: rgba(11, 76, 194, 0.9);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.skill-edit-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 920px) {
+  .skill-edit-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .kv {
   display: grid;
   gap: 6px;

@@ -70,6 +70,49 @@ const SKILL_HINT_WORDS = [
   "allemand",
 ];
 
+const VERB_HINT_WORDS = [
+  "ensuring",
+  "managed",
+  "developed",
+  "boosted",
+  "improved",
+  "led",
+  "prepared",
+  "created",
+  "streamlined",
+  "handled",
+  "maintained",
+  "reported",
+  "participated",
+  "collected",
+  "evaluated",
+  "supported",
+  "assisted",
+  "advised",
+  "increased",
+  "reduced",
+  "resulting",
+  "assure",
+  "assuree",
+  "assurer",
+  "gere",
+  "geree",
+  "gerer",
+  "developpe",
+  "developpee",
+  "developper",
+  "pilote",
+  "piloter",
+  "realise",
+  "realisee",
+  "realiser",
+  "participe",
+  "participer",
+  "ameliore",
+  "ameliorer",
+  "mis en place",
+];
+
 const CANONICAL_RULES: Array<{ re: RegExp; skill: string; cat?: keyof SkillsByCategory }> = [
   { re: /gestion.*budget|budget.*gestion/i, skill: "gestion budgetaire", cat: "hard" },
   { re: /planification.*budget|budget.*planification/i, skill: "planification budgetaire", cat: "hard" },
@@ -158,9 +201,32 @@ function splitToItems(text: string) {
     .filter(Boolean);
 }
 
+function wordCount(s: string) {
+  return (s.trim().match(/\S+/g) || []).length;
+}
+
+function hasVerbLike(s: string) {
+  const k = normalizeKey(s);
+  return VERB_HINT_WORDS.some((v) => k.includes(normalizeKey(v)));
+}
+
+function isBadSkillCandidate(s: string) {
+  if (!s) return true;
+  const words = wordCount(s);
+  if (words >= 7) return true;
+  if (s.length > 45) return true;
+  if (hasVerbLike(s)) return true;
+  if (/[.!?]/.test(s) && words > 4) return true;
+  if (/\b(19|20)\d{2}\b/.test(s)) return true;
+  if (/\b(xof|usd|eur|million|millions|milliard|milliards)\b/i.test(s)) return true;
+  return false;
+}
+
 function canonicalizeSkill(raw: string): { value: string | null; forcedCat?: keyof SkillsByCategory } {
   const t = stripBullets(raw);
   let k = normalizeKey(t);
+
+  if (isBadSkillCandidate(t)) return { value: null };
 
   k = k
     .replace(/^specialise(e)? en\s+/i, "")
@@ -182,6 +248,8 @@ function canonicalizeSkill(raw: string): { value: string | null; forcedCat?: key
   }
 
   if (!hasSkillSignal(k)) return { value: null };
+
+  if (isBadSkillCandidate(k)) return { value: null };
 
   if (k.length > 60) k = k.slice(0, 60).trim();
 
@@ -224,9 +292,9 @@ function extractSkillsByCategory(sections: Record<string, string>, cvText: strin
 
   const langText = sections["langues"] || sections["languages"] || "";
 
-  const fallback = skillsText || toolsText || langText ? "" : cvText.slice(0, 2200);
-
-  const pool = [skillsText, toolsText, langText, fallback].filter(Boolean).join("\n");
+  const poolSources = [skillsText, toolsText, langText].filter(Boolean);
+  const fallback = poolSources.length ? "" : cvText.slice(0, 1200);
+  const pool = [...poolSources, fallback].filter(Boolean).join("\n");
   const items = splitToItems(pool);
 
   const out: SkillsByCategory = { hard: [], soft: [], tools: [], languages: [], other: [] };

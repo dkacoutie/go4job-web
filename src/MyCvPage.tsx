@@ -66,6 +66,30 @@ function normalizeKey(s: string) {
     .trim();
 }
 
+function normalizeSkillLabel(s: string) {
+  return String(s ?? "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeSkillsList(list: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const raw of list || []) {
+    const label = normalizeSkillLabel(raw);
+    if (!label) continue;
+    if (label.length > 45) continue;
+    const words = label.split(" ").filter(Boolean).length;
+    if (words >= 7) continue;
+
+    const key = normalizeKey(label);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+
+  return out.slice(0, 60);
+}
+
 function improveReadableText(raw: string) {
   let t = String(raw ?? "").replace(/\r/g, "\n").replace(/\u00a0/g, " ");
   t = t.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -192,6 +216,10 @@ export default function MyCvPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<CvExtractResponse | null>(null);
+  const [editableSkills, setEditableSkills] = useState<string[]>([]);
+  const [skillInput, setSkillInput] = useState("");
+  const [lastParsed, setLastParsed] = useState<CvExtractResponse | null>(null);
+  const [lastFileInfo, setLastFileInfo] = useState<any>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
@@ -271,7 +299,16 @@ export default function MyCvPage() {
     if (data) {
       setLabel((data as any).label ?? "CV");
       setCvText(improveReadableText((data as any).cv_text ?? ""));
+      setEditableSkills(normalizeSkillsList((data as any).skills ?? []));
       setResult({
+        ok: true,
+        contact: (data as any).contact ?? {},
+        skills: (data as any).skills ?? [],
+        skills_by_category: (data as any).skills_by_category ?? undefined,
+        sections: (data as any).cv_json?.sections ?? undefined,
+        stats: (data as any).cv_json?.stats ?? undefined,
+      });
+      setLastParsed({
         ok: true,
         contact: (data as any).contact ?? {},
         skills: (data as any).skills ?? [],
@@ -284,6 +321,12 @@ export default function MyCvPage() {
       const size = (data as any).file_size as number | undefined;
       const type = (data as any).mime_type as string | undefined;
       if (name && size) setFileMeta({ name, size, type: type ?? "" });
+      setLastFileInfo({
+        file_path: (data as any).file_path ?? null,
+        file_name: name ?? null,
+        file_size: size ?? null,
+        mime_type: type ?? null,
+      });
     }
   }
 
@@ -328,6 +371,7 @@ export default function MyCvPage() {
         }
 
         fileInfo = await uploadCvFile(file);
+        setLastFileInfo(fileInfo);
         try {
           fileText = improveReadableText(stripDangerousChars((await extractTextFromFile(file)) ?? ""));
         } catch {
@@ -388,9 +432,12 @@ export default function MyCvPage() {
         throw new Error(parsed.error || parsed.message || "Analyse impossible");
       }
 
+      const extractedSkills = normalizeSkillsList(Array.isArray(parsed?.skills) ? parsed.skills : []);
       setResult(parsed);
+      setLastParsed(parsed);
+      setEditableSkills(extractedSkills);
 
-      const skills = Array.isArray(parsed?.skills) ? parsed.skills : [];
+      const skills = extractedSkills;
       const skillsByCategory = parsed?.skills_by_category ?? {};
       const contact = parsed?.contact ?? {};
       const cvJson = {
@@ -407,6 +454,40 @@ export default function MyCvPage() {
         contact,
         ...(fileInfo ?? {}),
       });
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSkillsOnly() {
+    if (!userId) return;
+    if (!lastParsed) return;
+
+    setBusy(true);
+    setErr(null);
+
+    try {
+      const skills = normalizeSkillsList(editableSkills);
+      const skillsByCategory = lastParsed?.skills_by_category ?? {};
+      const contact = lastParsed?.contact ?? {};
+      const cvJson = {
+        sections: lastParsed?.sections ?? {},
+        stats: lastParsed?.stats ?? {},
+      };
+
+      await invokeCvSave("upsert", {
+        label,
+        cv_text: cvText,
+        cv_json: cvJson,
+        skills,
+        skills_by_category: skillsByCategory,
+        contact,
+        ...(lastFileInfo ?? {}),
+      });
+
+      setResult((prev) => (prev ? { ...prev, skills } : prev));
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -564,6 +645,52 @@ export default function MyCvPage() {
               ))}
             </div>
           )}
+
+          <h3 style={{ marginTop: 16 }}>Competences utilisees pour le matching</h3>
+          <div className="small" style={{ marginBottom: 8 }}>
+            Tu peux retirer des competences imprecises ou en ajouter manuellement.
+          </div>
+          <div className="pills">
+            {editableSkills.length === 0 && <span className="muted">-</span>}
+            {editableSkills.map((s, i) => (
+              <span className="pill pill-edit" key={`${s}-${i}`}>
+                {s}
+                <button
+                  className="pill-remove"
+                  type="button"
+                  onClick={() => setEditableSkills((prev) => prev.filter((_, idx) => idx !== i))}
+                  aria-label={`Supprimer ${s}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+
+          <div className="skill-edit-row">
+            <input
+              className="input"
+              value={skillInput}
+              onChange={(e) => setSkillInput(e.target.value)}
+              placeholder="Ajouter une competence (ex: Budgeting, SAP, Power BI)"
+            />
+            <button
+              className="btn btnGhost"
+              type="button"
+              onClick={() => {
+                const v = normalizeSkillLabel(skillInput);
+                if (!v) return;
+                setEditableSkills((prev) => normalizeSkillsList([...prev, v]));
+                setSkillInput("");
+              }}
+              disabled={busy}
+            >
+              Ajouter
+            </button>
+            <button className="btn btnPrimary" type="button" onClick={saveSkillsOnly} disabled={busy || !lastParsed}>
+              Enregistrer competences
+            </button>
+          </div>
 
           {structuredSections.length > 0 && (
             <div className="cv-structured">
