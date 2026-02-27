@@ -74,6 +74,44 @@ async function sbPatch<T>(url: string, serviceKey: string, patch: unknown): Prom
   return (await res.json()) as T;
 }
 
+async function createRun(
+  supabaseUrl: string,
+  serviceKey: string,
+  jobSourceId: string,
+  runKind: string,
+) {
+  try {
+    const url = `${supabaseUrl}/rest/v1/job_source_runs`;
+    const row = await sbInsertOne<Array<{ id: string }>>(url, serviceKey, {
+      job_source_id: jobSourceId,
+      run_kind: runKind,
+      status: "running",
+      fetched_count: 0,
+      inserted_count: 0,
+      updated_count: 0,
+    });
+    const id = row?.[0]?.id ? String(row[0].id) : null;
+    return id && id.trim() ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function finishRun(
+  supabaseUrl: string,
+  serviceKey: string,
+  runId: string | null,
+  patch: Record<string, unknown>,
+) {
+  if (!runId) return;
+  try {
+    const url = `${supabaseUrl}/rest/v1/job_source_runs?id=eq.${encodeURIComponent(runId)}`;
+    await sbPatch(url, serviceKey, patch);
+  } catch {
+    // best effort only
+  }
+}
+
 async function sha256Hex(s: string) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf))
@@ -174,6 +212,7 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "missing_source_code" }, 400);
   }
 
+  let currentRunId: string | null = null;
   try {
     const supabaseUrl = mustEnv("SUPABASE_URL");
     const serviceKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -188,9 +227,19 @@ Deno.serve(async (req) => {
     const jobSource = jobSourceArr?.[0] ?? null;
 
     if (source_code === "emploi_ci") {
+      const runId = await createRun(supabaseUrl, serviceKey, "ed25b64d-ace6-4296-8985-46702d58785d", "ingest");
+      currentRunId = runId;
       const data = await fetchEmploiCiItems(limit);
 
       if (dry_run) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "success",
+          ok: true,
+          fetched_count: data.items.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
         return json({
           ok: true,
           source_code,
@@ -276,6 +325,15 @@ Deno.serve(async (req) => {
         }
       }
 
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: data.items.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+
       return json({
         ok: true,
         source_code,
@@ -292,7 +350,9 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "job_source_not_found" }, 404);
     }
 
-    if (jobSource.ingest_method === "aej_html") {
+    const method = (jobSource.ingest_method ?? "rss_generic").toLowerCase();
+
+    if (method === "aej_html") {
       if (jobSource.is_active === false) {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
@@ -303,9 +363,19 @@ Deno.serve(async (req) => {
       const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
       const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
 
+      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      currentRunId = runId;
       const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
 
       if (dry_run) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "success",
+          ok: true,
+          fetched_count: data.items.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
         return json({
           ok: true,
           source_code,
@@ -363,8 +433,26 @@ Deno.serve(async (req) => {
 
       const { error: upErr } = await supabase.from("jobs").upsert(rows, { onConflict: "external_id" });
       if (upErr) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${upErr.message}`,
+          fetched_count: rows.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
         return json({ ok: false, error: "jobs_upsert_failed", message: upErr.message }, 500);
       }
+
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: rows.length,
+        updated_count: 0,
+      });
 
       return json({
         ok: true,
@@ -377,7 +465,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (jobSource.ingest_method !== "rss_generic") {
+    if (method !== "rss_generic" && method !== "rss") {
       return json({ ok: false, error: "unsupported_ingest_method" }, 400);
     }
 
@@ -391,9 +479,19 @@ Deno.serve(async (req) => {
     }
 
     const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)));
+    const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+    currentRunId = runId;
     const data = await fetchRssFeedItems(feedUrl, maxItems);
 
     if (dry_run) {
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: data.items.length,
+        inserted_count: 0,
+        updated_count: 0,
+      });
       return json({
         ok: true,
         source_code,
@@ -477,8 +575,26 @@ Deno.serve(async (req) => {
 
     const { error: upErr } = await supabase.from("jobs").upsert(rows, { onConflict: "external_id" });
     if (upErr) {
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "failed",
+        ok: false,
+        error: `jobs_upsert_failed: ${upErr.message}`,
+        fetched_count: rows.length,
+        inserted_count: 0,
+        updated_count: 0,
+      });
       return json({ ok: false, error: "jobs_upsert_failed", message: upErr.message }, 500);
     }
+
+    await finishRun(supabaseUrl, serviceKey, currentRunId, {
+      finished_at: new Date().toISOString(),
+      status: "success",
+      ok: true,
+      fetched_count: rows.length,
+      inserted_count: rows.length,
+      updated_count: 0,
+    });
 
     return json({
       ok: true,
@@ -490,6 +606,20 @@ Deno.serve(async (req) => {
       upserted: rows.length,
     });
   } catch (e) {
+    await finishRun(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      currentRunId,
+      {
+        finished_at: new Date().toISOString(),
+        status: "failed",
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+        fetched_count: 0,
+        inserted_count: 0,
+        updated_count: 0,
+      },
+    );
     return json(
       { ok: false, error: "ingest_failed", message: e instanceof Error ? e.message : String(e) },
       500,

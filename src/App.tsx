@@ -5,6 +5,7 @@ import { useSession } from "./lib/useSession";
 
 import AppLayout from "./AppLayout";
 import "./App.css";
+import { ToastProvider } from "./components/ToastCenter";
 
 import AuthPage from "./AuthPage";
 import HomePage from "./HomePage";
@@ -75,51 +76,53 @@ function AuthGate() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public */}
-        <Route path="/auth" element={<AuthGate />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/thanks" element={<ThanksPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/contact" element={<ContactPage />} />
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public */}
+          <Route path="/auth" element={<AuthGate />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/thanks" element={<ThanksPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/contact" element={<ContactPage />} />
 
-        {/* Protected area with shared layout */}
-        <Route
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Routes principales */}
-          <Route path="/" element={<HomePage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/applications" element={<ApplicationsPage />} />
-          <Route path="/alerts" element={<AlertsPage />} />
+          {/* Protected area with shared layout */}
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
+            {/* Routes principales */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/applications" element={<ApplicationsPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
 
-          {/* ✅ Admin */}
-          <Route path="/admin/sources" element={<AdminSourcesPage />} />
+            {/* ✅ Admin */}
+            <Route path="/admin/sources" element={<AdminSourcesPage />} />
 
-          {/* CV */}
-          <Route path="/me/cv" element={<MyCvPage />} />
+            {/* CV */}
+            <Route path="/me/cv" element={<MyCvPage />} />
 
-          {/* JobRadar */}
-          <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />
+            {/* JobRadar */}
+            <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />
 
-          {/* compat: ancien lien */}
-          <Route path="/jobradar/profile" element={<Navigate to="/profile" replace />} />
+            {/* compat: ancien lien */}
+            <Route path="/jobradar/profile" element={<Navigate to="/profile" replace />} />
 
-          <Route path="/jobradar/alerts" element={<AlertsPage />} />
-          <Route path="/jobradar/applications" element={<ApplicationsPage />} />
-          <Route path="/jobradar/feed" element={<JobRadarFeedPage />} />
-          <Route path="/jobradar/jobs/:id" element={<JobDetailsPage />} />
-        </Route>
+            <Route path="/jobradar/alerts" element={<AlertsPage />} />
+            <Route path="/jobradar/applications" element={<ApplicationsPage />} />
+            <Route path="/jobradar/feed" element={<JobRadarFeedPage />} />
+            <Route path="/jobradar/jobs/:id" element={<JobDetailsPage />} />
+          </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }

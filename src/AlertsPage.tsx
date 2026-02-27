@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
 
 type AlertRow = {
@@ -307,8 +309,7 @@ export default function AlertsPage() {
   const [listLoading, setListLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [toastKey, setToastKey] = useState(0);
+  const [createdHint, setCreatedHint] = useState(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [toDelete, setToDelete] = useState<AlertRow | null>(null);
@@ -333,16 +334,7 @@ export default function AlertsPage() {
 
   const countActive = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
 
-  function showToast(type: "success" | "error", text: string) {
-    setToast({ type, text });
-    setToastKey((k) => k + 1);
-  }
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 2600);
-    return () => window.clearTimeout(t);
-  }, [toastKey, toast]);
+  const { pushToast } = useToast();
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
@@ -382,7 +374,7 @@ export default function AlertsPage() {
 
     if (error) {
       setErrorMsg(error.message);
-      showToast("error", error.message);
+      pushToast({ kind: "error", title: "Impossible de charger les alertes", message: error.message });
       setRows([]);
       setListLoading(false);
       return;
@@ -453,25 +445,25 @@ export default function AlertsPage() {
     if (!n) {
       const msg = "Donne un nom à ton alerte (ex: Data Analyst).";
       setErrorMsg(msg);
-      showToast("error", msg);
+      pushToast({ kind: "error", title: "Nom d’alerte requis", message: msg });
       return;
     }
     if (kw.length === 0) {
       const msg = "Ajoute au moins 1 mot-clé (séparés par des virgules).";
       setErrorMsg(msg);
-      showToast("error", msg);
+      pushToast({ kind: "error", title: "Mots-clés manquants", message: msg });
       return;
     }
     if (!allCountries && selectedCountries.length === 0) {
       const msg = "Choisis au moins 1 pays, ou active “Tous pays”.";
       setErrorMsg(msg);
-      showToast("error", msg);
+      pushToast({ kind: "error", title: "Pays requis", message: msg });
       return;
     }
     if (channels.length === 0) {
       const msg = "Choisis au moins 1 canal (Email / WhatsApp / Telegram).";
       setErrorMsg(msg);
-      showToast("error", msg);
+      pushToast({ kind: "error", title: "Canal requis", message: msg });
       return;
     }
 
@@ -498,11 +490,16 @@ export default function AlertsPage() {
 
     if (error) {
       setErrorMsg(error.message);
-      showToast("error", error.message);
+      pushToast({ kind: "error", title: "Création impossible", message: error.message });
       return;
     }
 
-    showToast("success", "Alerte créée ✅");
+    pushToast({
+      kind: "success",
+      title: "Alerte créée",
+      message: "Tu recevras des offres plus ciblées selon cette alerte.",
+    });
+    setCreatedHint(true);
 
     setName("");
     setKeywordsText("");
@@ -532,12 +529,16 @@ export default function AlertsPage() {
 
     if (error) {
       setErrorMsg(error.message);
-      showToast("error", error.message);
+      pushToast({ kind: "error", title: "Mise à jour impossible", message: error.message });
       return;
     }
 
     setRows((prev) => prev.map((x) => (x.id === a.id ? { ...x, is_active: !x.is_active } : x)));
-    showToast("success", a.is_active ? "Alerte mise en pause" : "Alerte réactivée ✅");
+    pushToast({
+      kind: "success",
+      title: a.is_active ? "Alerte mise en pause" : "Alerte réactivée",
+      message: a.is_active ? "Tu peux la réactiver quand tu veux." : "La diffusion reprend maintenant.",
+    });
   }
 
   function removeAlert(a: AlertRow) {
@@ -559,12 +560,16 @@ export default function AlertsPage() {
 
     if (error) {
       setErrorMsg(error.message);
-      showToast("error", error.message);
+      pushToast({ kind: "error", title: "Suppression impossible", message: error.message });
       return;
     }
 
     setRows((prev) => prev.filter((x) => x.id !== toDelete.id));
-    showToast("success", "Alerte supprimée");
+    pushToast({
+      kind: "success",
+      title: "Alerte supprimée",
+      message: "Tu peux en créer une nouvelle quand tu veux.",
+    });
     setToDelete(null);
   }
 
@@ -699,6 +704,18 @@ export default function AlertsPage() {
         </div>
       </section>
 
+      {createdHint && (
+        <div style={{ margin: "18px 0" }}>
+          <NextStepCard
+            title="Prochaine étape recommandée"
+            message="Découvre les offres correspondant à cette alerte ou améliore ton ciblage."
+            primaryAction={{ label: "Voir les offres correspondantes", to: "/jobradar/feed" }}
+            secondaryAction={{ label: "Ajouter un autre pays", to: "/jobradar/alerts" }}
+            tone="info"
+          />
+        </div>
+      )}
+
       <section className="alerts-list">
         <div className="mutedTitle">MES ALERTES</div>
 
@@ -709,7 +726,12 @@ export default function AlertsPage() {
             ))}
           </div>
         ) : rows.length === 0 ? (
-          <div className="empty">Aucune alerte pour le moment. Crée ta première alerte 👆</div>
+          <EmptyState
+            title="Tu n’as pas encore d’alerte"
+            description="Crée une alerte pour recevoir des offres plus ciblées."
+            primaryAction={{ label: "Créer ma première alerte", to: "/jobradar/alerts" }}
+            tone="info"
+          />
         ) : (
           <div className="listGrid">
             {rows.map((a) => {
@@ -810,8 +832,6 @@ export default function AlertsPage() {
           </div>
         )}
       </section>
-
-      {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
 
       {confirmOpen && (
         <div

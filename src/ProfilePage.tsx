@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { NextStepCard } from "./components/GuidedUI";
+import { useToast } from "./components/ToastCenter";
 import "./ProfilePage.css";
 
 type Profile = {
@@ -49,12 +51,21 @@ function parseLocation(raw: string | null) {
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
+  const { pushToast } = useToast();
   const userId = session?.user?.id;
 
   const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
+  const [alertsCount, setAlertsCount] = useState(0);
+  const [hasCv, setHasCv] = useState<boolean | null>(null);
+  const [nextStep, setNextStep] = useState<{
+    title: string;
+    message: string;
+    primary: { label: string; to?: string; onClick?: () => void };
+    secondary?: { label: string; to?: string; onClick?: () => void };
+    tone?: "info" | "success";
+  } | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [countryCode, setCountryCode] = useState<string>("CI");
@@ -114,9 +125,44 @@ export default function ProfilePage() {
     };
   }, [loading, userId]);
 
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      const { count } = await supabase
+        .from("alerts")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", userId);
+      setAlertsCount(count ?? 0);
+      try {
+        const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
+          body: { action: "get_active" },
+        });
+        if (cvErr) setHasCv(null);
+        else setHasCv(Boolean(cvData?.ok && cvData?.data));
+      } catch {
+        setHasCv(null);
+      }
+    })();
+  }, [userId]);
+
   function normalizePhone(v: string) {
-    // On garde seulement les chiffres, max 20
     return v.replace(/[^\d]/g, "").slice(0, 20);
+  }
+
+  function focusFirstMissing() {
+    const missingId = !fullName.trim()
+      ? "profile-fullname"
+      : !city.trim()
+      ? "profile-city"
+      : !headline.trim()
+      ? "profile-headline"
+      : null;
+
+    if (!missingId) return;
+    const el = document.getElementById(missingId) as HTMLInputElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.focus();
   }
 
   async function save() {
@@ -124,7 +170,7 @@ export default function ProfilePage() {
 
     setSaving(true);
     setErrorMsg(null);
-    setOkMsg(null);
+    setNextStep(null);
 
     const countryName = selectedCountry?.name ?? "";
     const cityValue = city.trim();
@@ -148,11 +194,55 @@ export default function ProfilePage() {
 
     if (error) {
       setErrorMsg(error.message);
+      pushToast({
+        kind: "error",
+        title: "Impossible d’enregistrer le profil",
+        message: error.message,
+      });
       return;
     }
 
-    setOkMsg("Profil enregistré ✅");
+    pushToast({
+      kind: "success",
+      title: "Profil mis à jour",
+      message: "Tes prochains matchs seront mieux adaptés à ton profil.",
+    });
+
+    const incomplete = !fullName.trim() || !city.trim() || !headline.trim();
+    if (incomplete) {
+      setNextStep({
+        title: "Profil enregistré (incomplet)",
+        message: "Ajoute tes compétences et ta localisation pour améliorer la pertinence des offres.",
+        primary: { label: "Continuer la configuration", onClick: () => focusFirstMissing() },
+        secondary: { label: "Voir mes offres quand même", to: "/jobradar/feed" },
+        tone: "info",
+      });
+      return;
+    }
+
+    if (!hasCv) {
+      setNextStep({
+        title: "Prochaine étape recommandée",
+        message: "Ajoute ton CV pour améliorer encore la précision de tes matchs.",
+        primary: { label: "Ajouter mon CV", to: "/me/cv" },
+        secondary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
+        tone: "info",
+      });
+      return;
+    }
+
+    if (alertsCount === 0) {
+      setNextStep({
+        title: "Prochaine étape recommandée",
+        message: "Crée une alerte pour recevoir des offres plus ciblées.",
+        primary: { label: "Créer une alerte", to: "/jobradar/alerts" },
+        secondary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
+        tone: "info",
+      });
+    }
   }
+
+  const isIncomplete = !fullName.trim() || !city.trim() || !headline.trim();
 
   return (
     <div className="profile-shell">
@@ -175,9 +265,34 @@ export default function ProfilePage() {
             <div className="profile-loading">Chargement…</div>
           ) : (
             <div className="formGrid">
+              <div className="profile-guidance">
+                <div className="profile-guidance__title">
+                  Complète ton profil pour améliorer la pertinence des offres
+                </div>
+                <div className="profile-guidance__text">
+                  Quelques informations (compétences, localisation, expérience) permettent à JobRadar
+                  de mieux filtrer et classer les offres.
+                </div>
+              </div>
+
+              {isIncomplete && (
+                <div className="profile-banner">
+                  <div>
+                    <div className="profile-banner__title">Profil partiel — tes matchs peuvent être moins précis</div>
+                    <div className="profile-banner__text">
+                      Ajoute tes compétences et ta localisation pour améliorer la pertinence des offres.
+                    </div>
+                  </div>
+                  <button className="btn btnGhost" type="button" onClick={focusFirstMissing}>
+                    Compléter mon profil
+                  </button>
+                </div>
+              )}
+
               <label className="field">
                 Nom complet
                 <input
+                  id="profile-fullname"
                   className="input"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
@@ -204,11 +319,13 @@ export default function ProfilePage() {
                 <label className="field">
                   Ville
                   <input
+                    id="profile-city"
                     className="input"
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     placeholder="Ex: Abidjan"
                   />
+                  <div className="fieldHelp">Indique ta ville/pays pour améliorer les offres locales.</div>
                 </label>
               </div>
 
@@ -226,26 +343,38 @@ export default function ProfilePage() {
                     placeholder="Ex: 0151676767"
                   />
                 </div>
+                <div className="fieldHelp">Utilisé pour ton profil / contact si nécessaire.</div>
               </label>
 
               <label className="field">
                 Titre (headline)
                 <input
+                  id="profile-headline"
                   className="input"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
                   placeholder="Ex: Gestionnaire en pharmacie • Project Manager"
                 />
+                <div className="fieldHelp">Ex : Marketing, Logistique, Data, Finance.</div>
               </label>
 
               {errorMsg && <div className="profile-msg profile-msgErr">{errorMsg}</div>}
-              {okMsg && <div className="profile-msg profile-msgOk">{okMsg}</div>}
 
               <div className="actions">
                 <button className="btn btnPrimary" onClick={save} disabled={saving}>
                   {saving ? "Enregistrement…" : "Enregistrer"}
                 </button>
               </div>
+
+              {nextStep && (
+                <NextStepCard
+                  title={nextStep.title}
+                  message={nextStep.message}
+                  primaryAction={nextStep.primary}
+                  secondaryAction={nextStep.secondary}
+                  tone={nextStep.tone ?? "info"}
+                />
+              )}
             </div>
           )}
         </section>

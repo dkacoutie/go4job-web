@@ -63,9 +63,10 @@ Deno.serve(async (req) => {
     return json(405, { ok: false, error: "Method not allowed" }, corsHeaders);
   }
 
-  // Auth CRON (Bearer)
+  // Auth CRON (x-cron-secret or Bearer)
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const cronHeader = req.headers.get("x-cron-secret") ?? "";
 
   const CRON_SECRET = Deno.env.get("CRON_SECRET") ?? "";
   if (!CRON_SECRET) return json(500, { ok: false, error: "Missing CRON_SECRET env" }, corsHeaders);
@@ -87,7 +88,7 @@ Deno.serve(async (req) => {
     );
   }
 
-  if (!token || token !== CRON_SECRET) {
+  if (!(token && token === CRON_SECRET) && !(cronHeader && cronHeader === CRON_SECRET)) {
     return json(401, { ok: false, error: "Unauthorized" }, corsHeaders);
   }
 
@@ -156,6 +157,7 @@ Deno.serve(async (req) => {
       await finishRun({
         finished_at: new Date().toISOString(),
         status: "failed",
+        ok: false,
         error: `fetch_remotive: ${r.status}`,
         fetched_count: 0,
         inserted_count: 0,
@@ -228,6 +230,7 @@ Deno.serve(async (req) => {
       await finishRun({
         finished_at: new Date().toISOString(),
         status: "failed",
+        ok: false,
         error: `jobs_upsert: ${upErr.message}`,
         fetched_count: jobs.length,
         inserted_count: 0,
@@ -239,6 +242,7 @@ Deno.serve(async (req) => {
     await finishRun({
       finished_at: new Date().toISOString(),
       status: "success",
+      ok: true,
       fetched_count: jobs.length,
       inserted_count: rows.length,
       updated_count: 0,
@@ -253,6 +257,7 @@ Deno.serve(async (req) => {
     await finishRun({
       finished_at: new Date().toISOString(),
       status: "failed",
+      ok: false,
       error: String(e),
       fetched_count: 0,
       inserted_count: 0,

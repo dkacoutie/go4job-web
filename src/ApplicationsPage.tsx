@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { EmptyState } from "./components/GuidedUI";
+import { useToast } from "./components/ToastCenter";
 import "./ApplicationsPage.css";
 
 type ApplicationStatus = "queued" | "submitted" | "retired";
@@ -85,6 +87,7 @@ export default function ApplicationsPage() {
   const [q, setQ] = useState("");
 
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const { pushToast } = useToast();
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
@@ -221,6 +224,7 @@ export default function ApplicationsPage() {
 
     if (error) {
       setErrorMsg(error.message);
+      pushToast({ kind: "error", title: "Mise à jour impossible", message: error.message });
       return;
     }
 
@@ -236,12 +240,30 @@ export default function ApplicationsPage() {
           : r
       )
     );
+
+    const label =
+      next === "queued"
+        ? "Offre remise dans À postuler"
+        : next === "submitted"
+        ? "Candidature marquée envoyée"
+        : "Offre retirée";
+
+    pushToast({
+      kind: "success",
+      title: label,
+      message: "Tu peux continuer à organiser tes candidatures.",
+    });
   }
 
   function openApply(r: AppRow) {
     const url = getApplyLink(r.jobs);
     if (!url) {
       setErrorMsg("Aucun lien de candidature (apply_url/source_url) pour cette offre.");
+      pushToast({
+        kind: "error",
+        title: "Lien de candidature indisponible",
+        message: "Cette offre n’a pas de lien apply_url/source_url.",
+      });
       return;
     }
     window.open(url, "_blank", "noopener,noreferrer");
@@ -308,7 +330,12 @@ export default function ApplicationsPage() {
         {busy ? (
           <div className="app-empty">Chargement des candidatures…</div>
         ) : filtered.length === 0 ? (
-          <div className="app-empty">Aucune candidature ici pour l’instant.</div>
+          <EmptyState
+            title="Tu n’as pas encore d’offres sauvegardées"
+            description="Explore le feed et ajoute des offres à ta liste À postuler."
+            primaryAction={{ label: "Explorer les offres", to: "/jobradar/feed" }}
+            tone="info"
+          />
         ) : (
           <div className="app-grid">
             {filtered.map((r) => {

@@ -9,10 +9,17 @@ type JobRow = {
   description_html: string | null;
   official_desc: string | null;
   desc_source: string | null;
+  desc_last_error: string | null;
+  desc_updated_at: string | null;
+  published_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
   ai_description_status: string | null;
 };
 
 const MIN_DESC_LEN = 400;
+const BACKOFF_DEFAULT_MS = 6 * 60 * 60 * 1000;
+const BACKOFF_HARD_MS = 12 * 60 * 60 * 1000;
 
 function json(status: number, body: unknown, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -120,6 +127,25 @@ function isSufficient(text: string) {
   return text.trim().length >= MIN_DESC_LEN;
 }
 
+function getJobTimeMs(job: JobRow): number {
+  const candidates = [job.published_at, job.created_at, job.updated_at, job.desc_updated_at].filter(Boolean) as string[];
+  for (const d of candidates) {
+    const t = Date.parse(d);
+    if (!Number.isNaN(t)) return t;
+  }
+  return 0;
+}
+
+function shouldBackoff(job: JobRow): boolean {
+  const err = (job.desc_last_error ?? "").toLowerCase().trim();
+  if (!err) return false;
+  const last = job.desc_updated_at ? Date.parse(job.desc_updated_at) : NaN;
+  if (Number.isNaN(last)) return false;
+  const hard = /(429|rate|timeout|forbidden|captcha|blocked|cloudflare)/.test(err);
+  const backoff = hard ? BACKOFF_HARD_MS : BACKOFF_DEFAULT_MS;
+  return Date.now() - last < backoff;
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = {
     "access-control-allow-origin": "*",
@@ -161,7 +187,7 @@ Deno.serve(async (req) => {
   const { data: rows, error: selectErr } = await supabase
     .from("jobs")
     .select(
-      "id, source_url, apply_url, description_text, description_html, official_desc, desc_source, ai_description_status"
+      "id, source_url, apply_url, description_text, description_html, official_desc, desc_source, desc_last_error, desc_updated_at, published_at, created_at, updated_at, ai_description_status"
     )
     .eq("is_active", true)
     .eq("is_expired", false)
@@ -171,7 +197,8 @@ Deno.serve(async (req) => {
 
   if (selectErr) return json(500, { ok: false, error: selectErr.message }, corsHeaders);
 
-  const jobs = (rows ?? []) as JobRow[];
+  const jobsRaw = (rows ?? []) as JobRow[];
+  const jobs = jobsRaw.slice().sort((a, b) => getJobTimeMs(b) - getJobTimeMs(a));
   const results: Array<Record<string, unknown>> = [];
   let processed = 0;
 
@@ -181,6 +208,11 @@ Deno.serve(async (req) => {
     const current = currentDescText(job);
     if (isSufficient(current)) {
       results.push({ id: job.id, ok: true, skipped: "already_sufficient" });
+      continue;
+    }
+
+    if (shouldBackoff(job)) {
+      results.push({ id: job.id, ok: true, skipped: "backoff" });
       continue;
     }
 
@@ -288,3 +320,4 @@ Deno.serve(async (req) => {
     corsHeaders,
   );
 });
+

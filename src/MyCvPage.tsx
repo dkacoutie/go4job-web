@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { NextStepCard } from "./components/GuidedUI";
+import { useToast } from "./components/ToastCenter";
 import "./MyCvPage.css";
 
 // @ts-ignore: external module has no types in build environment
@@ -216,6 +218,14 @@ export default function MyCvPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<CvExtractResponse | null>(null);
+  const [phase, setPhase] = useState<"idle" | "upload" | "analyze" | "saving">("idle");
+  const [nextStep, setNextStep] = useState<{
+    title: string;
+    message: string;
+    primary: { label: string; to?: string };
+    secondary?: { label: string; to?: string };
+    tone?: "info" | "success";
+  } | null>(null);
   const [editableSkills, setEditableSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [lastParsed, setLastParsed] = useState<CvExtractResponse | null>(null);
@@ -225,6 +235,7 @@ export default function MyCvPage() {
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
 
   const userId = session?.user?.id ?? null;
+  const { pushToast } = useToast();
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth");
@@ -358,6 +369,8 @@ export default function MyCvPage() {
 
     setBusy(true);
     setErr(null);
+    setNextStep(null);
+    setPhase("upload");
 
     try {
       const existingText = cvText.trim();
@@ -403,6 +416,7 @@ export default function MyCvPage() {
         throw new Error("Impossible de lire le texte du CV. Si c'est un PDF scanne, colle le texte manuellement.");
       }
 
+      setPhase("analyze");
       const { data, error } = await supabase.functions.invoke("cv_extract", {
         body: { cv_text: text },
       });
@@ -445,6 +459,7 @@ export default function MyCvPage() {
         stats: parsed?.stats ?? {},
       };
 
+      setPhase("saving");
       await invokeCvSave("upsert", {
         label,
         cv_text: text,
@@ -454,10 +469,50 @@ export default function MyCvPage() {
         contact,
         ...(fileInfo ?? {}),
       });
+
+      const needsReview = extractedSkills.length < 4 || !parsed?.contact?.email;
+      pushToast({
+        kind: "success",
+        title: "CV ajouté avec succès",
+        message: "Tes prochains matchs seront mieux adaptés à ton profil.",
+      });
+
+      setNextStep(
+        needsReview
+          ? {
+              title: "CV analysé (à vérifier)",
+              message:
+                "Certaines informations détectées peuvent être incomplètes. Relis ton profil pour améliorer la précision des matchs.",
+              primary: { label: "Relire mon profil", to: "/jobradar/profile" },
+              secondary: { label: "Voir mes offres", to: "/jobradar/feed" },
+              tone: "info",
+            }
+          : {
+              title: "Prochaine étape recommandée",
+              message: "Vérifie ton profil extrait puis découvre tes offres mises à jour.",
+              primary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
+              secondary: { label: "Vérifier mon profil", to: "/jobradar/profile" },
+              tone: "success",
+            }
+      );
     } catch (e: any) {
-      setErr(e?.message ?? String(e));
+      const msg = e?.message ?? String(e);
+      setErr(msg);
+      pushToast({
+        kind: "error",
+        title: "Impossible d’analyser ce CV",
+        message: "Essaie un fichier PDF/DOCX lisible, ou complète ton profil manuellement.",
+      });
+      setNextStep({
+        title: "Impossible d’analyser ce CV",
+        message: "Essaie un fichier PDF/DOCX plus lisible, ou complète ton profil manuellement.",
+        primary: { label: "Réessayer", to: "/me/cv" },
+        secondary: { label: "Compléter mon profil", to: "/jobradar/profile" },
+        tone: "info",
+      });
     } finally {
       setBusy(false);
+      setPhase("idle");
     }
   }
 
@@ -488,8 +543,18 @@ export default function MyCvPage() {
       });
 
       setResult((prev) => (prev ? { ...prev, skills } : prev));
+      pushToast({
+        kind: "success",
+        title: "Compétences mises à jour",
+        message: "Le matching utilisera ces nouvelles compétences.",
+      });
     } catch (e: any) {
       setErr(e?.message ?? String(e));
+      pushToast({
+        kind: "error",
+        title: "Impossible d’enregistrer les compétences",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
     } finally {
       setBusy(false);
     }
@@ -510,8 +575,18 @@ export default function MyCvPage() {
       setResult(null);
       setFile(null);
       setFileMeta(null);
+      pushToast({
+        kind: "success",
+        title: "CV archivé",
+        message: "Tu peux ajouter un nouveau CV quand tu veux.",
+      });
     } catch (e: any) {
       setErr(e?.message ?? String(e));
+      pushToast({
+        kind: "error",
+        title: "Impossible d’archiver le CV",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
     } finally {
       setBusy(false);
     }
@@ -540,9 +615,33 @@ export default function MyCvPage() {
         </div>
       </div>
 
+      <div className="cv-guidance">
+        <div className="cv-guidance__title">Ajoute ton CV pour améliorer tes matchs</div>
+        <div className="cv-guidance__text">
+          JobRadar analyse ton CV pour mieux comprendre ton profil et te proposer des offres plus pertinentes.
+          Tu pourras vérifier et corriger les informations détectées.
+        </div>
+      </div>
+
       <p className="mycv-subtitle">
         Importe ton CV (PDF/TXT/DOCX) ou colle le texte. Clique <b>Analyser & enregistrer</b> pour extraire tes competences.
       </p>
+
+      {busy && phase !== "idle" && (
+        <div className="cv-progress" aria-live="polite">
+          <div className="cv-progress__title">Analyse de ton CV en cours...</div>
+          <div className="cv-progress__text">
+            Nous extrayons tes compétences et expériences pour améliorer tes recommandations.
+          </div>
+          <div className="cv-progress__steps">
+            <span className={phase === "upload" || phase === "analyze" || phase === "saving" ? "done" : ""}>
+              Téléversement
+            </span>
+            <span className={phase === "analyze" || phase === "saving" ? "done" : ""}>Analyse du CV</span>
+            <span className={phase === "saving" ? "done" : ""}>Préparation des matchs</span>
+          </div>
+        </div>
+      )}
 
       <div className="mycv-grid">
         <div className="card">
@@ -603,6 +702,12 @@ export default function MyCvPage() {
         </div>
 
         <div className="card">
+          <div className="cv-review">
+            <div className="cv-review__title">Vérifie ton profil détecté</div>
+            <div className="cv-review__text">
+              Confirme les compétences et informations détectées pour améliorer la pertinence des offres.
+            </div>
+          </div>
           <h3>Contact detecte</h3>
           <div className="kv">
             <div>
@@ -722,6 +827,18 @@ export default function MyCvPage() {
           </div>
         </div>
       </div>
+
+      {nextStep && (
+        <div style={{ marginTop: 16 }}>
+          <NextStepCard
+            title={nextStep.title}
+            message={nextStep.message}
+            primaryAction={nextStep.primary}
+            secondaryAction={nextStep.secondary}
+            tone={nextStep.tone ?? "info"}
+          />
+        </div>
+      )}
     </div>
   );
 }

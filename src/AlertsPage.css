@@ -548,30 +548,6 @@
   100%{ background-position: -20% 0; }
 }
 
-/* toast */
-.toast{
-  position: fixed;
-  right: 22px;
-  bottom: 22px;
-  z-index: 9999;
-  max-width: min(420px, calc(100vw - 44px));
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.88);
-  border: 1px solid rgba(15,23,42,0.12);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: blur(10px);
-  color: rgba(15,23,42,0.92);
-  font-weight: 700;
-  font-size: 13px;
-  line-height: 1.35;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.toast.success{ border-color: rgba(34,197,94,0.22); }
-.toast.error{ border-color: rgba(239,68,68,0.22); }
-
 /* modal */
 .modalOverlay{
   position: fixed;

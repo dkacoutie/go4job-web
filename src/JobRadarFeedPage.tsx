@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
+import {
+  buildGeoPreferences,
+  buildJobHay,
+  computeJobMatchScore,
+  formatMatchWhyTooltip,
+  type GeoRemoteBreakdown,
+  type MatchWhySummary,
+  type SkillsQualityBreakdown,
+} from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import { useToast } from "./components/ToastCenter";
 import "./JobRadarFeedPage.css";
 
 type AlertRow = {
@@ -20,12 +31,7 @@ type AlertRow = {
 
 type ApplicationStatus = "saved" | "queued" | "in_progress" | "submitted" | "failed";
 
-type MatchWhy = {
-  alert: string[];
-  cv: string[];
-  restAlert: number;
-  restCv: number;
-};
+type MatchWhy = MatchWhySummary;
 
 type MatchRow = {
   job: JobRow;
@@ -34,6 +40,8 @@ type MatchRow = {
   kwCount: number;
   signalCount: number;
   expOk: boolean;
+  geoRemote: GeoRemoteBreakdown;
+  skillsQuality: SkillsQualityBreakdown;
   why: MatchWhy;
 };
 
@@ -75,6 +83,12 @@ function getErrorMessage(err: unknown): string {
     if (typeof maybeMessage === "string") return maybeMessage;
   }
   return String(err);
+}
+
+function trackJobRadarEvent(name: string, payload: Record<string, unknown>) {
+  if (import.meta.env?.DEV) {
+    console.info("[JobRadar]", name, payload);
+  }
 }
 
 function toNumberOrNull(v: unknown) {
@@ -138,47 +152,6 @@ function extractKeywordsFromAlertName(name: string): string[] {
   return uniq([phrase, ...tokens]).slice(0, 5);
 }
 
-function topMatchesForJob(
-  job: JobRow,
-  alertKw: string[],
-  cvKw: string[],
-  extraCv: string[] = [],
-  maxShown = 2
-) {
-  const skillBits = [
-    ...(job.required_skills ?? []),
-    ...(job.optional_skills ?? []),
-    ...(job.job_skills ?? []),
-    ...(job.tags ?? []),
-  ];
-
-  const rawHay = [
-    job.title,
-    job.company_name,
-    job.location,
-    job.country,
-    job.remote_type,
-    job.description,
-    ...skillBits,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const hay = canonicalizeText(rawHay);
-  const hitsAlert = alertKw.filter((k) => k && hay.includes(k));
-  const hitsCvRaw = cvKw.filter((k) => k && hay.includes(k) && !hitsAlert.includes(k));
-  const hitsCv = uniq([...extraCv, ...hitsCvRaw]);
-
-  const shownAlert = hitsAlert.slice(0, maxShown);
-  const shownCv = hitsCv.slice(0, maxShown);
-
-  return {
-    alert: shownAlert,
-    cv: shownCv,
-    restAlert: Math.max(0, hitsAlert.length - shownAlert.length),
-    restCv: Math.max(0, hitsCv.length - shownCv.length),
-  };
-}
 
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
@@ -199,14 +172,23 @@ export default function JobRadarFeedPage() {
 
   const [appStatusByJobId, setAppStatusByJobId] = useState<Map<string, ApplicationStatus>>(new Map());
   const [addingJobId, setAddingJobId] = useState<string | null>(null);
+  const [savedHint, setSavedHint] = useState(false);
+  const [showTip, setShowTip] = useState(true);
 
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(new Set());
   const [dismissingJobId, setDismissingJobId] = useState<string | null>(null);
+
+  const { pushToast } = useToast();
 
   const PAGE_SIZE = 30;
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  function scrollToResults() {
+    const el = document.getElementById("jr-results");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   async function invokeCvSave(action: "get_active", payload?: any) {
     const { data, error } = await supabase.functions.invoke("cv_save", {
@@ -250,27 +232,7 @@ export default function JobRadarFeedPage() {
   const cappedAlertKeywords = useMemo(() => alertKeywords.slice(0, KEYWORDS_CAP), [alertKeywords]);
   const cvKeywords = useMemo(() => uniq(cvSkills).slice(0, CV_SKILLS_CAP), [cvSkills]);
 
-  const { allowAllCountries, allowedCountries } = useMemo(() => {
-    if (!alerts?.length) return { allowAllCountries: true, allowedCountries: new Set<string>() };
-
-    let allowAll = false;
-    const set = new Set<string>();
-
-    for (const a of alerts) {
-      const list = (a.countries && a.countries.length ? a.countries : a.country ? [a.country] : [])
-        .map((x) => (x ?? "").trim().toUpperCase())
-        .filter(Boolean);
-
-      if (!list.length) {
-        allowAll = true;
-        continue;
-      }
-      for (const c of list) set.add(c);
-    }
-
-    if (set.size === 0) allowAll = true;
-    return { allowAllCountries: allowAll, allowedCountries: set };
-  }, [alerts]);
+  const geoPrefs = useMemo(() => buildGeoPreferences(alerts), [alerts]);
 
   function mergeUniqueById(prev: JobRow[], next: JobRow[]) {
     const map = new Map<string, JobRow>();
@@ -442,8 +404,16 @@ export default function JobRadarFeedPage() {
         next.set(jobId, returnedStatus);
         return next;
       });
+      pushToast({
+        kind: "success",
+        title: "Offre sauvegardée",
+        message: "Retrouve-la dans ta liste “À postuler”.",
+      });
+      setSavedHint(true);
     } catch (e: unknown) {
-      setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+      const msg = getErrorMessage(e) ?? "Erreur inconnue";
+      setErrorMsg(msg);
+      pushToast({ kind: "error", title: "Impossible de sauvegarder l’offre", message: msg });
     } finally {
       setAddingJobId(null);
     }
@@ -481,95 +451,51 @@ export default function JobRadarFeedPage() {
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCv = uniq(cvKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCount = kwAlerts.length + kwCv.length;
-    const weightAlert = 2;
-    const weightCv = 1;
-    const cvExpValue = cvExp?.max ?? cvExp?.min ?? null;
-    const expWeight = 2;
 
     const qCanon = norm(canonicalizeText(q));
 
-    const jobHay = (job: JobRow) =>
-      canonicalizeText(
-        [
-          job.title,
-          job.company_name,
-          job.location,
-          job.country,
-          job.remote_type,
-          job.description,
-          ...(job.required_skills ?? []),
-          ...(job.optional_skills ?? []),
-          ...(job.job_skills ?? []),
-          ...(job.tags ?? []),
-        ]
-          .filter(Boolean)
-          .join(" ")
-      );
-
-    const score = (job: JobRow, hay: string) => {
-      let sAlert = 0;
-      let sCv = 0;
-      for (const k of kwAlerts) if (k && hay.includes(k)) sAlert += 1;
-      for (const k of kwCv) if (k && hay.includes(k)) sCv += 1;
-
-      const jobMin = job.experience_years_min ?? null;
-      const jobMax = job.experience_years_max ?? null;
-      const expConsidered = cvExpValue != null && (jobMin != null || jobMax != null);
-      let expOk = false;
-      let expReason: string | null = null;
-
-      if (expConsidered && cvExpValue != null) {
-        let ok = true;
-        if (jobMin != null) ok = ok && cvExpValue >= jobMin;
-        if (jobMax != null) ok = ok && cvExpValue <= jobMax + 2;
-        expOk = ok;
-        if (ok) {
-          if (jobMin != null) expReason = `Expérience >= ${jobMin} ans`;
-          else if (jobMax != null) expReason = `Expérience <= ${jobMax} ans`;
-          else expReason = `Expérience ${cvExpValue} ans`;
-        }
-      }
-
-      const denom = kwAlerts.length * weightAlert + kwCv.length * weightCv + (expConsidered ? expWeight : 0);
-      const weighted = sAlert * weightAlert + sCv * weightCv + (expOk ? expWeight : 0);
-      const p = denom ? Math.round((weighted / denom) * 100) : 0;
-      return { p, sAlert, sCv, expOk, expReason };
-    };
-
     const exploreMatches = jobs
       .map((job): MatchRow | null => {
-        const hay = jobHay(job);
-        const scored = score(job, hay);
-
+        const hay = buildJobHay(job);
         if (qCanon && !hay.includes(qCanon)) return null;
 
-        const p = scored.p;
-        const signalCount = kwCount + (scored.expOk ? 1 : 0);
-        const extraCvReasons = scored.expOk && scored.expReason ? [scored.expReason] : [];
-        const why = signalCount
-          ? topMatchesForJob(job, kwAlerts, kwCv, extraCvReasons, 2)
-          : { alert: [], cv: [], restAlert: 0, restCv: 0 };
+        const scored = computeJobMatchScore({
+          job,
+          alertKeywords: kwAlerts,
+          cvKeywords: kwCv,
+          cvExp,
+          geoPrefs,
+          hay,
+          maxShown: 2,
+          topMatchThreshold: STRICT_MIN_PERCENT,
+        });
 
         return {
           job,
-          s: scored.sAlert + scored.sCv,
-          p,
+          s: scored.s,
+          p: scored.score,
           kwCount,
-          signalCount,
+          signalCount: scored.signalCount,
           expOk: scored.expOk,
-          why,
+          geoRemote: scored.geoRemote,
+          skillsQuality: scored.skillsQuality,
+          why: scored.why,
         };
       })
       .filter((x): x is MatchRow => Boolean(x))
-      .filter((x) => (x.signalCount ? (x.s >= 1 || x.expOk) : true))
+      .filter((x) =>
+        x.signalCount
+          ? x.s >= 1 || x.expOk || x.geoRemote.points_awarded > 0 || x.skillsQuality.points_awarded > 0
+          : true
+      )
       .filter((x) => {
-        if (allowAllCountries) return true;
+        if (geoPrefs.allowAllCountries) return true;
 
         const jc = (x.job.country ?? "").trim().toUpperCase();
         if (!jc) return true;
         if (jc.length !== 2) return true;
 
-        return allowedCountries.has(jc);
+        return geoPrefs.allowedCountries.has(jc);
       })
       .filter((x) => !appStatusByJobId.has(x.job.id))
       .filter((x) => !dismissedJobIds.has(x.job.id))
@@ -588,8 +514,7 @@ export default function JobRadarFeedPage() {
     cvKeywords,
     cvExp,
     q,
-    allowAllCountries,
-    allowedCountries,
+    geoPrefs,
     appStatusByJobId,
     dismissedJobIds,
     STRICT_MIN_PERCENT,
@@ -602,7 +527,27 @@ export default function JobRadarFeedPage() {
   }, [matchMode, matches.topMatches.length]);
 
   const displayed = matchMode === "strict" ? matches.topMatches : matches.exploreMatches;
-  const openJob = (jobId: string) => navigate(`/jobradar/jobs/${jobId}`);
+  const openJob = (jobId: string, payload?: Record<string, unknown>) => {
+    if (payload) trackJobRadarEvent("job_open", payload);
+    navigate(`/jobradar/jobs/${jobId}`);
+  };
+
+  const buildMatchEventPayload = useCallback(
+    (row: MatchRow) => {
+      const details = row.why.details;
+      return {
+        job_id: row.job.id,
+        score: row.p,
+        is_top_match: row.p >= STRICT_MIN_PERCENT,
+        matched_alert_count: details?.breakdown.alert.matched_count ?? 0,
+        matched_cv_count: details?.breakdown.cv.matched_count ?? 0,
+        exp_ok: details?.breakdown.experience.ok ?? false,
+        geo_remote_level: details?.breakdown.geo_remote.level ?? "unknown",
+        required_bonus_applied: (details?.breakdown.skills_quality.points_awarded ?? 0) > 0,
+      };
+    },
+    [STRICT_MIN_PERCENT]
+  );
   const topCount = matches.topMatches.length;
   const exploreCount = matches.exploreMatches.length;
 
@@ -656,7 +601,10 @@ export default function JobRadarFeedPage() {
               <button
                 className={matchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
-                onClick={() => setMatchMode("strict")}
+                onClick={() => {
+                  setMatchMode("strict");
+                  trackJobRadarEvent("match_mode_select", { mode: "strict", topCount, exploreCount });
+                }}
                 disabled={busy || topCount === 0}
                 title={topCount === 0 ? "Aucun Top match pour l'instant" : "Offres les plus pertinentes pour toi"}
                 aria-pressed={matchMode === "strict"}
@@ -667,7 +615,10 @@ export default function JobRadarFeedPage() {
               <button
                 className={matchMode === "large" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
-                onClick={() => setMatchMode("large")}
+                onClick={() => {
+                  setMatchMode("large");
+                  trackJobRadarEvent("match_mode_select", { mode: "large", topCount, exploreCount });
+                }}
                 disabled={busy}
                 title="Afficher plus d'opportunités"
                 aria-pressed={matchMode === "large"}
@@ -697,6 +648,47 @@ export default function JobRadarFeedPage() {
           </div>
         )}
 
+        {showTip && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title="Astuce JobRadar"
+              message="Sauvegarde les offres intéressantes dans “À postuler” pour les retrouver plus tard."
+              primaryAction={{ label: "Compris", onClick: () => setShowTip(false) }}
+              tone="info"
+            />
+          </div>
+        )}
+
+        {topCount === 0 && exploreCount > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title="Aucun top match aujourd’hui"
+              message="Nous avons tout de même trouvé des opportunités à explorer. Ajoute ton CV ou complète ton profil pour améliorer la précision."
+              primaryAction={{
+                label: "Voir les opportunités à explorer",
+                onClick: () => {
+                  setMatchMode("large");
+                  scrollToResults();
+                },
+              }}
+              secondaryAction={{ label: "Améliorer mon profil", to: "/jobradar/profile" }}
+              tone="info"
+            />
+          </div>
+        )}
+
+        {savedHint && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title="Offre sauvegardée dans À postuler"
+              message="Retrouve cette offre dans ta liste pour organiser tes candidatures."
+              primaryAction={{ label: "Voir ma liste", to: "/jobradar/applications" }}
+              secondaryAction={{ label: "Continuer à explorer", onClick: () => setSavedHint(false) }}
+              tone="success"
+            />
+          </div>
+        )}
+
         {busy ? (
           <div className="jr-skeletonWrap" aria-live="polite">
             <div className="jr-skeletonRow">
@@ -716,36 +708,27 @@ export default function JobRadarFeedPage() {
             <div className="sr-only">Chargement des offres...</div>
           </div>
         ) : alerts.length === 0 ? (
-          <div className="jr-empty">
-            <div className="jr-emptyTitle">Aucune alerte active</div>
-            <div className="jr-emptySub">
-              Crée une alerte pour activer le matching et recevoir des offres pertinentes.
-            </div>
-            <div className="jr-emptyActions">
-              <button className="jrBtn jrBtnPrimary" onClick={() => navigate("/jobradar/alerts")} type="button">
-                Créer une alerte
-              </button>
-            </div>
-          </div>
+          <EmptyState
+            title="Tu n’as pas encore d’alerte"
+            description="Crée une alerte pour activer le matching et recevoir des offres pertinentes."
+            primaryAction={{ label: "Créer une alerte", to: "/jobradar/alerts" }}
+            secondaryAction={{ label: "Améliorer mon profil", to: "/jobradar/profile" }}
+            tone="info"
+          />
         ) : displayed.length === 0 ? (
-          <div className="jr-empty">
-            <div className="jr-emptyTitle">Aucune offre pour le moment</div>
-            <div className="jr-emptySub">
-              Essaie d'élargir tes critères ou d'ajuster tes alertes.
-            </div>
-            <div className="jr-emptyActions">
-              <button className="jrBtn jrBtnGhost" type="button" onClick={() => navigate("/jobradar/alerts")}>
-                Ajuster mes alertes
-              </button>
-              <button className="jrBtn jrBtnGhost" type="button" onClick={() => navigate("/jobradar/applications")}>
-                Voir mes candidatures →
-              </button>
-            </div>
-          </div>
+          <EmptyState
+            title="Aucune offre pour le moment"
+            description="Essaie d’élargir tes critères ou d’ajuster tes alertes."
+            primaryAction={{ label: "Ajuster mes alertes", to: "/jobradar/alerts" }}
+            secondaryAction={{ label: "Réessayer", onClick: () => load() }}
+            tone="neutral"
+          />
         ) : (
           <>
-            <div className="jr-grid">
-              {displayed.map(({ job, p, signalCount, why }) => {
+            <div className="jr-grid" id="jr-results">
+              {displayed.map((row) => {
+                const { job, p, signalCount, why } = row;
+                const eventPayload = buildMatchEventPayload(row);
                 const isAdding = addingJobId === job.id;
                 const isDismissing = dismissingJobId === job.id;
                 const scoreClass =
@@ -757,11 +740,11 @@ export default function JobRadarFeedPage() {
                     key={job.id}
                     role="button"
                     tabIndex={0}
-                    onClick={() => openJob(job.id)}
+                    onClick={() => openJob(job.id, eventPayload)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        openJob(job.id);
+                        openJob(job.id, eventPayload);
                       }
                     }}
                   >
@@ -775,8 +758,8 @@ export default function JobRadarFeedPage() {
                       <span className="jr-location">{job.location ?? job.country ?? "—"}</span>
                     </div>
 
-                    {signalCount && (why.alert.length > 0 || why.cv.length > 0) ? (
-                      <div className="jr-why">
+                    {signalCount && (why.alert.length > 0 || why.cv.length > 0 || why.tags.length > 0) ? (
+                      <div className="jr-why" title={formatMatchWhyTooltip(why.details)}>
                         {why.alert.length > 0 && (
                           <span className="jr-whyTag">
                             Alertes: {why.alert.join(" · ")}
@@ -789,6 +772,12 @@ export default function JobRadarFeedPage() {
                             {why.restCv > 0 ? ` (+${why.restCv})` : ""}
                           </span>
                         )}
+                        {why.tags.map((tag) => (
+                          <span className="jr-whyTag" key={tag}>
+                            {tag}
+                          </span>
+                        ))}
+
                       </div>
                     ) : null}
 
@@ -805,6 +794,7 @@ export default function JobRadarFeedPage() {
                         className="jr-ctaSm"
                         onClick={(e) => {
                           e.stopPropagation();
+                          trackJobRadarEvent("job_save_click", eventPayload);
                           addToApplications(job.id);
                         }}
                         disabled={isAdding}
@@ -819,26 +809,29 @@ export default function JobRadarFeedPage() {
                           className="jr-link"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openJob(job.id);
-                        }}
-                        type="button"
-                      >
-                        Détail →
-                      </button>
+                            openJob(job.id, { ...eventPayload, action: "detail" });
+                          }}
+                          type="button"
+                        >
+                          Detail {"->"}
+                        </button>
 
                         <button
                           className="jr-dangerOutline"
                           onClick={(e) => {
                             e.stopPropagation();
+                            trackJobRadarEvent("job_dismiss", eventPayload);
                             dismissJob(job.id);
                           }}
                           disabled={isDismissing}
                           title="Masquer cette offre du feed"
                           type="button"
                         >
-                          {isDismissing ? "..." : "Décliner"}
+                          {isDismissing ? "..." : "Decliner"}
                         </button>
                       </div>
+
+
                     </div>
                   </div>
                 );

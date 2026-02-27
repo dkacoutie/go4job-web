@@ -20,6 +20,7 @@ export default function HomePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hasCv, setHasCv] = useState<boolean | null>(null);
 
   const [appsCount, setAppsCount] = useState(0);
   const [appsLoading, setAppsLoading] = useState(true);
@@ -115,6 +116,20 @@ export default function HomePage() {
       if (alertsErr) setErrorMsg((m) => m ?? alertsErr.message);
       setAlertsCount(cAlerts ?? 0);
       setAlertsLoading(false);
+
+      // 4) CV actif (via edge function)
+      try {
+        const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
+          body: { action: "get_active" },
+        });
+        if (cvErr) {
+          setHasCv(null);
+        } else {
+          setHasCv(Boolean(cvData?.ok && cvData?.data));
+        }
+      } catch {
+        setHasCv(null);
+      }
     }
 
     loadAll();
@@ -131,6 +146,11 @@ export default function HomePage() {
       }
     },
   });
+
+  const profileComplete = Boolean(profile?.full_name?.trim() && profile?.location?.trim());
+  const alertsReady = alertsCount > 0;
+  const savedEnough = appsCount >= 3;
+  const hasCvReady = hasCv === true;
 
   return (
     <div className="home-shell">
@@ -149,6 +169,68 @@ export default function HomePage() {
             Erreur : {errorMsg}
           </div>
         )}
+
+        <section className="onboard-card">
+          <div className="onboard-head">
+            <div>
+              <div className="onboard-title">Commencer ici</div>
+              <div className="onboard-sub">
+                Plus ton profil est complet, meilleurs sont tes matchs.
+              </div>
+            </div>
+            <button className="btn btnGhost btnPill" type="button" onClick={() => navigate("/jobradar/feed")}>
+              Explorer les offres
+            </button>
+          </div>
+
+          <div className="onboard-list">
+            <button
+              className={`onboard-item ${profileComplete ? "done" : ""}`}
+              type="button"
+              onClick={() => navigate("/jobradar/profile")}
+            >
+              <span className="onboard-check">{profileComplete ? "✓" : "•"}</span>
+              <span className="onboard-label">Compléter mon profil</span>
+              <span className="onboard-status">{profileComplete ? "OK" : "À faire"}</span>
+            </button>
+
+            <button
+              className={`onboard-item ${hasCvReady ? "done" : ""}`}
+              type="button"
+              onClick={() => navigate("/me/cv")}
+            >
+              <span className="onboard-check">{hasCvReady ? "✓" : "•"}</span>
+              <span className="onboard-label">Ajouter mon CV</span>
+              <span className="onboard-status">{hasCvReady ? "OK" : "À faire"}</span>
+            </button>
+
+            <button
+              className={`onboard-item ${alertsReady ? "done" : ""}`}
+              type="button"
+              onClick={() => navigate("/jobradar/alerts")}
+            >
+              <span className="onboard-check">{alertsReady ? "✓" : "•"}</span>
+              <span className="onboard-label">Créer ma première alerte</span>
+              <span className="onboard-status">{alertsReady ? "OK" : "À faire"}</span>
+            </button>
+
+            <button className="onboard-item" type="button" onClick={() => navigate("/jobradar/feed")}>
+              <span className="onboard-check">•</span>
+              <span className="onboard-label">Explorer les offres</span>
+              <span className="onboard-status">Découvrir</span>
+            </button>
+
+            <button
+              className={`onboard-item ${savedEnough ? "done" : ""}`}
+              type="button"
+              onClick={() => navigate("/jobradar/applications")}
+            >
+              <span className="onboard-check">{savedEnough ? "✓" : "•"}</span>
+              <span className="onboard-label">Sauvegarder 3 offres</span>
+              <span className="onboard-status">{savedEnough ? "OK" : `${appsCount}/3`}</span>
+            </button>
+          </div>
+        </section>
 
         <section className="grid">
           <div className="card" {...makeCardProps("/jobradar/profile")} aria-label="Ouvrir mon profil">

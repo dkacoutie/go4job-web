@@ -29,6 +29,68 @@
   color: var(--muted);
 }
 
+.cv-guidance{
+  margin: 6px 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(11,76,194,0.18);
+  background: rgba(11,76,194,0.06);
+}
+
+.cv-guidance__title{
+  font-weight: 800;
+  font-size: 14px;
+  color: rgba(11,18,32,0.92);
+  margin-bottom: 4px;
+}
+
+.cv-guidance__text{
+  font-size: 12.5px;
+  color: rgba(11,18,32,0.64);
+  line-height: 1.5;
+}
+
+.cv-progress{
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 10px 24px rgba(2,6,23,0.08);
+}
+
+.cv-progress__title{
+  font-weight: 800;
+  font-size: 13.5px;
+  color: rgba(11,18,32,0.9);
+}
+
+.cv-progress__text{
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: rgba(11,18,32,0.6);
+}
+
+.cv-progress__steps{
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(11,18,32,0.55);
+}
+
+.cv-progress__steps span{
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.16);
+}
+
+.cv-progress__steps span.done{
+  background: rgba(34,197,94,0.14);
+  color: rgba(21,128,61,0.9);
+}
+
 .mycv-grid {
   display: grid;
   grid-template-columns: 1.2fr 0.8fr;
@@ -49,6 +111,26 @@
 }
 
 .card h3 { margin: 0 0 10px; }
+
+.cv-review{
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.88);
+  border: 1px solid rgba(15,23,42,0.08);
+  margin-bottom: 12px;
+}
+
+.cv-review__title{
+  font-weight: 800;
+  font-size: 13.5px;
+  color: rgba(11,18,32,0.9);
+}
+
+.cv-review__text{
+  font-size: 12.5px;
+  color: rgba(11,18,32,0.6);
+  margin-top: 4px;
+}
 
 .field {
   display: grid;

@@ -5,6 +5,16 @@
 
 .home-shell{}
 
+.home-error{
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
 /* Si tu gardes encore home-top dans HomePage.tsx : on le neutralise */
 .home-top{
   display: none; /* ✅ recommandé : AppNav remplace cette barre */
@@ -102,4 +112,96 @@
   font-size: 16px;
   font-weight: 750;
   color: var(--text);
+}
+
+/* Onboarding checklist */
+.onboard-card{
+  margin-top: 16px;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(15,23,42,0.08);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.onboard-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 720px){
+  .onboard-head{ flex-direction: column; align-items: flex-start; }
+}
+
+.onboard-title{
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.onboard-sub{
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.onboard-list{
+  display: grid;
+  gap: 8px;
+}
+
+.onboard-item{
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid rgba(15,23,42,0.08);
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.onboard-item:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(2,6,23,0.08);
+  border-color: rgba(11,76,194,0.2);
+}
+
+.onboard-item:focus-visible{
+  outline: 3px solid rgba(11,76,194,0.25);
+  outline-offset: 2px;
+}
+
+.onboard-check{
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(11,76,194,0.08);
+  color: rgba(11,76,194,0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.onboard-item.done .onboard-check{
+  background: rgba(34,197,94,0.12);
+  color: rgba(21,128,61,0.95);
+}
+
+.onboard-label{
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.onboard-status{
+  font-size: 12px;
+  color: var(--muted);
 }
