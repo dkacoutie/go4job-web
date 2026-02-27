@@ -162,6 +162,7 @@ export default function JobRadarFeedPage() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [cvSkills, setCvSkills] = useState<string[]>([]);
   const [cvExp, setCvExp] = useState<{ min: number | null; max: number | null } | null>(null);
+  const [profileExp, setProfileExp] = useState<number | null>(null);
   const [busy, setBusy] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -316,6 +317,21 @@ export default function JobRadarFeedPage() {
         setCvExp(null);
       }
 
+      try {
+        const { data: pData, error: pErr } = await supabase
+          .from("profiles")
+          .select("experience_years")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (pErr) {
+          setProfileExp(null);
+        } else {
+          setProfileExp(toNumberOrNull((pData as { experience_years?: unknown })?.experience_years));
+        }
+      } catch {
+        setProfileExp(null);
+      }
+
       const fetchedJobs = await fetchJobsRange(0, PAGE_SIZE - 1);
       setJobs(fetchedJobs);
 
@@ -451,6 +467,7 @@ export default function JobRadarFeedPage() {
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCv = uniq(cvKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCount = kwAlerts.length + kwCv.length;
+    const effectiveExp = cvExp ?? (profileExp != null ? { min: profileExp, max: profileExp } : null);
 
     const qCanon = norm(canonicalizeText(q));
 
@@ -463,7 +480,7 @@ export default function JobRadarFeedPage() {
           job,
           alertKeywords: kwAlerts,
           cvKeywords: kwCv,
-          cvExp,
+          cvExp: effectiveExp,
           geoPrefs,
           hay,
           maxShown: 2,
@@ -513,6 +530,7 @@ export default function JobRadarFeedPage() {
     cappedAlertKeywords,
     cvKeywords,
     cvExp,
+    profileExp,
     q,
     geoPrefs,
     appStatusByJobId,

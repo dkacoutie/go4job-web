@@ -12,6 +12,7 @@ type Profile = {
   phone: string | null;
   location: string | null;
   headline: string | null;
+  experience_years: number | null;
 };
 
 const COUNTRIES = [
@@ -72,6 +73,7 @@ export default function ProfilePage() {
   const [city, setCity] = useState("");
   const [phone, setPhone] = useState("");
   const [headline, setHeadline] = useState("");
+  const [experienceYears, setExperienceYears] = useState("");
 
   const selectedCountry = useMemo(
     () => COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0],
@@ -93,7 +95,7 @@ export default function ProfilePage() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, full_name, phone, location, headline")
+        .select("user_id, full_name, phone, location, headline, experience_years")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -115,6 +117,11 @@ export default function ProfilePage() {
       setCountryCode(loc.countryCode);
 
       setHeadline(p?.headline ?? "");
+      setExperienceYears(
+        typeof p?.experience_years === "number" && Number.isFinite(p.experience_years)
+          ? String(p.experience_years)
+          : ""
+      );
       setPageLoading(false);
     }
 
@@ -149,6 +156,10 @@ export default function ProfilePage() {
     return v.replace(/[^\d]/g, "").slice(0, 20);
   }
 
+  function normalizeExperience(v: string) {
+    return v.replace(/[^\d]/g, "").slice(0, 2);
+  }
+
   function focusFirstMissing() {
     const missingId = !fullName.trim()
       ? "profile-fullname"
@@ -156,6 +167,8 @@ export default function ProfilePage() {
       ? "profile-city"
       : !headline.trim()
       ? "profile-headline"
+      : !experienceYears.trim() && hasCv !== true
+      ? "profile-experience"
       : null;
 
     if (!missingId) return;
@@ -176,6 +189,8 @@ export default function ProfilePage() {
     const cityValue = city.trim();
     const locationValue =
       cityValue && countryName ? `${cityValue} / ${countryName}` : (cityValue || countryName || null);
+    const expValue = experienceYears.trim() ? Number(experienceYears) : null;
+    const expClean = Number.isFinite(expValue) && expValue != null ? Math.max(0, expValue) : null;
 
     const { error } = await supabase
       .from("profiles")
@@ -186,6 +201,7 @@ export default function ProfilePage() {
           phone: phone.trim() || null,
           location: locationValue,
           headline: headline.trim() || null,
+          experience_years: expClean,
         },
         { onConflict: "user_id" }
       );
@@ -208,11 +224,12 @@ export default function ProfilePage() {
       message: "Tes prochains matchs seront mieux adaptés à ton profil.",
     });
 
-    const incomplete = !fullName.trim() || !city.trim() || !headline.trim();
+    const expMissing = !experienceYears.trim() && hasCv !== true;
+    const incomplete = !fullName.trim() || !city.trim() || !headline.trim() || expMissing;
     if (incomplete) {
       setNextStep({
         title: "Profil enregistré (incomplet)",
-        message: "Ajoute tes compétences et ta localisation pour améliorer la pertinence des offres.",
+        message: "Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.",
         primary: { label: "Continuer la configuration", onClick: () => focusFirstMissing() },
         secondary: { label: "Voir mes offres quand même", to: "/jobradar/feed" },
         tone: "info",
@@ -242,7 +259,8 @@ export default function ProfilePage() {
     }
   }
 
-  const isIncomplete = !fullName.trim() || !city.trim() || !headline.trim();
+  const expMissing = !experienceYears.trim() && hasCv !== true;
+  const isIncomplete = !fullName.trim() || !city.trim() || !headline.trim() || expMissing;
 
   return (
     <div className="profile-shell">
@@ -270,8 +288,8 @@ export default function ProfilePage() {
                   Complète ton profil pour améliorer la pertinence des offres
                 </div>
                 <div className="profile-guidance__text">
-                  Quelques informations (compétences, localisation, expérience) permettent à JobRadar
-                  de mieux filtrer et classer les offres.
+                  Quelques informations (compétences, localisation, expérience) permettent à JobRadar de mieux filtrer
+                  et classer les offres. Ton CV complète automatiquement l’expérience si disponible.
                 </div>
               </div>
 
@@ -280,7 +298,7 @@ export default function ProfilePage() {
                   <div>
                     <div className="profile-banner__title">Profil partiel — tes matchs peuvent être moins précis</div>
                     <div className="profile-banner__text">
-                      Ajoute tes compétences et ta localisation pour améliorer la pertinence des offres.
+                      Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.
                     </div>
                   </div>
                   <button className="btn btnGhost" type="button" onClick={focusFirstMissing}>
@@ -347,15 +365,28 @@ export default function ProfilePage() {
               </label>
 
               <label className="field">
-                Titre (headline)
+                Compétences
                 <input
                   id="profile-headline"
                   className="input"
                   value={headline}
                   onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="Ex: Gestionnaire en pharmacie • Project Manager"
+                  placeholder="Ex: Gestion de projet • Analyse data • Marketing"
                 />
-                <div className="fieldHelp">Ex : Marketing, Logistique, Data, Finance.</div>
+                <div className="fieldHelp">Liste 2-4 compétences ou domaines clés.</div>
+              </label>
+
+              <label className="field">
+                Expérience (années)
+                <input
+                  id="profile-experience"
+                  className="input"
+                  value={experienceYears}
+                  onChange={(e) => setExperienceYears(normalizeExperience(e.target.value))}
+                  inputMode="numeric"
+                  placeholder="Ex: 3"
+                />
+                <div className="fieldHelp">Si tu as un CV actif, cette info est optionnelle.</div>
               </label>
 
               {errorMsg && <div className="profile-msg profile-msgErr">{errorMsg}</div>}
