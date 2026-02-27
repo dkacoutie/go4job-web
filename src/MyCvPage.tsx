@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+﻿import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
 import "./MyCvPage.css";
+import { Document, Packer, Paragraph } from "docx";
+import { jsPDF } from "jspdf";
 
 // @ts-ignore: external module has no types in build environment
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
@@ -92,6 +94,70 @@ function normalizeSkillsList(list: string[]) {
   return out.slice(0, 60);
 }
 
+function clampText(text: string, maxChars: number) {
+  if (!text) return "";
+  const t = text.trim();
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, maxChars - 3).trim()}...`;
+}
+
+function pickSection(sections: Record<string, string> | undefined, keys: string[]) {
+  if (!sections) return "";
+  for (const [k, v] of Object.entries(sections)) {
+    const nk = normalizeKey(k);
+    if (keys.includes(nk)) return String(v ?? "").trim();
+  }
+  return "";
+}
+
+function guessLocationFromContact(text: string) {
+  const lines = String(text ?? "")
+    .split(/\r\n|\r|\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (line.includes("@")) continue;
+    if (lower.includes("linkedin") || lower.includes("github") || lower.includes("http")) continue;
+    if (/\d{2,}/.test(line)) continue;
+    if (line.length > 80) continue;
+    return line;
+  }
+  return "";
+}
+
+function extractHeadline(profileText: string, fallbackText: string) {
+  const source = profileText || fallbackText;
+  const lines = String(source ?? "")
+    .split(/\r\n|\r|\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return "";
+  return clampText(lines[0], 90);
+}
+
+function formatCvResultAsText(payload: {
+  headline?: string;
+  profile?: string;
+  experience?: string;
+  skills?: string[];
+  languages?: string[];
+  contact?: { email?: string | null; phone?: string | null };
+  location?: string;
+}) {
+  const lines: string[] = [];
+  if (payload.headline) lines.push(`Titre de profil: ${payload.headline}`);
+  if (payload.contact?.email) lines.push(`Email: ${payload.contact.email}`);
+  if (payload.contact?.phone) lines.push(`Téléphone: ${payload.contact.phone}`);
+  if (payload.location) lines.push(`Localisation: ${payload.location}`);
+  if (payload.profile) lines.push(`\nProfil:\n${payload.profile}`);
+  if (payload.experience) lines.push(`\nExpérience:\n${payload.experience}`);
+  if (payload.skills?.length) lines.push(`\nCompétences:\n- ${payload.skills.join("\n- ")}`);
+  if (payload.languages?.length) lines.push(`\nLangues:\n- ${payload.languages.join("\n- ")}`);
+  return lines.join("\n");
+}
+
 function improveReadableText(raw: string) {
   let t = String(raw ?? "").replace(/\r/g, "\n").replace(/\u00a0/g, " ");
   t = t.replace(/\s{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -117,25 +183,6 @@ function stripDangerousChars(input: string) {
     .replace(/\u0000/g, "")
     .replace(/[\uD800-\uDFFF]/g, "")
     .replace(/[\u{10000}-\u{10FFFF}]/gu, "");
-}
-
-const SECTION_LABELS: Record<string, string> = {
-  profil: "Profil",
-  experience: "Experiences",
-  "experience professionnelle": "Experiences",
-  formation: "Formation",
-  education: "Formation",
-  competences: "Competences",
-  skills: "Competences",
-  langues: "Langues",
-  languages: "Langues",
-  contact: "Contact",
-  body: "Resume",
-};
-
-function formatSectionTitle(raw: string) {
-  const k = normalizeKey(raw);
-  return SECTION_LABELS[k] ?? (raw || "Resume");
 }
 
 function isPdf(f: File) {
@@ -222,10 +269,12 @@ export default function MyCvPage() {
   const [nextStep, setNextStep] = useState<{
     title: string;
     message: string;
-    primary: { label: string; to?: string };
-    secondary?: { label: string; to?: string };
+    primary: { label: string; to?: string; onClick?: () => void };
+    secondary?: { label: string; to?: string; onClick?: () => void };
+    tertiary?: { label: string; to?: string; onClick?: () => void };
     tone?: "info" | "success";
   } | null>(null);
+  const [needsReview, setNeedsReview] = useState(false);
   const [editableSkills, setEditableSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [lastParsed, setLastParsed] = useState<CvExtractResponse | null>(null);
@@ -249,27 +298,41 @@ export default function MyCvPage() {
     return t.split(/\r\n|\r|\n/).length;
   }, [cvText]);
 
-  const structuredSections = useMemo(() => {
+  const extracted = useMemo(() => {
     const sections = result?.sections ?? {};
-    const entries: Array<{ title: string; body: string }> = [];
-    const seen = new Set<string>();
+    const profileSection = pickSection(sections, ["profil", "resume", "summary", "objective", "objectif", "body"]);
+    const experienceSection = pickSection(sections, ["experience", "experience professionnelle", "experiences"]);
+    const contactSection = pickSection(sections, ["contact"]);
+    const languagesSection = pickSection(sections, ["langues", "languages"]);
 
-    for (const [k, v] of Object.entries(sections)) {
-      const body = (v ?? "").trim();
-      if (!body || body.length < 40) continue;
-      const nk = normalizeKey(k);
-      if (nk === "body") continue;
-      if (seen.has(nk)) continue;
-      seen.add(nk);
-      entries.push({ title: formatSectionTitle(k), body });
+    const headline = extractHeadline(profileSection, cvText);
+    const profile = clampText(profileSection || cvText, 680);
+    const contact = result?.contact ?? {};
+    const location = guessLocationFromContact(contactSection);
+
+    const skills = normalizeSkillsList(editableSkills);
+    let languages = normalizeSkillsList(result?.skills_by_category?.languages ?? []);
+    if (!languages.length && languagesSection) {
+      languages = normalizeSkillsList(
+        languagesSection
+          .split(/[,;\n]/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
     }
 
-    if (entries.length === 0 && sections.body) {
-      entries.push({ title: "Resume", body: sections.body });
-    }
+    return {
+      headline,
+      profile,
+      experience: clampText(experienceSection, 900),
+      contact,
+      location,
+      skills,
+      languages,
+    };
+  }, [result, cvText, editableSkills]);
 
-    return entries.slice(0, 8);
-  }, [result?.sections]);
+  const resultText = useMemo(() => formatCvResultAsText(extracted), [extracted]);
 
   async function invokeCvSave(action: "get_active" | "upsert" | "archive", payload?: any) {
     const { data, error } = await supabase.functions.invoke("cv_save", {
@@ -327,6 +390,9 @@ export default function MyCvPage() {
         sections: (data as any).cv_json?.sections ?? undefined,
         stats: (data as any).cv_json?.stats ?? undefined,
       });
+      const existingSkills = normalizeSkillsList((data as any).skills ?? []);
+      const existingEmail = (data as any).contact?.email;
+      setNeedsReview(existingSkills.length < 4 || !existingEmail);
 
       const name = (data as any).file_name as string | undefined;
       const size = (data as any).file_size as number | undefined;
@@ -380,7 +446,7 @@ export default function MyCvPage() {
 
       if (file) {
         if (!isPdf(file) && !isTxt(file) && !isDocx(file)) {
-          throw new Error("Format non supporte. Utilise PDF, DOCX ou TXT.");
+          throw new Error("Format non supporté. Utilise PDF, DOCX ou TXT.");
         }
 
         fileInfo = await uploadCvFile(file);
@@ -413,7 +479,7 @@ export default function MyCvPage() {
             ...fileInfo,
           });
         }
-        throw new Error("Impossible de lire le texte du CV. Si c'est un PDF scanne, colle le texte manuellement.");
+        throw new Error("Impossible de lire le texte du CV. Si c'est un PDF scanné, colle le texte manuellement.");
       }
 
       setPhase("analyze");
@@ -436,7 +502,7 @@ export default function MyCvPage() {
           }
         }
         if (msg.includes("non-2xx")) {
-          msg = "Erreur serveur lors de l'analyse. Reessaie dans quelques instants.";
+          msg = "Erreur serveur lors de l'analyse. Réessaie dans quelques instants.";
         }
         throw new Error(msg);
       }
@@ -470,7 +536,8 @@ export default function MyCvPage() {
         ...(fileInfo ?? {}),
       });
 
-      const needsReview = extractedSkills.length < 4 || !parsed?.contact?.email;
+      const needsReviewFlag = extractedSkills.length < 4 || !parsed?.contact?.email;
+      setNeedsReview(needsReviewFlag);
       pushToast({
         kind: "success",
         title: "CV ajouté avec succès",
@@ -478,41 +545,206 @@ export default function MyCvPage() {
       });
 
       setNextStep(
-        needsReview
+        needsReviewFlag
           ? {
               title: "CV analysé (à vérifier)",
-              message:
-                "Certaines informations détectées peuvent être incomplètes. Relis ton profil pour améliorer la précision des matchs.",
+              message: "Certaines informations peuvent être incomplètes. Relis ton profil pour améliorer la précision.",
               primary: { label: "Relire mon profil", to: "/jobradar/profile" },
-              secondary: { label: "Voir mes offres", to: "/jobradar/feed" },
+              secondary: { label: "Voir mes Top matchs", to: "/jobradar/feed" },
+              tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "info",
             }
           : {
               title: "Prochaine étape recommandée",
-              message: "Vérifie ton profil extrait puis découvre tes offres mises à jour.",
-              primary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
-              secondary: { label: "Vérifier mon profil", to: "/jobradar/profile" },
+              message: "Vérifie ton profil détecté, puis mets à jour tes alertes et découvre tes Top matchs.",
+              primary: { label: "Voir mes Top matchs", to: "/jobradar/feed" },
+              secondary: { label: "Mettre à jour mon profil", to: "/jobradar/profile" },
+              tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "success",
-            }
+            },
       );
     } catch (e: any) {
       const msg = e?.message ?? String(e);
       setErr(msg);
       pushToast({
         kind: "error",
-        title: "Impossible d’analyser ce CV",
-        message: "Essaie un fichier PDF/DOCX lisible, ou complète ton profil manuellement.",
+        title: "Impossible d'analyser ce CV",
+        message: "Essaie un PDF/DOCX lisible ou complète ton profil manuellement.",
       });
       setNextStep({
-        title: "Impossible d’analyser ce CV",
-        message: "Essaie un fichier PDF/DOCX plus lisible, ou complète ton profil manuellement.",
+        title: "Impossible d'analyser ce CV",
+        message: "Essaie un PDF/DOCX plus lisible ou complète ton profil manuellement.",
         primary: { label: "Réessayer", to: "/me/cv" },
         secondary: { label: "Compléter mon profil", to: "/jobradar/profile" },
+        tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
         tone: "info",
       });
     } finally {
       setBusy(false);
       setPhase("idle");
+    }
+  }
+
+  async function handleCopy() {
+    const content = resultText.trim();
+    if (!content) {
+      pushToast({
+        kind: "info",
+        title: "Rien à copier",
+        message: "Ajoute un CV pour générer un résumé exploitable.",
+      });
+      return;
+    }
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        const helper = document.createElement("textarea");
+        helper.value = content;
+        helper.setAttribute("readonly", "true");
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand("copy");
+        helper.remove();
+      }
+      pushToast({
+        kind: "success",
+        title: "Copie effectuée",
+        message: "Le résumé structuré a été copié.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Copie impossible",
+        message: "Essaie à nouveau ou télécharge le fichier TXT.",
+      });
+    }
+  }
+
+  function handleDownloadTxt() {
+    const content = resultText.trim();
+    if (!content) {
+      pushToast({
+        kind: "info",
+        title: "Aucun résultat",
+        message: "Ajoute un CV pour générer le fichier TXT.",
+      });
+      return;
+    }
+
+    const base = safeFileName(label || fileMeta?.name || "cv");
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${base}_jobradar.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(url);
+    pushToast({
+      kind: "success",
+      title: "Export TXT prêt",
+      message: "Le fichier a été téléchargé.",
+    });
+  }
+
+  async function handleDownloadDocx() {
+    const content = resultText.trim();
+    if (!content) {
+      pushToast({
+        kind: "info",
+        title: "Aucun résultat",
+        message: "Ajoute un CV pour générer le fichier DOCX.",
+      });
+      return;
+    }
+
+    try {
+      const base = safeFileName(label || fileMeta?.name || "cv");
+      const lines = content.split(/\r?\n/);
+      const paragraphs = lines.map((line) => new Paragraph({ text: line || " " }));
+      const doc = new Document({
+        sections: [
+          {
+            children: paragraphs,
+          },
+        ],
+      });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${base}_jobradar.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      pushToast({
+        kind: "success",
+        title: "Export DOCX prêt",
+        message: "Le fichier a été téléchargé.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Export DOCX impossible",
+        message: "Réessaie dans quelques instants.",
+      });
+    }
+  }
+
+  function handleDownloadPdf() {
+    const content = resultText.trim();
+    if (!content) {
+      pushToast({
+        kind: "info",
+        title: "Aucun résultat",
+        message: "Ajoute un CV pour générer le PDF.",
+      });
+      return;
+    }
+
+    try {
+      const base = safeFileName(label || fileMeta?.name || "cv");
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      const margin = 48;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxWidth = pageWidth - margin * 2;
+      const lineHeight = 14;
+      const lines = doc.splitTextToSize(content, maxWidth);
+
+      let y = margin;
+      for (const line of lines) {
+        if (y > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(String(line), margin, y);
+        y += lineHeight;
+      }
+
+      doc.save(`${base}_jobradar.pdf`);
+      pushToast({
+        kind: "success",
+        title: "Export PDF prêt",
+        message: "Le fichier a été téléchargé.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Export PDF impossible",
+        message: "Réessaie dans quelques instants.",
+      });
     }
   }
 
@@ -552,7 +784,7 @@ export default function MyCvPage() {
       setErr(e?.message ?? String(e));
       pushToast({
         kind: "error",
-        title: "Impossible d’enregistrer les compétences",
+        title: "Impossible d'enregistrer les compétences",
         message: e?.message ?? "Réessaie dans quelques instants.",
       });
     } finally {
@@ -575,6 +807,8 @@ export default function MyCvPage() {
       setResult(null);
       setFile(null);
       setFileMeta(null);
+      setEditableSkills([]);
+      setNeedsReview(false);
       pushToast({
         kind: "success",
         title: "CV archivé",
@@ -584,7 +818,7 @@ export default function MyCvPage() {
       setErr(e?.message ?? String(e));
       pushToast({
         kind: "error",
-        title: "Impossible d’archiver le CV",
+        title: "Impossible d'archiver le CV",
         message: e?.message ?? "Réessaie dans quelques instants.",
       });
     } finally {
@@ -599,10 +833,9 @@ export default function MyCvPage() {
     else setFileMeta(null);
   }
 
-  const hasSkillsByCat = Boolean(
-    result?.skills_by_category &&
-      Object.values(result.skills_by_category).some((arr) => Array.isArray(arr) && arr.length > 0)
-  );
+  const hasResult = Boolean(result && result.ok !== false);
+  const isAnalyzing = busy && phase !== "idle";
+  const canExport = hasResult && Boolean(resultText.trim());
 
   if (loading) return null;
 
@@ -623,42 +856,38 @@ export default function MyCvPage() {
         </div>
       </div>
 
-      <p className="mycv-subtitle">
-        Importe ton CV (PDF/TXT/DOCX) ou colle le texte. Clique <b>Analyser & enregistrer</b> pour extraire tes competences.
-      </p>
-
-      {busy && phase !== "idle" && (
-        <div className="cv-progress" aria-live="polite">
-          <div className="cv-progress__title">Analyse de ton CV en cours...</div>
-          <div className="cv-progress__text">
-            Nous extrayons tes compétences et expériences pour améliorer tes recommandations.
+      <div className="cv-layout">
+        <section className="cv-panel">
+          <div className="cv-panelHeader">
+            <div>
+              <div className="cv-panelTitle">Importer un CV</div>
+              <div className="cv-panelSub">
+                Importe un fichier (PDF, DOCX, TXT) ou colle ton texte pour lancer l'analyse.
+              </div>
+            </div>
           </div>
-          <div className="cv-progress__steps">
-            <span className={phase === "upload" || phase === "analyze" || phase === "saving" ? "done" : ""}>
-              Téléversement
-            </span>
-            <span className={phase === "analyze" || phase === "saving" ? "done" : ""}>Analyse du CV</span>
-            <span className={phase === "saving" ? "done" : ""}>Préparation des matchs</span>
-          </div>
-        </div>
-      )}
 
-      <div className="mycv-grid">
-        <div className="card">
           <div className="field">
-            <label className="label">Nom/Label du CV</label>
+            <label className="label">Nom du CV</label>
             <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
 
           <div className="field">
-            <label className="label">Importer un fichier CV (PDF/TXT/DOCX)</label>
+            <label className="label">Importer un fichier CV</label>
             <input className="input mycv-file" type="file" accept=".pdf,.txt,.docx" onChange={onFileChange} />
             {fileMeta && (
               <div className="file-meta">
                 <span>{fileMeta.name}</span>
                 <span> - {formatBytes(fileMeta.size)}</span>
                 {fileMeta.type ? <span> - {fileMeta.type}</span> : null}
-                <button className="btn btnGhost btnSm" type="button" onClick={() => { setFile(null); setFileMeta(null); }}>
+                <button
+                  className="btn btnGhost btnSm"
+                  type="button"
+                  onClick={() => {
+                    setFile(null);
+                    setFileMeta(null);
+                  }}
+                >
                   Retirer
                 </button>
               </div>
@@ -666,170 +895,224 @@ export default function MyCvPage() {
           </div>
 
           <div className="field">
-            <label className="label">CV (texte)</label>
+            <label className="label">Texte du CV (optionnel)</label>
             <textarea
               className="textarea"
               value={cvText}
               onChange={(e) => setCvText(e.target.value)}
-              placeholder="Colle ton CV ici (texte brut)..."
+              placeholder="Colle ton CV ici si besoin..."
             />
           </div>
 
-          <div className="actions-row">
-            <div className="actions-left">
+          <div className="cv-actions">
+            <div className="cv-actionsLeft">
               <span className="muted">
-                {chars} caracteres - {lines} lignes
+                {chars} caractères · {lines} lignes
               </span>
-
               <button className="btn btnGhost" type="button" onClick={loadActiveCv} disabled={busy}>
                 Recharger
               </button>
-
               <button className="btn btnGhost" type="button" onClick={archiveActiveCv} disabled={busy}>
                 Archiver
               </button>
             </div>
 
-            <div className="actions-right">
+            <div className="cv-actionsRight">
               <button className="btn btnPrimary" type="button" onClick={analyzeAndSave} disabled={busy}>
                 {busy ? "Analyse..." : "Analyser & enregistrer"}
               </button>
             </div>
           </div>
 
-          {err && <div className="alert">{err}</div>}
-          <div className="small">Astuce : si le PDF est scanne, colle le texte manuellement.</div>
-        </div>
-
-        <div className="card">
-          <div className="cv-review">
-            <div className="cv-review__title">Vérifie ton profil détecté</div>
-            <div className="cv-review__text">
-              Confirme les compétences et informations détectées pour améliorer la pertinence des offres.
-            </div>
+          {err && <div className="cv-alert">{err}</div>}
+          <div className="cv-privacy">
+            Tes données CV sont utilisées uniquement pour améliorer le matching JobRadar. Tu peux archiver ton CV à tout moment.
           </div>
-          <h3>Contact detecte</h3>
-          <div className="kv">
+        </section>
+
+        <section className="cv-panel cv-output">
+          <div className="cv-outputHeader">
             <div>
-              <b>Email :</b> {result?.contact?.email ?? "-"}
+              <div className="cv-panelTitle">Résultat</div>
+              <div className="cv-panelSub">Profil structuré issu de ton CV.</div>
             </div>
-            <div>
-              <b>Telephone :</b> {result?.contact?.phone ?? "-"}
-            </div>
+            {needsReview && <span className="cv-badge">À vérifier</span>}
           </div>
 
-          <h3 style={{ marginTop: 16 }}>Competences extraites</h3>
-          {hasSkillsByCat ? (
-            <div className="skills-grid">
-              {([
-                ["hard", "Domaines"],
-                ["tools", "Outils"],
-                ["soft", "Soft skills"],
-                ["languages", "Langues"],
-                ["other", "Autres"],
-              ] as const).map(([key, label]) => {
-                const items = result?.skills_by_category?.[key] ?? [];
-                if (!items.length) return null;
-                return (
-                  <div className="skills-col" key={key}>
-                    <div className="skills-title">{label}</div>
-                    <div className="pills">
-                      {items.map((s, i) => (
-                        <span className="pill" key={`${key}-${s}-${i}`}>{s}</span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="pills">
-              {(result?.skills ?? []).length === 0 && <span className="muted">-</span>}
-              {(result?.skills ?? []).map((s, i) => (
-                <span className="pill" key={`${s}-${i}`}>{s}</span>
-              ))}
+          <div className="cv-outputActions">
+            <button className="btn btnGhost" type="button" onClick={handleCopy} disabled={!canExport}>
+              Copier
+            </button>
+            <button className="btn btnGhost" type="button" onClick={handleDownloadTxt} disabled={!canExport}>
+              Télécharger TXT
+            </button>
+            <button className="btn btnGhost" type="button" onClick={handleDownloadDocx} disabled={!canExport}>
+              Télécharger DOCX
+            </button>
+            <button className="btn btnGhost" type="button" onClick={handleDownloadPdf} disabled={!canExport}>
+              Télécharger PDF
+            </button>
+          </div>
+
+          {isAnalyzing && (
+            <div className="cv-progress" aria-live="polite">
+              <div className="cv-progress__title">Analyse de ton CV en cours...</div>
+              <div className="cv-progress__text">
+                Nous extrayons tes compétences et expériences pour améliorer tes recommandations.
+              </div>
+              <div className="cv-progress__steps">
+                <span className={phase === "upload" || phase === "analyze" || phase === "saving" ? "done" : ""}>
+                  Téléversement
+                </span>
+                <span className={phase === "analyze" || phase === "saving" ? "done" : ""}>Analyse du CV</span>
+                <span className={phase === "saving" ? "done" : ""}>Préparation des matchs</span>
+              </div>
             </div>
           )}
 
-          <h3 style={{ marginTop: 16 }}>Competences utilisees pour le matching</h3>
-          <div className="small" style={{ marginBottom: 8 }}>
-            Tu peux retirer des competences imprecises ou en ajouter manuellement.
-          </div>
-          <div className="pills">
-            {editableSkills.length === 0 && <span className="muted">-</span>}
-            {editableSkills.map((s, i) => (
-              <span className="pill pill-edit" key={`${s}-${i}`}>
-                {s}
-                <button
-                  className="pill-remove"
-                  type="button"
-                  onClick={() => setEditableSkills((prev) => prev.filter((_, idx) => idx !== i))}
-                  aria-label={`Supprimer ${s}`}
-                >
-                  ×
+          {!isAnalyzing && err && !hasResult && (
+            <div className="cv-outputState cv-outputError">
+              <div className="cv-outputStateTitle">Impossible d'analyser ce CV</div>
+              <div className="cv-outputStateText">
+                Essaie un PDF/DOCX plus lisible ou complète ton profil manuellement.
+              </div>
+              <div className="cv-outputStateActions">
+                <button className="btn btnPrimary" type="button" onClick={analyzeAndSave} disabled={busy}>
+                  Réessayer
                 </button>
-              </span>
-            ))}
-          </div>
-
-          <div className="skill-edit-row">
-            <input
-              className="input"
-              value={skillInput}
-              onChange={(e) => setSkillInput(e.target.value)}
-              placeholder="Ajouter une competence (ex: Budgeting, SAP, Power BI)"
-            />
-            <button
-              className="btn btnGhost"
-              type="button"
-              onClick={() => {
-                const v = normalizeSkillLabel(skillInput);
-                if (!v) return;
-                setEditableSkills((prev) => normalizeSkillsList([...prev, v]));
-                setSkillInput("");
-              }}
-              disabled={busy}
-            >
-              Ajouter
-            </button>
-            <button className="btn btnPrimary" type="button" onClick={saveSkillsOnly} disabled={busy || !lastParsed}>
-              Enregistrer competences
-            </button>
-          </div>
-
-          {structuredSections.length > 0 && (
-            <div className="cv-structured">
-              <h3 style={{ marginTop: 16 }}>Resume structure</h3>
-              {structuredSections.map((s) => (
-                <div className="cv-section" key={s.title}>
-                  <div className="cv-section-title">{s.title}</div>
-                  <div className="cv-section-body">{s.body}</div>
-                </div>
-              ))}
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => navigate("/jobradar/profile")}
+                >
+                  Compléter mon profil
+                </button>
+              </div>
             </div>
           )}
 
-          <div className="small" style={{ marginTop: 10 }}>
-            Ces infos servent a ameliorer le score de matching.
-          </div>
+          {!isAnalyzing && !err && !hasResult && (
+            <div className="cv-outputState cv-outputEmpty">
+              <div className="cv-outputStateTitle">Ajoute ton CV pour un résultat immédiat</div>
+              <div className="cv-outputStateText">
+                Tu verras ici un profil structuré (compétences, expérience, localisation, langues) prêt à être utilisé.
+              </div>
+            </div>
+          )}
 
-          <h3 style={{ marginTop: 16 }}>Stats</h3>
-          <div className="kv">
-            <div>
-              <b>Texte colle :</b> {result?.stats?.chars ?? chars} caracteres - {result?.stats?.lines ?? lines} lignes
+          {hasResult && (
+            <div className="cv-outputBody">
+              {needsReview && (
+                <div className="cv-verify">
+                  <div className="cv-verifyTitle">CV analysé (à vérifier)</div>
+                  <div className="cv-verifyText">
+                    Certaines informations peuvent être incomplètes. Relis ton profil pour améliorer la précision.
+                  </div>
+                  <button className="btn btnGhost btnSm" type="button" onClick={() => navigate("/jobradar/profile")}>
+                    Relire mon profil
+                  </button>
+                </div>
+              )}
+
+              {extracted.headline && <div className="cv-headline">{extracted.headline}</div>}
+
+              <div className="cv-meta">
+                <div>
+                  <div className="cv-metaLabel">Email</div>
+                  <div className="cv-metaValue">{extracted.contact?.email || "Non renseigné"}</div>
+                </div>
+                <div>
+                  <div className="cv-metaLabel">Téléphone</div>
+                  <div className="cv-metaValue">{extracted.contact?.phone || "Non renseigné"}</div>
+                </div>
+                <div>
+                  <div className="cv-metaLabel">Localisation</div>
+                  <div className="cv-metaValue">{extracted.location || "Non renseigné"}</div>
+                </div>
+              </div>
+
+              <div className="cv-block">
+                <div className="cv-blockTitle">Profil</div>
+                <div className="cv-blockBody">
+                  {extracted.profile ? extracted.profile : <span className="muted">Non renseigné</span>}
+                </div>
+              </div>
+
+              <div className="cv-block">
+                <div className="cv-blockTitle">Expérience</div>
+                <div className="cv-blockBody">
+                  {extracted.experience ? extracted.experience : <span className="muted">Non renseigné</span>}
+                </div>
+              </div>
+
+              <div className="cv-block">
+                <div className="cv-blockTitle">Compétences</div>
+                <div className="cv-blockBody">
+                  <div className="pills">
+                    {editableSkills.length === 0 && <span className="muted">Non renseigné</span>}
+                    {editableSkills.map((s, i) => (
+                      <span className="pill pill-edit" key={`${s}-${i}`}>
+                        {s}
+                        <button
+                          className="pill-remove"
+                          type="button"
+                          onClick={() => setEditableSkills((prev) => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`Supprimer ${s}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="cv-skillEdit">
+                    <input
+                      className="input"
+                      value={skillInput}
+                      onChange={(e) => setSkillInput(e.target.value)}
+                      placeholder="Ajouter une compétence (ex: Budget, SAP, Power BI)"
+                    />
+                    <button
+                      className="btn btnGhost"
+                      type="button"
+                      onClick={() => {
+                        const v = normalizeSkillLabel(skillInput);
+                        if (!v) return;
+                        setEditableSkills((prev) => normalizeSkillsList([...prev, v]));
+                        setSkillInput("");
+                      }}
+                      disabled={busy}
+                    >
+                      Ajouter
+                    </button>
+                    <button className="btn btnPrimary" type="button" onClick={saveSkillsOnly} disabled={busy || !lastParsed}>
+                      Enregistrer
+                    </button>
+                  </div>
+                  <div className="cv-blockHint">Tu peux ajuster les compétences pour améliorer le matching.</div>
+                </div>
+              </div>
+
+              <div className="cv-block">
+                <div className="cv-blockTitle">Langues</div>
+                <div className="cv-blockBody">
+                  <div className="pills">
+                    {extracted.languages.length === 0 && <span className="muted">Non renseigné</span>}
+                    {extracted.languages.map((l, i) => (
+                      <span className="pill" key={`${l}-${i}`}>
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div>
-              <b>Analyse :</b> {result?.stats?.chars ?? chars} caracteres - {result?.stats?.lines ?? lines} lignes
-            </div>
-            <div>
-              <b>Experience estimee :</b> -
-            </div>
-          </div>
-        </div>
+          )}
+        </section>
       </div>
 
       {nextStep && (
-        <div style={{ marginTop: 16 }}>
+        <div className="cv-nextStep">
           <NextStepCard
             title={nextStep.title}
             message={nextStep.message}
@@ -837,6 +1120,18 @@ export default function MyCvPage() {
             secondaryAction={nextStep.secondary}
             tone={nextStep.tone ?? "info"}
           />
+          {nextStep.tertiary && (
+            <button
+              className="cv-tertiary"
+              type="button"
+              onClick={() => {
+                if (nextStep.tertiary?.onClick) nextStep.tertiary.onClick();
+                else if (nextStep.tertiary?.to) navigate(nextStep.tertiary.to);
+              }}
+            >
+              {nextStep.tertiary.label}
+            </button>
+          )}
         </div>
       )}
     </div>

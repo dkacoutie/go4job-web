@@ -174,7 +174,7 @@ export default function AppLayout() {
             <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
 
             <div className="site-footer__copy">
-              Contact: <strong>contact@go4job.org</strong> | <strong>+225 01 51 67 67 67</strong>
+              Contact: <strong>contact@go4jobapp.com</strong>
             </div>
 
             <div className="site-footer__note">Plateforme de recherche d'emploi assistée par l'IA.</div>

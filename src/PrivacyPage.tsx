@@ -76,22 +76,21 @@ export default function PrivacyPage() {
 
       <h2>8. Transferts internationaux</h2>
       <p>
-        Vos données peuvent être traitées dans des pays offrant un niveau de protection adéquat selon la Commission
-        européenne.
+        Vos données peuvent être traitées dans des pays offrant un niveau de protection adéquat
+        selon la Commission européenne.
       </p>
 
       <h2>9. Modifications</h2>
       <p>
-        Nous pouvons modifier cette politique de confidentialité. Les changements importants vous seront notifiés par
-        email.
+        Nous pouvons modifier cette politique de confidentialité. Les changements importants vous
+        seront notifiés par email.
       </p>
 
       <h2>10. Contact</h2>
       <p>
         Pour exercer vos droits ou pour toute question, contactez notre DPO à{" "}
-        <a href="mailto:privacy@go4job.org">privacy@go4job.org</a>. Vous pouvez aussi nous joindre à{" "}
-        <a href="mailto:contact@go4job.org">contact@go4job.org</a> ou par téléphone au{" "}
-        <a href="tel:+2250151676767">+225 01 51 67 67 67</a>.
+        <a href="mailto:privacy@go4jobapp.com">privacy@go4jobapp.com</a>. Vous pouvez aussi nous
+        joindre à <a href="mailto:contact@go4jobapp.com">contact@go4jobapp.com</a>.
       </p>
     </div>
   );

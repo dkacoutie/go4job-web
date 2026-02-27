@@ -1,7 +1,7 @@
-.mycv-shell {
-  max-width: 1100px;
+﻿.mycv-shell {
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 24px 16px 48px;
+  padding: 24px 16px 60px;
 }
 
 .mycv-top {
@@ -24,112 +24,86 @@
   letter-spacing: -0.5px;
 }
 
-.mycv-subtitle {
-  margin: 0 0 18px;
-  color: var(--muted);
+.cv-guidance {
+  margin: 6px 0 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(11, 76, 194, 0.18);
+  background: linear-gradient(120deg, rgba(11, 76, 194, 0.08), rgba(255, 255, 255, 0.85));
 }
 
-.cv-guidance{
-  margin: 6px 0 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(11,76,194,0.18);
-  background: rgba(11,76,194,0.06);
-}
-
-.cv-guidance__title{
+.cv-guidance__title {
   font-weight: 800;
   font-size: 14px;
-  color: rgba(11,18,32,0.92);
+  color: rgba(11, 18, 32, 0.92);
   margin-bottom: 4px;
 }
 
-.cv-guidance__text{
+.cv-guidance__text {
   font-size: 12.5px;
-  color: rgba(11,18,32,0.64);
+  color: rgba(11, 18, 32, 0.66);
   line-height: 1.5;
 }
 
-.cv-progress{
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(15,23,42,0.12);
-  background: rgba(255,255,255,0.9);
-  box-shadow: 0 10px 24px rgba(2,6,23,0.08);
-}
-
-.cv-progress__title{
-  font-weight: 800;
-  font-size: 13.5px;
-  color: rgba(11,18,32,0.9);
-}
-
-.cv-progress__text{
-  margin-top: 4px;
-  font-size: 12.5px;
-  color: rgba(11,18,32,0.6);
-}
-
-.cv-progress__steps{
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: rgba(11,18,32,0.55);
-}
-
-.cv-progress__steps span{
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(148,163,184,0.16);
-}
-
-.cv-progress__steps span.done{
-  background: rgba(34,197,94,0.14);
-  color: rgba(21,128,61,0.9);
-}
-
-.mycv-grid {
+.cv-layout {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 18px;
   align-items: start;
 }
 
-@media (max-width: 920px) {
-  .mycv-grid { grid-template-columns: 1fr; }
+@media (max-width: 980px) {
+  .cv-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
-.card {
+.cv-panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 18px;
+  padding: 18px;
   box-shadow: var(--shadow-sm);
 }
 
-.card h3 { margin: 0 0 10px; }
-
-.cv-review{
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.88);
-  border: 1px solid rgba(15,23,42,0.08);
-  margin-bottom: 12px;
+.cv-output {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.06), rgba(255, 255, 255, 0.98) 55%);
 }
 
-.cv-review__title{
+.cv-panelHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cv-panelTitle {
+  font-size: 18px;
   font-weight: 800;
-  font-size: 13.5px;
-  color: rgba(11,18,32,0.9);
+  color: var(--text);
 }
 
-.cv-review__text{
+.cv-panelSub {
+  margin-top: 2px;
   font-size: 12.5px;
-  color: rgba(11,18,32,0.6);
-  margin-top: 4px;
+  color: var(--muted);
+}
+
+.cv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.cv-actionsLeft,
+.cv-actionsRight {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .field {
@@ -158,6 +132,11 @@
   padding-top: 8px;
 }
 
+.textarea {
+  min-height: 260px;
+  resize: vertical;
+}
+
 .file-meta {
   margin-top: 6px;
   display: flex;
@@ -174,43 +153,243 @@
   font-size: 12px;
 }
 
-.textarea {
-  min-height: 320px;
-  resize: vertical;
-}
-
-.actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-}
-
-.actions-left,
-.actions-right {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.actions-right .btnPrimary {
-  min-width: 220px;
-}
-
 .muted {
   color: var(--muted);
   font-size: 13px;
 }
 
-.alert {
+.cv-alert {
   margin-top: 12px;
   padding: 12px;
   border-radius: 14px;
   border: 1px solid rgba(255, 60, 60, 0.28);
   background: rgba(255, 60, 60, 0.08);
+}
+
+.cv-privacy {
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(11, 18, 32, 0.6);
+}
+
+.cv-outputHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.cv-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(251, 191, 36, 0.18);
+  color: rgba(161, 98, 7, 0.95);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
+.cv-outputActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cv-outputBody {
+  display: grid;
+  gap: 14px;
+}
+
+.cv-headline {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cv-meta {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(15, 23, 42, 0.03);
+}
+
+@media (max-width: 720px) {
+  .cv-meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cv-metaLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.cv-metaValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.cv-block {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.cv-blockTitle {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.cv-blockBody {
+  white-space: pre-line;
+  line-height: 1.6;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.cv-blockHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cv-skillEdit {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 920px) {
+  .cv-skillEdit {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cv-verify {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+  display: grid;
+  gap: 6px;
+}
+
+.cv-verifyTitle {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: rgba(11, 18, 32, 0.92);
+}
+
+.cv-verifyText {
+  font-size: 12.5px;
+  color: rgba(11, 18, 32, 0.6);
+}
+
+.cv-outputState {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(15, 23, 42, 0.18);
+  background: rgba(15, 23, 42, 0.03);
+  display: grid;
+  gap: 8px;
+}
+
+.cv-outputError {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.cv-outputStateTitle {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: rgba(11, 18, 32, 0.92);
+}
+
+.cv-outputStateText {
+  font-size: 12.5px;
+  color: rgba(11, 18, 32, 0.64);
+}
+
+.cv-outputStateActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cv-progress {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.08);
+}
+
+.cv-progress__title {
+  font-weight: 800;
+  font-size: 13.5px;
+  color: rgba(11, 18, 32, 0.9);
+}
+
+.cv-progress__text {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: rgba(11, 18, 32, 0.6);
+}
+
+.cv-progress__steps {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: rgba(11, 18, 32, 0.55);
+}
+
+.cv-progress__steps span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.cv-progress__steps span.done {
+  background: rgba(34, 197, 94, 0.14);
+  color: rgba(21, 128, 61, 0.9);
+}
+
+.cv-nextStep {
+  margin-top: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.cv-tertiary {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--brand-600);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
 }
 
 .pills {
@@ -243,75 +422,4 @@
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
-}
-
-.skill-edit-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-@media (max-width: 920px) {
-  .skill-edit-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-.kv {
-  display: grid;
-  gap: 6px;
-  color: var(--text);
-}
-
-.kv b { color: rgba(15, 23, 42, 0.82); }
-
-.small {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.skills-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.skills-col {
-  display: grid;
-  gap: 6px;
-}
-
-.skills-title {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.cv-structured {
-  margin-top: 8px;
-}
-
-.cv-section {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.02);
-}
-
-.cv-section-title {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.cv-section-body {
-  white-space: pre-line;
-  line-height: 1.55;
-  font-size: 13px;
-  color: var(--text);
 }

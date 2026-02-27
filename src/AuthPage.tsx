@@ -295,7 +295,7 @@ export default function AuthPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
-                placeholder="ex: contact@go4job.org"
+                placeholder="ex: contact@go4jobapp.com"
                 autoComplete="email"
               />
             </label>
