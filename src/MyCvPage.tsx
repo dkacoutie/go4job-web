@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
@@ -48,13 +48,8 @@ type FileMeta = {
   type: string;
 };
 
-function formatBytes(v: number) {
-  if (!Number.isFinite(v) || v <= 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(v) / Math.log(k));
-  return `${(v / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
-}
+const MAX_CV_MB = 8;
+const ALLOWED_EXT = ["pdf", "docx"];
 
 function safeFileName(name: string) {
   return name.replace(/[^a-z0-9._-]+/gi, "_");
@@ -196,10 +191,6 @@ function isDocx(f: File) {
   );
 }
 
-function isTxt(f: File) {
-  return f.type === "text/plain" || f.name.toLowerCase().endsWith(".txt");
-}
-
 async function extractTextFromPdf(f: File) {
   const buf = await f.arrayBuffer();
   const pdf = await getDocument({ data: buf }).promise;
@@ -252,7 +243,6 @@ async function extractTextFromDocx(f: File) {
 async function extractTextFromFile(f: File) {
   if (isPdf(f)) return await extractTextFromPdf(f);
   if (isDocx(f)) return await extractTextFromDocx(f);
-  if (isTxt(f)) return await f.text();
   return "";
 }
 
@@ -278,10 +268,16 @@ export default function MyCvPage() {
   const [editableSkills, setEditableSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [lastParsed, setLastParsed] = useState<CvExtractResponse | null>(null);
-  const [lastFileInfo, setLastFileInfo] = useState<any>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
+
+  const [cvFilePath, setCvFilePath] = useState<string | null>(null);
+  const [cvFilename, setCvFilename] = useState<string | null>(null);
+  const [cvUpdatedAt, setCvUpdatedAt] = useState<string | null>(null);
+  const [cvUploading, setCvUploading] = useState(false);
+  const [cvError, setCvError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const userId = session?.user?.id ?? null;
   const { pushToast } = useToast();
@@ -393,41 +389,144 @@ export default function MyCvPage() {
       const existingSkills = normalizeSkillsList((data as any).skills ?? []);
       const existingEmail = (data as any).contact?.email;
       setNeedsReview(existingSkills.length < 4 || !existingEmail);
-
-      const name = (data as any).file_name as string | undefined;
-      const size = (data as any).file_size as number | undefined;
-      const type = (data as any).mime_type as string | undefined;
-      if (name && size) setFileMeta({ name, size, type: type ?? "" });
-      setLastFileInfo({
-        file_path: (data as any).file_path ?? null,
-        file_name: name ?? null,
-        file_size: size ?? null,
-        mime_type: type ?? null,
-      });
     }
   }
 
+  async function loadProfileCv() {
+    if (!userId) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("cv_file_path, cv_filename, cv_updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) return;
+    setCvFilePath(data?.cv_file_path ?? null);
+    setCvFilename(data?.cv_filename ?? null);
+    setCvUpdatedAt(data?.cv_updated_at ?? null);
+  }
+
   useEffect(() => {
-    if (userId) loadActiveCv();
+    if (userId) {
+      loadActiveCv();
+      loadProfileCv();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  async function uploadCvFile(f: File) {
-    if (!userId) return null;
-    const safeName = safeFileName(f.name || "cv");
-    const path = `${userId}/${Date.now()}_${safeName}`;
+  async function uploadCvToProfile(f: File) {
+    if (!userId) return;
+    setCvError(null);
 
-    const { error } = await supabase.storage
-      .from("cvs")
-      .upload(path, f, { upsert: true, contentType: f.type || "application/octet-stream" });
+    const ext = f.name.split(".").pop()?.toLowerCase() || "";
+    if (!ALLOWED_EXT.includes(ext)) {
+      setCvError("Format non supporté. Utilise uniquement PDF ou DOCX.");
+      return;
+    }
 
-    if (error) throw error;
-    return {
-      file_path: path,
-      file_name: f.name,
-      file_size: f.size,
-      mime_type: f.type || "application/octet-stream",
-    };
+    if (f.size > MAX_CV_MB * 1024 * 1024) {
+      setCvError(`Fichier trop volumineux. Maximum ${MAX_CV_MB} MB.`);
+      return;
+    }
+
+    setCvUploading(true);
+    const previousPath = cvFilePath;
+    const path = `${userId}/cv-${Date.now()}.${ext}`;
+
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from("cvs")
+        .upload(path, f, { upsert: true, contentType: f.type || "application/octet-stream" });
+
+      if (uploadErr) throw uploadErr;
+
+      const updatedAt = new Date().toISOString();
+      const { error: updateErr } = await supabase
+        .from("profiles")
+        .update({
+          cv_file_path: path,
+          cv_filename: f.name,
+          cv_updated_at: updatedAt,
+        })
+        .eq("user_id", userId);
+
+      if (updateErr) {
+        await supabase.storage.from("cvs").remove([path]);
+        throw updateErr;
+      }
+
+      if (previousPath && previousPath !== path) {
+        await supabase.storage.from("cvs").remove([previousPath]);
+      }
+
+      setCvFilePath(path);
+      setCvFilename(f.name);
+      setCvUpdatedAt(updatedAt);
+      pushToast({
+        kind: "success",
+        title: "CV téléversé",
+        message: "Ton CV est bien enregistré et synchronisé.",
+      });
+    } catch (e: any) {
+      setCvError("Impossible d’envoyer ce CV. Réessaie avec un fichier plus léger.");
+      pushToast({
+        kind: "error",
+        title: "Téléversement échoué",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
+    } finally {
+      setCvUploading(false);
+    }
+  }
+
+  async function handleViewCv() {
+    if (!cvFilePath) return;
+
+    const { data, error } = await supabase.storage.from("cvs").createSignedUrl(cvFilePath, 60);
+    if (error || !data?.signedUrl) {
+      pushToast({
+        kind: "error",
+        title: "Impossible d’ouvrir le CV",
+        message: "Réessaie dans quelques instants.",
+      });
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleDeleteCv() {
+    if (!userId || !cvFilePath) return;
+    setCvError(null);
+    setCvUploading(true);
+
+    try {
+      await supabase.storage.from("cvs").remove([cvFilePath]);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ cv_file_path: null, cv_filename: null, cv_updated_at: null })
+        .eq("user_id", userId);
+
+      if (error) throw error;
+
+      setCvFilePath(null);
+      setCvFilename(null);
+      setCvUpdatedAt(null);
+      pushToast({
+        kind: "success",
+        title: "CV supprimé",
+        message: "Le CV a bien été retiré de ton profil.",
+      });
+    } catch (e: any) {
+      setCvError("Impossible de supprimer le CV pour le moment.");
+      pushToast({
+        kind: "error",
+        title: "Suppression échouée",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
+    } finally {
+      setCvUploading(false);
+    }
   }
 
   async function analyzeAndSave() {
@@ -442,20 +541,9 @@ export default function MyCvPage() {
       const existingText = cvText.trim();
       let text = existingText;
       let fileText = "";
-      let fileInfo: any = null;
 
       if (file) {
-        if (!isPdf(file) && !isTxt(file) && !isDocx(file)) {
-          throw new Error("Format non supporté. Utilise PDF, DOCX ou TXT.");
-        }
-
-        fileInfo = await uploadCvFile(file);
-        setLastFileInfo(fileInfo);
-        try {
-          fileText = improveReadableText(stripDangerousChars((await extractTextFromFile(file)) ?? ""));
-        } catch {
-          fileText = "";
-        }
+        fileText = improveReadableText(stripDangerousChars((await extractTextFromFile(file)) ?? ""));
       }
 
       if ((!text || text.length < 50) && fileText.trim().length >= 50) {
@@ -468,17 +556,6 @@ export default function MyCvPage() {
       }
 
       if (!text || text.length < 50) {
-        if (fileInfo) {
-          await invokeCvSave("upsert", {
-            label,
-            cv_text: text || null,
-            cv_json: {},
-            skills: [],
-            skills_by_category: {},
-            contact: {},
-            ...fileInfo,
-          });
-        }
         throw new Error("Impossible de lire le texte du CV. Si c'est un PDF scanné, colle le texte manuellement.");
       }
 
@@ -533,15 +610,14 @@ export default function MyCvPage() {
         skills,
         skills_by_category: skillsByCategory,
         contact,
-        ...(fileInfo ?? {}),
       });
 
       const needsReviewFlag = extractedSkills.length < 4 || !parsed?.contact?.email;
       setNeedsReview(needsReviewFlag);
       pushToast({
         kind: "success",
-        title: "CV ajouté avec succès",
-        message: "Tes prochains matchs seront mieux adaptés à ton profil.",
+        title: "CV analysé avec succès",
+        message: "Les informations détectées sont disponibles ci-dessous.",
       });
 
       setNextStep(
@@ -635,7 +711,7 @@ export default function MyCvPage() {
       return;
     }
 
-    const base = safeFileName(label || fileMeta?.name || "cv");
+    const base = safeFileName(label || cvFilename || fileMeta?.name || "cv");
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
 
@@ -666,7 +742,7 @@ export default function MyCvPage() {
     }
 
     try {
-      const base = safeFileName(label || fileMeta?.name || "cv");
+      const base = safeFileName(label || cvFilename || fileMeta?.name || "cv");
       const lines = content.split(/\r?\n/);
       const paragraphs = lines.map((line) => new Paragraph({ text: line || " " }));
       const doc = new Document({
@@ -711,7 +787,7 @@ export default function MyCvPage() {
     }
 
     try {
-      const base = safeFileName(label || fileMeta?.name || "cv");
+      const base = safeFileName(label || cvFilename || fileMeta?.name || "cv");
       const doc = new jsPDF({ unit: "pt", format: "a4" });
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
@@ -771,7 +847,6 @@ export default function MyCvPage() {
         skills,
         skills_by_category: skillsByCategory,
         contact,
-        ...(lastFileInfo ?? {}),
       });
 
       setResult((prev) => (prev ? { ...prev, skills } : prev));
@@ -792,45 +867,16 @@ export default function MyCvPage() {
     }
   }
 
-  async function archiveActiveCv() {
-    if (!userId) return;
-
-    const ok = confirm("Archiver le CV actif ? (Tu pourras en ajouter un autre ensuite)");
-    if (!ok) return;
-
-    setBusy(true);
-    setErr(null);
-
-    try {
-      await invokeCvSave("archive");
-      setCvText("");
-      setResult(null);
-      setFile(null);
-      setFileMeta(null);
-      setEditableSkills([]);
-      setNeedsReview(false);
-      pushToast({
-        kind: "success",
-        title: "CV archivé",
-        message: "Tu peux ajouter un nouveau CV quand tu veux.",
-      });
-    } catch (e: any) {
-      setErr(e?.message ?? String(e));
-      pushToast({
-        kind: "error",
-        title: "Impossible d'archiver le CV",
-        message: e?.message ?? "Réessaie dans quelques instants.",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function onFileChange(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
     setFile(f);
-    if (f) setFileMeta({ name: f.name, size: f.size, type: f.type || "" });
-    else setFileMeta(null);
+    if (f) {
+      setFileMeta({ name: f.name, size: f.size, type: f.type || "" });
+      uploadCvToProfile(f);
+    } else {
+      setFileMeta(null);
+    }
+    e.currentTarget.value = "";
   }
 
   const hasResult = Boolean(result && result.ok !== false);
@@ -862,36 +908,69 @@ export default function MyCvPage() {
             <div>
               <div className="cv-panelTitle">Importer un CV</div>
               <div className="cv-panelSub">
-                Importe un fichier (PDF, DOCX, TXT) ou colle ton texte pour lancer l'analyse.
+                Un seul CV est conservé. Formats acceptés : PDF ou DOCX (max {MAX_CV_MB} MB).
               </div>
             </div>
+          </div>
+
+          <div className="cv-fileCard">
+            {!cvFilePath ? (
+              <div className="cv-fileEmpty">
+                <div className="cv-fileEmptyTitle">Aucun CV enregistré</div>
+                <div className="cv-fileEmptyText">
+                  Téléverse ton CV pour l'utiliser dans JobRadar et accélérer les matchs.
+                </div>
+                <button
+                  className="btn btnPrimary"
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={cvUploading}
+                >
+                  Téléverser mon CV
+                </button>
+              </div>
+            ) : (
+              <div className="cv-fileFilled">
+                <div>
+                  <div className="cv-fileName">{cvFilename || "CV"}</div>
+                  <div className="cv-fileMeta">
+                    Mis à jour {cvUpdatedAt ? new Date(cvUpdatedAt).toLocaleDateString("fr-FR") : "—"}
+                  </div>
+                </div>
+                <div className="cv-fileActions">
+                  <button className="btn btnGhost" type="button" onClick={handleViewCv} disabled={cvUploading}>
+                    Voir
+                  </button>
+                  <button
+                    className="btn btnGhost"
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={cvUploading}
+                  >
+                    Remplacer
+                  </button>
+                  <button className="btn btnGhost" type="button" onClick={handleDeleteCv} disabled={cvUploading}>
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {cvUploading && <div className="cv-fileLoading">Téléversement en cours…</div>}
+            {cvError && <div className="cv-fileError">{cvError}</div>}
+
+            <input
+              ref={fileInputRef}
+              className="cv-fileInput"
+              type="file"
+              accept=".pdf,.docx"
+              onChange={onFileChange}
+            />
           </div>
 
           <div className="field">
             <label className="label">Nom du CV</label>
             <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
-          </div>
-
-          <div className="field">
-            <label className="label">Importer un fichier CV</label>
-            <input className="input mycv-file" type="file" accept=".pdf,.txt,.docx" onChange={onFileChange} />
-            {fileMeta && (
-              <div className="file-meta">
-                <span>{fileMeta.name}</span>
-                <span> - {formatBytes(fileMeta.size)}</span>
-                {fileMeta.type ? <span> - {fileMeta.type}</span> : null}
-                <button
-                  className="btn btnGhost btnSm"
-                  type="button"
-                  onClick={() => {
-                    setFile(null);
-                    setFileMeta(null);
-                  }}
-                >
-                  Retirer
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="field">
@@ -910,10 +989,7 @@ export default function MyCvPage() {
                 {chars} caractères · {lines} lignes
               </span>
               <button className="btn btnGhost" type="button" onClick={loadActiveCv} disabled={busy}>
-                Recharger
-              </button>
-              <button className="btn btnGhost" type="button" onClick={archiveActiveCv} disabled={busy}>
-                Archiver
+                Recharger l’analyse
               </button>
             </div>
 
@@ -926,7 +1002,7 @@ export default function MyCvPage() {
 
           {err && <div className="cv-alert">{err}</div>}
           <div className="cv-privacy">
-            Tes données CV sont utilisées uniquement pour améliorer le matching JobRadar. Tu peux archiver ton CV à tout moment.
+            Tes données CV sont utilisées uniquement pour améliorer le matching JobRadar. Tu peux supprimer ton CV à tout moment.
           </div>
         </section>
 
@@ -962,7 +1038,7 @@ export default function MyCvPage() {
               </div>
               <div className="cv-progress__steps">
                 <span className={phase === "upload" || phase === "analyze" || phase === "saving" ? "done" : ""}>
-                  Téléversement
+                  Préparation
                 </span>
                 <span className={phase === "analyze" || phase === "saving" ? "done" : ""}>Analyse du CV</span>
                 <span className={phase === "saving" ? "done" : ""}>Préparation des matchs</span>

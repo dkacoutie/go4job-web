@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
@@ -13,6 +13,9 @@ type Profile = {
   location: string | null;
   headline: string | null;
   experience_years: number | null;
+  cv_file_path?: string | null;
+  cv_filename?: string | null;
+  cv_updated_at?: string | null;
 };
 
 const COUNTRIES = [
@@ -35,6 +38,9 @@ const COUNTRIES = [
   { code: "GB", name: "Royaume-Uni", dial: "+44" },
 ] as const;
 
+const MAX_CV_MB = 8;
+const ALLOWED_EXT = ["pdf", "docx"];
+
 function parseLocation(raw: string | null) {
   if (!raw) return { city: "", countryCode: "CI" };
 
@@ -49,6 +55,31 @@ function parseLocation(raw: string | null) {
   return { city: raw.trim(), countryCode: "CI" };
 }
 
+function normalizeSkillLabel(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function parseSkills(raw: string | null) {
+  if (!raw) return [] as string[];
+  return raw
+    .split(/[,;\n•]/)
+    .map((s) => normalizeSkillLabel(s))
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function formatSkills(skills: string[]) {
+  return skills.join(", ");
+}
+
+function normalizePhone(v: string) {
+  return v.replace(/[^\d]/g, "").slice(0, 20);
+}
+
+function normalizeExperience(v: string) {
+  return v.replace(/[^\d]/g, "").slice(0, 2);
+}
+
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -57,9 +88,10 @@ export default function ProfilePage() {
 
   const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cvUploading, setCvUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [cvError, setCvError] = useState<string | null>(null);
   const [alertsCount, setAlertsCount] = useState(0);
-  const [hasCv, setHasCv] = useState<boolean | null>(null);
   const [nextStep, setNextStep] = useState<{
     title: string;
     message: string;
@@ -72,8 +104,14 @@ export default function ProfilePage() {
   const [countryCode, setCountryCode] = useState<string>("CI");
   const [city, setCity] = useState("");
   const [phone, setPhone] = useState("");
-  const [headline, setHeadline] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
+  const [skillInput, setSkillInput] = useState("");
   const [experienceYears, setExperienceYears] = useState("");
+
+  const [cvFilePath, setCvFilePath] = useState<string | null>(null);
+  const [cvFilename, setCvFilename] = useState<string | null>(null);
+  const [cvUpdatedAt, setCvUpdatedAt] = useState<string | null>(null);
+  const cvInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedCountry = useMemo(
     () => COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0],
@@ -95,7 +133,9 @@ export default function ProfilePage() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, full_name, phone, location, headline, experience_years")
+        .select(
+          "user_id, full_name, phone, location, headline, experience_years, cv_file_path, cv_filename, cv_updated_at"
+        )
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -116,12 +156,17 @@ export default function ProfilePage() {
       setCity(loc.city);
       setCountryCode(loc.countryCode);
 
-      setHeadline(p?.headline ?? "");
+      setSkills(parseSkills(p?.headline ?? null));
       setExperienceYears(
         typeof p?.experience_years === "number" && Number.isFinite(p.experience_years)
           ? String(p.experience_years)
           : ""
       );
+
+      setCvFilePath(p?.cv_file_path ?? null);
+      setCvFilename(p?.cv_filename ?? null);
+      setCvUpdatedAt(p?.cv_updated_at ?? null);
+
       setPageLoading(false);
     }
 
@@ -140,24 +185,142 @@ export default function ProfilePage() {
         .select("*", { count: "exact", head: true })
         .eq("user_id", userId);
       setAlertsCount(count ?? 0);
-      try {
-        const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
-          body: { action: "get_active" },
-        });
-        if (cvErr) setHasCv(null);
-        else setHasCv(Boolean(cvData?.ok && cvData?.data));
-      } catch {
-        setHasCv(null);
-      }
     })();
   }, [userId]);
 
-  function normalizePhone(v: string) {
-    return v.replace(/[^\d]/g, "").slice(0, 20);
+  function addSkillsFromInput(value: string) {
+    const parts = value
+      .split(/[,;\n]/)
+      .map((s) => normalizeSkillLabel(s))
+      .filter(Boolean);
+    if (!parts.length) return;
+
+    setSkills((prev) => {
+      const next = [...prev];
+      for (const p of parts) {
+        if (!next.some((s) => s.toLowerCase() === p.toLowerCase())) {
+          next.push(p);
+        }
+      }
+      return next.slice(0, 20);
+    });
+    setSkillInput("");
   }
 
-  function normalizeExperience(v: string) {
-    return v.replace(/[^\d]/g, "").slice(0, 2);
+  async function uploadCv(file: File) {
+    if (!userId) return;
+    setCvError(null);
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!ALLOWED_EXT.includes(ext)) {
+      setCvError("Format non supporté. Utilise uniquement PDF ou DOCX.");
+      return;
+    }
+
+    if (file.size > MAX_CV_MB * 1024 * 1024) {
+      setCvError(`Fichier trop volumineux. Maximum ${MAX_CV_MB} MB.`);
+      return;
+    }
+
+    setCvUploading(true);
+
+    const previousPath = cvFilePath;
+    const path = `${userId}/cv-${Date.now()}.${ext}`;
+
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from("cvs")
+        .upload(path, file, { upsert: true, contentType: file.type || "application/octet-stream" });
+
+      if (uploadErr) throw uploadErr;
+
+      const updatedAt = new Date().toISOString();
+      const { error: updateErr } = await supabase
+        .from("profiles")
+        .update({
+          cv_file_path: path,
+          cv_filename: file.name,
+          cv_updated_at: updatedAt,
+        })
+        .eq("user_id", userId);
+
+      if (updateErr) {
+        await supabase.storage.from("cvs").remove([path]);
+        throw updateErr;
+      }
+
+      if (previousPath && previousPath !== path) {
+        await supabase.storage.from("cvs").remove([previousPath]);
+      }
+
+      setCvFilePath(path);
+      setCvFilename(file.name);
+      setCvUpdatedAt(updatedAt);
+      pushToast({
+        kind: "success",
+        title: "CV téléversé",
+        message: "Ton CV est bien enregistré et synchronisé.",
+      });
+    } catch (e: any) {
+      setCvError("Impossible d’envoyer ce CV. Réessaie avec un fichier plus léger.");
+      pushToast({
+        kind: "error",
+        title: "Téléversement échoué",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
+    } finally {
+      setCvUploading(false);
+    }
+  }
+
+  async function handleViewCv() {
+    if (!cvFilePath) return;
+
+    const { data, error } = await supabase.storage.from("cvs").createSignedUrl(cvFilePath, 60);
+    if (error || !data?.signedUrl) {
+      pushToast({
+        kind: "error",
+        title: "Impossible d’ouvrir le CV",
+        message: "Réessaie dans quelques instants.",
+      });
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleDeleteCv() {
+    if (!userId || !cvFilePath) return;
+    setCvError(null);
+    setCvUploading(true);
+
+    try {
+      await supabase.storage.from("cvs").remove([cvFilePath]);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ cv_file_path: null, cv_filename: null, cv_updated_at: null })
+        .eq("user_id", userId);
+
+      if (error) throw error;
+
+      setCvFilePath(null);
+      setCvFilename(null);
+      setCvUpdatedAt(null);
+      pushToast({
+        kind: "success",
+        title: "CV supprimé",
+        message: "Le CV a bien été retiré de ton profil.",
+      });
+    } catch (e: any) {
+      setCvError("Impossible de supprimer le CV pour le moment.");
+      pushToast({
+        kind: "error",
+        title: "Suppression échouée",
+        message: e?.message ?? "Réessaie dans quelques instants.",
+      });
+    } finally {
+      setCvUploading(false);
+    }
   }
 
   function focusFirstMissing() {
@@ -165,9 +328,9 @@ export default function ProfilePage() {
       ? "profile-fullname"
       : !city.trim()
       ? "profile-city"
-      : !headline.trim()
-      ? "profile-headline"
-      : !experienceYears.trim() && hasCv !== true
+      : skills.length === 0
+      ? "profile-skills"
+      : !experienceYears.trim() && !cvFilePath
       ? "profile-experience"
       : null;
 
@@ -191,6 +354,7 @@ export default function ProfilePage() {
       cityValue && countryName ? `${cityValue} / ${countryName}` : (cityValue || countryName || null);
     const expValue = experienceYears.trim() ? Number(experienceYears) : null;
     const expClean = Number.isFinite(expValue) && expValue != null ? Math.max(0, expValue) : null;
+    const headlineValue = formatSkills(skills);
 
     const { error } = await supabase
       .from("profiles")
@@ -200,7 +364,7 @@ export default function ProfilePage() {
           full_name: fullName.trim() || null,
           phone: phone.trim() || null,
           location: locationValue,
-          headline: headline.trim() || null,
+          headline: headlineValue || null,
           experience_years: expClean,
         },
         { onConflict: "user_id" }
@@ -213,7 +377,7 @@ export default function ProfilePage() {
       pushToast({
         kind: "error",
         title: "Impossible d’enregistrer le profil",
-        message: error.message,
+        message: "Réessaie dans quelques instants.",
       });
       return;
     }
@@ -224,8 +388,8 @@ export default function ProfilePage() {
       message: "Tes prochains matchs seront mieux adaptés à ton profil.",
     });
 
-    const expMissing = !experienceYears.trim() && hasCv !== true;
-    const incomplete = !fullName.trim() || !city.trim() || !headline.trim() || expMissing;
+    const expMissing = !experienceYears.trim() && !cvFilePath;
+    const incomplete = !fullName.trim() || !city.trim() || skills.length === 0 || expMissing;
     if (incomplete) {
       setNextStep({
         title: "Profil enregistré (incomplet)",
@@ -237,11 +401,11 @@ export default function ProfilePage() {
       return;
     }
 
-    if (!hasCv) {
+    if (!cvFilePath) {
       setNextStep({
         title: "Prochaine étape recommandée",
         message: "Ajoute ton CV pour améliorer encore la précision de tes matchs.",
-        primary: { label: "Ajouter mon CV", to: "/me/cv" },
+        primary: { label: "Ajouter mon CV", onClick: () => cvInputRef.current?.click() },
         secondary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
         tone: "info",
       });
@@ -259,8 +423,20 @@ export default function ProfilePage() {
     }
   }
 
-  const expMissing = !experienceYears.trim() && hasCv !== true;
-  const isIncomplete = !fullName.trim() || !city.trim() || !headline.trim() || expMissing;
+  const expMissing = !experienceYears.trim() && !cvFilePath;
+  const isIncomplete = !fullName.trim() || !city.trim() || skills.length === 0 || expMissing;
+
+  const checklist = [
+    { key: "name", label: "Nom", done: Boolean(fullName.trim()) },
+    { key: "location", label: "Localisation", done: Boolean(city.trim()) },
+    { key: "skills", label: "Compétences", done: skills.length > 0 },
+    { key: "experience", label: "Expérience", done: !expMissing },
+    { key: "phone", label: "Téléphone", done: Boolean(phone.trim()) },
+    { key: "cv", label: "CV", done: Boolean(cvFilePath) },
+  ];
+
+  const completed = checklist.filter((item) => item.done).length;
+  const completionPercent = Math.round((completed / checklist.length) * 100);
 
   return (
     <div className="profile-shell">
@@ -270,42 +446,51 @@ export default function ProfilePage() {
             <div>
               <h1 className="profile-title">Mon profil</h1>
               <p className="profile-sub">
-                Complète tes infos pour améliorer le matching et accélérer tes candidatures.
+                Complète tes informations pour améliorer le matching et accélérer tes candidatures.
               </p>
             </div>
 
-            <button className="btn btnGhost profile-backBtn" onClick={() => navigate("/")}>
-              Retour au dashboard
-            </button>
+            <button className="btn btnGhost profile-backBtn" onClick={() => navigate("/")}>Retour au dashboard</button>
           </div>
 
           {pageLoading ? (
             <div className="profile-loading">Chargement…</div>
           ) : (
             <div className="formGrid">
-              <div className="profile-guidance">
-                <div className="profile-guidance__title">
-                  Complète ton profil pour améliorer la pertinence des offres
+              <div className="profile-info">
+                <div>
+                  <div className="profile-info__title">Complète ton profil pour améliorer la pertinence des offres</div>
+                  <div className="profile-info__text">
+                    Quelques informations (compétences, localisation, expérience, CV) permettent à JobRadar de mieux filtrer
+                    et classer les offres.
+                  </div>
                 </div>
-                <div className="profile-guidance__text">
-                  Quelques informations (compétences, localisation, expérience) permettent à JobRadar de mieux filtrer
-                  et classer les offres. Ton CV complète automatiquement l’expérience si disponible.
-                </div>
+                {isIncomplete && (
+                  <button className="btn btnGhost" type="button" onClick={focusFirstMissing}>
+                    Compléter maintenant
+                  </button>
+                )}
               </div>
 
-              {isIncomplete && (
-                <div className="profile-banner">
-                  <div>
-                    <div className="profile-banner__title">Profil partiel — tes matchs peuvent être moins précis</div>
-                    <div className="profile-banner__text">
-                      Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.
-                    </div>
+              <div className="profile-progress">
+                <div className="profile-progress__top">
+                  <div className="profile-progress__label">Profil complété : {completionPercent}%</div>
+                  <div className="profile-progress__value">
+                    {completed}/{checklist.length}
                   </div>
-                  <button className="btn btnGhost" type="button" onClick={focusFirstMissing}>
-                    Compléter mon profil
-                  </button>
                 </div>
-              )}
+                <div className="profile-progress__bar">
+                  <span style={{ width: `${completionPercent}%` }} />
+                </div>
+                <div className="profile-checklist">
+                  {checklist.map((item) => (
+                    <div className={`profile-check ${item.done ? "done" : ""}`} key={item.key}>
+                      <span className="profile-check__icon">{item.done ? "✓" : "•"}</span>
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <label className="field">
                 Nom complet
@@ -321,11 +506,7 @@ export default function ProfilePage() {
               <div className="row">
                 <label className="field">
                   Pays
-                  <select
-                    className="input"
-                    value={countryCode}
-                    onChange={(e) => setCountryCode(e.target.value)}
-                  >
+                  <select className="input" value={countryCode} onChange={(e) => setCountryCode(e.target.value)}>
                     {COUNTRIES.map((c) => (
                       <option key={c.code} value={c.code}>
                         {c.name} ({c.dial})
@@ -366,14 +547,43 @@ export default function ProfilePage() {
 
               <label className="field">
                 Compétences
-                <input
-                  id="profile-headline"
-                  className="input"
-                  value={headline}
-                  onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="Ex: Gestion de projet • Analyse data • Marketing"
-                />
-                <div className="fieldHelp">Liste 2-4 compétences ou domaines clés.</div>
+                <div className="skills-input">
+                  <div className="pills">
+                    {skills.length === 0 && <span className="muted">Ajoute 2-4 compétences clés.</span>}
+                    {skills.map((skill, index) => (
+                      <span className="pill pill-edit" key={`${skill}-${index}`}>
+                        {skill}
+                        <button
+                          className="pill-remove"
+                          type="button"
+                          onClick={() => setSkills((prev) => prev.filter((_, i) => i !== index))}
+                          aria-label={`Supprimer ${skill}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    id="profile-skills"
+                    className="input"
+                    value={skillInput}
+                    onChange={(e) => setSkillInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addSkillsFromInput(skillInput);
+                      }
+                    }}
+                    placeholder="Ex: Gestion de projet, Data, Marketing"
+                  />
+                  <div className="skills-actions">
+                    <button className="btn btnGhost" type="button" onClick={() => addSkillsFromInput(skillInput)}>
+                      Ajouter
+                    </button>
+                  </div>
+                </div>
+                <div className="fieldHelp">Ces compétences alimentent les matchs JobRadar.</div>
               </label>
 
               <label className="field">
@@ -386,8 +596,69 @@ export default function ProfilePage() {
                   inputMode="numeric"
                   placeholder="Ex: 3"
                 />
-                <div className="fieldHelp">Si tu as un CV actif, cette info est optionnelle.</div>
+                <div className="fieldHelp">Si ton CV est présent, cette info est optionnelle.</div>
               </label>
+
+              <div className="profile-section">
+                <div className="profile-section__head">
+                  <div>
+                    <div className="profile-section__title">Mon CV</div>
+                    <div className="profile-section__text">
+                      Téléverse un PDF ou DOCX (max {MAX_CV_MB} MB). Un seul CV est gardé pour ton profil.
+                    </div>
+                  </div>
+                  <button
+                    className="btn btnGhost"
+                    type="button"
+                    onClick={() => cvInputRef.current?.click()}
+                    disabled={cvUploading}
+                  >
+                    {cvFilePath ? "Remplacer" : "Téléverser mon CV"}
+                  </button>
+                </div>
+
+                {!cvFilePath ? (
+                  <div className="profile-cvEmpty">
+                    <div className="profile-cvEmpty__title">Aucun CV ajouté</div>
+                    <div className="profile-cvEmpty__text">
+                      Ajoute ton CV pour améliorer la pertinence des matchs et accélérer tes candidatures.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="profile-cvFilled">
+                    <div>
+                      <div className="profile-cvName">{cvFilename || "CV"}</div>
+                      <div className="profile-cvMeta">
+                        Mis à jour {cvUpdatedAt ? new Date(cvUpdatedAt).toLocaleDateString("fr-FR") : "—"}
+                      </div>
+                    </div>
+                    <div className="profile-cvActions">
+                      <button className="btn btnGhost" type="button" onClick={handleViewCv} disabled={cvUploading}>
+                        Voir
+                      </button>
+                      <button className="btn btnGhost" type="button" onClick={handleDeleteCv} disabled={cvUploading}>
+                        Supprimer
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {cvUploading && <div className="profile-cvLoading">Téléversement en cours…</div>}
+                {cvError && <div className="profile-msg profile-msgErr">{cvError}</div>}
+
+                <input
+                  ref={cvInputRef}
+                  className="profile-cvInput"
+                  type="file"
+                  accept=".pdf,.docx"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (!f) return;
+                    uploadCv(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </div>
 
               {errorMsg && <div className="profile-msg profile-msgErr">{errorMsg}</div>}
 
