@@ -429,3 +429,6 @@ verify_jwt = false
 
 [functions.email_action]
 verify_jwt = false
+
+[functions.contact_submit]
+verify_jwt = false
