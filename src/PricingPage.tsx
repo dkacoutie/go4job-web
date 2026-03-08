@@ -107,6 +107,7 @@ export default function PricingPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [showPostCheckout, setShowPostCheckout] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -169,6 +170,7 @@ export default function PricingPage() {
     setBusyCode(plan.code);
     setInfoMsg(null);
     setErrorMsg(null);
+    setShowPostCheckout(false);
 
     const { data, error } = await supabase.functions.invoke("billing_dev_checkout", {
       body: {
@@ -185,6 +187,7 @@ export default function PricingPage() {
       setErrorMsg(ctxMsg || error.message);
     } else if (data?.ok) {
       setInfoMsg("Paiement validé. Ton pass est actif.");
+      setShowPostCheckout(true);
       await loadData();
       await refreshPass();
     } else {
@@ -216,6 +219,24 @@ export default function PricingPage() {
 
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
+        {showPostCheckout && (
+          <div className="pricing-success-actions" aria-label="Suite apres achat">
+            <button
+              type="button"
+              className="pricing-success-actions__primary"
+              onClick={() => navigate("/jobradar/feed")}
+            >
+              Voir mes offres
+            </button>
+            <button
+              type="button"
+              className="pricing-success-actions__secondary"
+              onClick={() => navigate("/")}
+            >
+              Aller au dashboard
+            </button>
+          </div>
+        )}
 
         <section className="pricing-model" aria-label="Modèle des passes">
           <div className="pricing-model__title">Un seul accès, trois durées.</div>
