@@ -1,5 +1,5 @@
 :root {
-  --jd-max: 1120px;
+  --jd-max: 1240px;
   --jd-pad: 16px;
 
   --jd-card: var(--panel);
@@ -49,6 +49,33 @@
   border-radius: var(--jd-radius);
   background: var(--jd-surface);
   color: var(--jd-muted);
+}
+
+.jd-missing {
+  margin-top: 14px;
+  padding: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: var(--jd-radius);
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--jd-text);
+  display: grid;
+  gap: 10px;
+}
+
+.jd-missingTitle {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.jd-missingText {
+  color: var(--jd-muted);
+  font-size: 13.5px;
+}
+
+.jd-missingActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .jd-card {
@@ -105,6 +132,27 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.jd-locked {
+  margin-top: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: var(--jd-radius);
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.jd-lockedTitle {
+  font-weight: 800;
+  color: var(--jd-text);
+}
+
+.jd-lockedText {
+  color: var(--jd-muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .jd-body {

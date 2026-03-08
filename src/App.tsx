@@ -1,11 +1,14 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 
 import ProtectedRoute from "./lib/ProtectedRoute";
 import { useSession } from "./lib/useSession";
 
 import AppLayout from "./AppLayout";
+import SiteFooter from "./components/SiteFooter";
 import "./App.css";
+import "./AppLayout.css";
 import { ToastProvider } from "./components/ToastCenter";
+import { PassProvider } from "./lib/usePass";
 
 import AuthPage from "./AuthPage";
 import HomePage from "./HomePage";
@@ -21,6 +24,7 @@ import ThanksPage from "./ThanksPage";
 import PrivacyPage from "./PrivacyPage";
 import TermsPage from "./TermsPage";
 import ContactPage from "./ContactPage";
+import PricingPage from "./PricingPage";
 
 // ✅ Admin
 import AdminSourcesPage from "./AdminSourcesPage";
@@ -74,18 +78,35 @@ function AuthGate() {
   return <AuthPage />;
 }
 
+function PublicLayout() {
+  return (
+    <div className="app-shell">
+      <div className="app-container">
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
+      <SiteFooter />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ToastProvider>
-      <BrowserRouter>
-        <Routes>
+      <PassProvider>
+        <BrowserRouter>
+          <Routes>
           {/* Public */}
-          <Route path="/auth" element={<AuthGate />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/thanks" element={<ThanksPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/terms" element={<TermsPage />} />
+          <Route element={<PublicLayout />}>
+            <Route path="/auth" element={<AuthGate />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/thanks" element={<ThanksPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/pricing" element={<PricingPage />} />
+        </Route>
 
           {/* Protected area with shared layout */}
           <Route
@@ -121,8 +142,9 @@ export default function App() {
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </PassProvider>
     </ToastProvider>
   );
 }

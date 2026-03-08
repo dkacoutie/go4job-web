@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 type DigestBody = {
@@ -40,9 +40,11 @@ type JobRow = {
   job_skills?: string[] | null;
   required_skills?: string[] | null;
   optional_skills?: string[] | null;
+  job_family?: string | null;
   experience_years_min?: number | null;
   experience_years_max?: number | null;
   source_url?: string | null;
+  apply_url?: string | null;
   external_id?: string | null;
   ai_description?: string | null;
   ai_description_status?: string | null;
@@ -57,7 +59,7 @@ type DigestItem = {
   summary_fr: string;
   language?: string | null;
   why?: string[];
-  tags?: string[];
+  badge?: string | null;
   meta?: {
     remote?: string | null;
     location?: string | null;
@@ -69,13 +71,14 @@ type DigestItem = {
 
 const MAX_ITEMS = 8;
 const MIN_TOP = 3;
-const TOP_MIN = 65;
-const EXP_MIN = 50;
-const EXP_MAX = 64;
+const TOP_MIN = 70;
+const SIMPLE_MIN = 20;
+const DATA_QUALITY_MIN = 0.6;
 const JOB_LIMIT = 600;
 const AI_DESC_MIN_QUALITY = 0.65;
 const SUMMARY_MAX_SENTENCES = 2;
 const SUMMARY_MAX_CHARS = 220;
+const WHY_MAX_LEN = 72;
 
 const EMAIL_COLORS = {
   brand: "#0052CC",
@@ -96,6 +99,48 @@ const STOP_WORDS = new Set([
   "poste","mission","missions","role","responsibilities","responsibility","experience","skills","competences",
   "company","entreprise","team","equipe","equipee","profile","profil",
 ]);
+
+const GENERIC_TITLE_TOKENS = new Set([
+  "assistant",
+  "officer",
+  "agent",
+  "manager",
+  "associate",
+  "specialist",
+  "coordinator",
+  "generalist",
+  "intern",
+  "internship",
+  "stage",
+]);
+
+const DOMAIN_KEYWORDS: Record<string, string[]> = {
+  finance: ["finance", "financial", "budget", "budgetaire", "comptabilite", "accounting", "audit", "treasury", "controle", "reporting"],
+  operations: ["operations", "operational", "exploitation", "logistique", "logistics", "procurement", "achats", "supply", "inventory", "maintenance"],
+  administration: ["administration", "administratif", "assistant", "office", "secretariat", "coordination", "support"],
+  project: ["project", "projet", "programme", "pmo", "chef de projet"],
+  data: ["data", "analytics", "bi", "sql", "power bi", "tableau"],
+  engineering: ["developer", "software", "engineer", "it", "cloud", "network", "devops"],
+  marketing: ["marketing", "communication", "brand", "media", "pr", "relations presse", "digital"],
+  sales: ["sales", "vente", "commercial", "business development", "bd"],
+  legal: ["legal", "juridique", "compliance", "contract"],
+  health: ["health", "sante", "medical", "pharmacy", "clinique", "hospital"],
+};
+
+const PROFILE_EXPANSIONS: Array<{ triggers: string[]; add: string[] }> = [
+  {
+    triggers: ["evenement", "event", "eventiel", "evenementiel"],
+    add: ["conference", "press conference", "relations presse", "pr", "media", "logistique", "coordination"],
+  },
+  {
+    triggers: ["communication", "relations presse", "pr"],
+    add: ["press", "public relations", "media"],
+  },
+  {
+    triggers: ["budget", "budgetaire", "finance", "financial"],
+    add: ["budgeting", "reporting", "controle", "control", "treasury"],
+  },
+];
 
 const FR_HINTS = [
   " le "," la "," les "," des "," pour "," avec "," poste "," mission "," responsabilite "," competences ",
@@ -131,6 +176,198 @@ function canonicalize(input: string): string {
 
 function uniq(arr: string[]): string[] {
   return Array.from(new Set(arr.map((x) => x.trim()).filter(Boolean)));
+}
+
+function keyify(input: string) {
+  return canonicalize(input).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function humanizeAlertKeyword(input: string) {
+  const key = keyify(input);
+  if (!key) return input;
+  if (key === "ngo" || key === "ong" || ((key.includes("ngo") || key.includes("ong")) && (key.includes("programme") || key.includes("program")))) {
+    return "ONG / programmes";
+  }
+  if (key.includes("monitoring") || key.includes("evaluation") || key.includes("m e") || key.includes("suivi evaluation")) {
+    return "suivi-évaluation";
+  }
+  if ((key.includes("administration") || key.includes("admin")) && (key.includes("operation") || key.includes("operations") || key.includes("ops"))) {
+    return "administration / opérations";
+  }
+  if (key.includes("data") && (key.includes("analyse") || key.includes("analytics") || key.includes("analyst"))) {
+    return "data / analyse";
+  }
+  if (key === "data" || key === "analyse" || key === "analysis") return "data / analyse";
+  return input;
+}
+
+function humanizeSkillLabel(input: string) {
+  const key = keyify(input);
+  if (!key) return input;
+  if (key.includes("analyse des ecarts")) return "analyse des écarts";
+  if (key.includes("parties prenantes")) return "gestion des parties prenantes";
+  if (key.includes("appel d offres") || key.includes("appels d offres")) return "appels d’offres";
+  if (key.includes("gestion budgetaire")) return "gestion budgétaire";
+  if (key.includes("tresorerie")) return "gestion de trésorerie";
+  if (key.includes("coordination de projets") || key.includes("coordination projet")) return "coordination de projets";
+  if (key.includes("reporting financier")) return "reporting financier";
+  if (key.includes("excel")) return "excel avancé";
+  if (key.includes("powerpoint")) return "powerpoint";
+  if (key.includes("sap")) return "SAP";
+  if (key.includes("fournisseurs")) return "gestion des fournisseurs";
+  if (key.includes("achats") || key.includes("approvisionnements")) return "achats / approvisionnements";
+  if (key.includes("pilotage financier") || key.includes("suivi de performance")) return "pilotage financier";
+  if (key.includes("conformite") || key.includes("compliance") || key.includes("audit")) return "conformité & audits";
+  if (key.includes("management d equipe") || key.includes("management d equipes") || key.includes("team management")) {
+    return "management d’équipe";
+  }
+  return input;
+}
+
+function pickDescText(job: JobRow): string {
+  return (
+    clean(job.official_desc) ||
+    clean(job.description_text) ||
+    clean(job.ai_description) ||
+    clean(stripHtml(job.description_html ?? ""))
+  );
+}
+
+function buildProfileTokens(alertKeywords: string[], cvSkills: string[]): string[] {
+  const raw = uniq([...alertKeywords, ...cvSkills]).map((x) => canonicalize(x)).filter(Boolean);
+  const phrases = raw.filter((p) => p.length >= 3);
+  const words = raw.flatMap((p) => p.split(/\s+/).filter(Boolean));
+  const tokens = uniq([...phrases, ...words]).filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+  return tokens.slice(0, 80);
+}
+
+function expandProfileTokens(tokens: string[]): string[] {
+  const out = new Set(tokens);
+  for (const t of tokens) {
+    for (const rule of PROFILE_EXPANSIONS) {
+      if (rule.triggers.some((tr) => t.includes(tr))) {
+        rule.add.forEach((a) => out.add(canonicalize(a)));
+      }
+    }
+  }
+  return Array.from(out).filter((t) => t && t.length >= 3 && !STOP_WORDS.has(t));
+}
+
+function isGenericToken(token: string): boolean {
+  const t = canonicalize(token);
+  if (!t) return false;
+  if (GENERIC_TITLE_TOKENS.has(t)) return true;
+  const parts = t.split(/\s+/).filter(Boolean);
+  return parts.length > 1 && parts.every((p) => GENERIC_TITLE_TOKENS.has(p));
+}
+
+function tokenWeight(token: string): number {
+  return isGenericToken(token) ? 0.5 : 1;
+}
+
+function computeTokenScore(tokens: string[], text: string) {
+  if (!tokens.length || !text) {
+    return { score: 0, matched: [] as string[] };
+  }
+  let matchedWeight = 0;
+  let totalWeight = 0;
+  const matched: string[] = [];
+  for (const token of tokens) {
+    const w = tokenWeight(token);
+    totalWeight += w;
+    if (text.includes(token)) {
+      matchedWeight += w;
+      matched.push(token);
+    }
+  }
+  const score = totalWeight ? matchedWeight / totalWeight : 0;
+  return { score, matched: uniq(matched) };
+}
+
+function scoreDomains(text: string) {
+  const scores: Record<string, number> = {};
+  const t = canonicalize(text);
+  for (const [domain, keys] of Object.entries(DOMAIN_KEYWORDS)) {
+    let hit = 0;
+    for (const key of keys) {
+      if (t.includes(canonicalize(key))) hit += 1;
+    }
+    if (hit > 0) scores[domain] = hit;
+  }
+  return scores;
+}
+
+function pickTopDomains(scores: Record<string, number>, max = 3) {
+  return Object.entries(scores)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([d]) => d);
+}
+
+function pickPrimaryDomain(scores: Record<string, number>): string | null {
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return null;
+  if (sorted[0][1] <= 0) return null;
+  return sorted[0][0];
+}
+
+function isGenericTitle(title: string): boolean {
+  const t = canonicalize(title);
+  if (!t) return true;
+  const parts = t.split(/\s+/).filter(Boolean);
+  if (parts.length <= 2 && parts.every((p) => GENERIC_TITLE_TOKENS.has(p))) return true;
+  if (parts.length === 1 && GENERIC_TITLE_TOKENS.has(parts[0])) return true;
+  if (t.length <= 7) return true;
+  return false;
+}
+
+function computeLayerWeights(jobIsSparse: boolean, metaConsidered: boolean, descConsidered: boolean) {
+  const base = jobIsSparse
+    ? { title: 0.55, meta: 0.35, desc: 0.1 }
+    : { title: 0.3, meta: 0.3, desc: 0.4 };
+  const weights = { ...base };
+  if (!metaConsidered) weights.meta = 0;
+  if (!descConsidered) weights.desc = 0;
+  const total = weights.title + weights.meta + weights.desc || 1;
+  return {
+    title: weights.title / total,
+    meta: weights.meta / total,
+    desc: weights.desc / total,
+  };
+}
+
+function computeDataQuality(job: JobRow) {
+  const desc = pickDescText(job);
+  const descLen = desc.length;
+  const hasTags = (job.tags ?? []).length > 0;
+  const hasSkills =
+    (job.job_skills ?? []).length > 0 ||
+    (job.required_skills ?? []).length > 0 ||
+    (job.optional_skills ?? []).length > 0;
+  const hasLocation = Boolean(clean(job.location) || clean(job.country));
+  const hasTitle = Boolean(clean(job.title));
+  const hasRemote = Boolean(clean(job.remote_type));
+
+  const descScore = Math.min(1, descLen / 800);
+  let score = 0;
+  score += descScore * 0.45;
+  score += hasSkills ? 0.2 : 0;
+  score += hasTags ? 0.1 : 0;
+  score += hasLocation ? 0.1 : 0;
+  score += hasTitle ? 0.1 : 0;
+  score += hasRemote ? 0.05 : 0;
+  score = Math.min(1, Math.max(0, score));
+
+  return {
+    score,
+    desc_len: descLen,
+    job_is_sparse: descLen < 350,
+    has_tags: hasTags,
+    has_skills: hasSkills,
+    has_location: hasLocation,
+    has_title: hasTitle,
+    has_remote: hasRemote,
+  };
 }
 
 function extractKeywordsFromAlertName(name: string): string[] {
@@ -271,6 +508,64 @@ function labelRemoteType(remoteType?: string | null): string | null {
   return rt.charAt(0).toUpperCase() + rt.slice(1);
 }
 
+function shortenReasonValue(value: string, maxLen: number) {
+  const cleaned = collapseWhitespace(value);
+  if (cleaned.length <= maxLen) return cleaned;
+  const separators = [" / ", " - ", " | ", ", "];
+  for (const sep of separators) {
+    if (cleaned.includes(sep)) {
+      const part = cleaned.split(sep)[0]?.trim();
+      if (part && part.length <= maxLen) return part;
+    }
+  }
+  const cut = cleaned.slice(0, maxLen + 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace >= Math.max(10, maxLen - 12)) return cut.slice(0, lastSpace).trim() + "...";
+  return cleaned.slice(0, maxLen).trim() + "...";
+}
+
+function fitReason(prefix: string, value?: string | null, suffix = "") {
+  if (!value) return null;
+  const base = collapseWhitespace(value);
+  if (!base) return null;
+  const budget = Math.max(12, WHY_MAX_LEN - prefix.length - suffix.length - 2);
+  const trimmed = shortenReasonValue(base, budget);
+  const out = `${prefix} ${trimmed}${suffix}`.trim();
+  return out.length <= WHY_MAX_LEN ? out : null;
+}
+
+function pickLocationLabel(job: JobRow) {
+  const remote = labelRemoteType(job.remote_type);
+  if (remote) return remote;
+  const loc = clean(job.location);
+  if (loc && loc.length > 2) return loc;
+  const country = clean(job.country);
+  if (country && country.length > 2) return country;
+  return null;
+}
+
+function pickAlertKeywordMatch(
+  matchedTokens: string[],
+  kwAlerts: string[],
+  kwDisplay: Map<string, string>,
+) {
+  for (const token of matchedTokens) {
+    if (!kwAlerts.includes(token)) continue;
+    const display = kwDisplay.get(token);
+    if (display) return display;
+  }
+  return null;
+}
+
+function pickCvSkillMatch(kwCv: string[], hay: string, kwDisplay: Map<string, string>) {
+  for (const token of kwCv) {
+    if (!token || !hay.includes(token)) continue;
+    const display = kwDisplay.get(token);
+    if (display) return display;
+  }
+  return null;
+}
+
 function safeHost(url: string): string | null {
   try {
     const u = new URL(url);
@@ -300,6 +595,13 @@ function sourceLabel(job: JobRow): string | null {
     if (host) return host;
   }
   return null;
+}
+
+function buildJobLink(appUrl: string, job: JobRow): string {
+  const base = appUrl.replace(/\/$/, "");
+  const src = clean(job.apply_url) || clean(job.source_url);
+  const srcParam = src ? `?src=${encodeURIComponent(src)}` : "";
+  return `${base}/jobradar/jobs/${job.id}${srcParam}`;
 }
 
 function clampText(text: string, maxChars: number): string {
@@ -355,7 +657,7 @@ function buildSummaryFr(job: JobRow): string {
   return clampSentences(`${s1} ${s2}`, 2, SUMMARY_MAX_CHARS);
 }
 
-function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>): DigestItem[] {
+function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>, badgeLabel?: string | null): DigestItem[] {
   return list.map((job) => {
     const baseText =
       clean(job.description_text) ||
@@ -366,16 +668,6 @@ function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>): Dig
     const language = baseText ? detectLanguage(baseText) : null;
     const summary = clampText(buildSummaryFr(job), SUMMARY_MAX_CHARS);
 
-    const tags = uniq([
-      ...(job.tags ?? []),
-      ...(job.required_skills ?? []),
-      ...(job.optional_skills ?? []),
-      ...(job.job_skills ?? []),
-    ])
-      .map((t) => shortLabel(clean(t)))
-      .filter(Boolean)
-      .slice(0, 4);
-
     const dateCandidate = job.published_at || job.posted_at || job.scraped_at || job.created_at || job.updated_at;
     const meta = {
       remote: labelRemoteType(job.remote_type),
@@ -385,14 +677,14 @@ function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>): Dig
       source: sourceLabel(job),
     };
 
-    const why = (reasonsByJobId?.get(job.id) ?? []).map((w) => shortLabel(w)).slice(0, 4);
+    const why = (reasonsByJobId?.get(job.id) ?? []).map((w) => shortLabel(w)).slice(0, 2);
 
     return {
       job,
       summary_fr: summary,
       language,
       why: why.length ? why : undefined,
-      tags: tags.length ? tags : undefined,
+      badge: badgeLabel ?? null,
       meta,
     };
   });
@@ -401,7 +693,6 @@ function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>): Dig
 function buildEmailHtml(params: {
   salutation: string;
   preview: string;
-  intro: string;
   topTitle: string;
   exploreTitle: string;
   exploreHelper: string;
@@ -409,78 +700,65 @@ function buildEmailHtml(params: {
   explore: DigestItem[];
   appBaseUrl: string;
   unsubscribeUrl: string;
+  alertCount: number;
 }) {
-  const { preview, intro, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl } = params;
+  const { preview, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount, salutation } = params;
   const appUrl = appBaseUrl.replace(/\/$/, "");
   const radarUrl = `${appUrl}/jobradar`;
   const manageUrl = `${appUrl}/jobradar/alerts`;
   const topCount = top.length;
   const exploreCount = explore.length;
   const totalCount = topCount + exploreCount;
+  const alertsLabel = `${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""}`;
+  const topLabel = `${topCount} top match${topCount > 1 ? "s" : ""}`;
+  const newLabel = `${totalCount} nouvelle${totalCount > 1 ? "s" : ""} offre${totalCount > 1 ? "s" : ""}`;
+  const summaryLine = `${alertsLabel} \u2022 ${topLabel} \u2022 ${newLabel}`;
 
-  const statsLine = `S\u00E9lectionn\u00E9es pour ton profil \u2022 ${totalCount} opportunit\u00E9${totalCount > 1 ? "s" : ""} aujourd\u2019hui`;
-  const chip = (text: string, bg = EMAIL_COLORS.badgeBg, color = EMAIL_COLORS.header) =>
-    `<span style="display:inline-block;background:${bg};color:${color};border:1px solid ${EMAIL_COLORS.border};padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-right:6px;margin-bottom:6px;white-space:nowrap;">${escapeHtml(text)}</span>`;
+  const primaryCta = { label: "Voir mes meilleures offres", url: radarUrl };
 
-  const primaryCta =
-    totalCount === 0
-      ? { label: "Ajuster mes alertes", url: manageUrl }
-      : topCount > 0
-        ? { label: "Voir mes top matchs", url: radarUrl }
-        : { label: `Explorer mes ${totalCount} offres`, url: radarUrl };
-
-  const badgeList = (items: Array<string | null | undefined>, limit = 5) => {
-    const vals = items.filter(Boolean) as string[];
-    if (!vals.length) return "";
-    return vals.slice(0, limit).map((x) => chip(x)).join("");
-  };
-
-  const tagList = (items?: string[]) => {
-    if (!items || items.length === 0) return "";
-    const out = items.slice(0, 4).map((x) => chip(x, "#F8FAFF", EMAIL_COLORS.text)).join("");
-    return out ? `<div style="margin-top:10px;">${out}</div>` : "";
-  };
+  const badge = (text: string, strong = false) =>
+    `<span style="display:inline-block;background:${strong ? EMAIL_COLORS.brand : EMAIL_COLORS.badgeBg};color:${strong ? EMAIL_COLORS.white : EMAIL_COLORS.brand};border:1px solid ${strong ? EMAIL_COLORS.brand : EMAIL_COLORS.border};padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:800;white-space:nowrap;">${escapeHtml(text)}</span>`;
 
   const whyList = (items?: string[]) => {
     if (!items || items.length === 0) return "";
-    const out = items.slice(0, 4).map((x) => chip(x, EMAIL_COLORS.badgeBg, EMAIL_COLORS.header)).join("");
-    return out
-      ? `
-        <div style="margin-top:10px;">
-          <div style="font-size:12px;font-weight:800;color:${EMAIL_COLORS.text};margin-bottom:6px;">Pourquoi cette offre ?</div>
+    const out = items
+      .slice(0, 2)
+      .map((x) => `<li style="margin:0 0 4px 0;">${escapeHtml(x)}</li>`)
+      .join("");
+    return `
+      <div style="margin-top:10px;">
+        <div style="font-size:12px;font-weight:800;color:${EMAIL_COLORS.text};margin-bottom:6px;">Pourquoi cette offre ?</div>
+        <ul style="margin:0;padding-left:18px;color:${EMAIL_COLORS.muted};font-size:12.5px;line-height:1.5;">
           ${out}
-        </div>
-      `
-      : "";
+        </ul>
+      </div>
+    `;
   };
 
-  const itemHtml = (item: DigestItem) => {
+  const itemHtml = (item: DigestItem, showWhy: boolean) => {
     const job = item.job;
     const title = escapeHtml(job.title ?? "Offre");
-    const company = job.company_name ? ` \u00B7 ${escapeHtml(job.company_name)}` : "";
-    const link = job.source_url || `${appUrl}/jobradar/jobs/${job.id}`;
-    const summary = item.summary_fr ? escapeHtml(item.summary_fr) : "";
-    const metaBadges = badgeList([
-      item.meta?.remote ?? null,
-      item.meta?.location ?? null,
-      item.meta?.freshness ?? item.meta?.date ?? null,
-      item.language ? `Langue: ${item.language}` : null,
-      item.meta?.source ? `Source: ${item.meta.source}` : null,
-    ]);
+    const link = buildJobLink(appUrl, job);
+    const company = job.company_name ? escapeHtml(job.company_name) : "";
+    const metaLine = [company, item.meta?.location ?? null, item.meta?.remote ?? null].filter(Boolean).join(" \u00B7 ");
+    const badgeHtml = item.badge ? badge(item.badge, item.badge === "Top match") : "";
 
     return `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border:1px solid ${EMAIL_COLORS.border};border-radius:12px;overflow:hidden;background:${EMAIL_COLORS.white};">
         <tr>
-          <td style="padding:16px 16px 14px 16px;">
-            <div style="font-size:16px;font-weight:800;color:${EMAIL_COLORS.text};line-height:1.35;">
-              <a href="${link}" style="color:${EMAIL_COLORS.brand};text-decoration:none;">${title}</a>${company}
-            </div>
-            <div style="margin-top:8px;">${metaBadges}</div>
-            ${summary ? `<div style="margin-top:10px;font-size:13px;line-height:1.6;color:${EMAIL_COLORS.text};"><span style="font-weight:800;">En bref</span> \u2014 ${summary}</div>` : ""}
-            ${whyList(item.why)}
-            ${tagList(item.tags)}
+          <td style="padding:16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="font-size:16px;font-weight:800;color:${EMAIL_COLORS.text};line-height:1.35;">
+                  <a href="${link}" style="color:${EMAIL_COLORS.text};text-decoration:none;">${title}</a>
+                </td>
+                <td align="right" style="white-space:nowrap;padding-left:10px;">${badgeHtml}</td>
+              </tr>
+            </table>
+            ${metaLine ? `<div style="margin-top:6px;font-size:13px;color:${EMAIL_COLORS.muted};">${escapeHtml(metaLine)}</div>` : ""}
+            ${showWhy ? whyList(item.why) : ""}
             <div style="margin-top:12px;">
-              <a href="${link}" style="color:${EMAIL_COLORS.brand};text-decoration:none;font-weight:800;">Voir l\u2019offre \u2192</a>
+              <a href="${link}" style="display:inline-block;background:${EMAIL_COLORS.brand};color:${EMAIL_COLORS.white};text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:800;font-size:12.5px;">Voir l\u2019offre</a>
             </div>
           </td>
         </tr>
@@ -489,26 +767,22 @@ function buildEmailHtml(params: {
   };
 
   const topEmptyHtml = `
-    <div style="padding:14px;border:1px dashed ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.badgeBg};color:${EMAIL_COLORS.muted};font-size:13px;line-height:1.55;">
-      Aucun top match aujourd\u2019hui, mais nous avons des offres \u00E0 explorer ci-dessous.
-      <div style="margin-top:8px;">
-        <a href="${manageUrl}" style="color:${EMAIL_COLORS.brand};text-decoration:none;font-weight:800;">Ajuster mes alertes</a>
-      </div>
+    <div style="padding:14px;border:1px dashed ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.white};color:${EMAIL_COLORS.muted};font-size:13px;line-height:1.55;">
+      Aucun top match aujourd\u2019hui, mais tu peux explorer d\u2019autres opportunit\u00E9s ci-dessous.
     </div>
   `;
 
   const allEmptyHtml = `
-    <div style="padding:16px;border:1px solid ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.badgeBg};color:${EMAIL_COLORS.text};font-size:13px;line-height:1.55;">
+    <div style="padding:16px;border:1px solid ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.white};color:${EMAIL_COLORS.text};font-size:13px;line-height:1.55;">
       <div style="font-weight:800;">Aucune offre aujourd\u2019hui.</div>
-      <div style="margin-top:6px;color:${EMAIL_COLORS.muted};">Ajuste tes alertes pour affiner la s\u00E9lection et recevoir plus d\u2019opportunit\u00E9s pertinentes.</div>
-      <div style="margin-top:10px;">
-        <a href="${manageUrl}" style="color:${EMAIL_COLORS.brand};text-decoration:none;font-weight:800;">Ajuster mes alertes</a>
-      </div>
+      <div style="margin-top:6px;color:${EMAIL_COLORS.muted};">Ajuste tes alertes pour recevoir plus d\u2019opportunit\u00E9s pertinentes.</div>
     </div>
   `;
 
-  const topHtml = topCount ? top.map(itemHtml).join("") : topEmptyHtml;
-  const exploreHtml = exploreCount ? explore.map(itemHtml).join("") : "";
+  const topHtml = topCount ? top.map((item) => itemHtml(item, true)).join("") : topEmptyHtml;
+  const exploreHtml = exploreCount ? explore.map((item) => itemHtml(item, false)).join("") : "";
+  const profileUrl = `${appUrl}/jobradar/profile`;
+  const supportUrl = `${appUrl}/contact`;
 
   return `
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preview)}</div>
@@ -517,28 +791,32 @@ function buildEmailHtml(params: {
       <td align="center">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;background:${EMAIL_COLORS.white};border-radius:16px;border:1px solid ${EMAIL_COLORS.border};overflow:hidden;">
           <tr>
-            <td style="padding:22px 24px;background:${EMAIL_COLORS.header};color:${EMAIL_COLORS.white};">
-              <div style="font-size:12px;letter-spacing:1.2px;text-transform:uppercase;opacity:.85;">GO4JOB \u2014 JOBRADAR</div>
-              <div style="font-size:22px;font-weight:900;margin-top:6px;">Tes offres du jour</div>
-              <div style="font-size:13px;opacity:.9;margin-top:6px;">${statsLine}</div>
-              <div style="margin-top:10px;">
-                ${chip(`Top matchs: ${topCount}`, "#1E293B", EMAIL_COLORS.white)}
-                ${chip(`\u00C0 explorer: ${exploreCount}`, "#1E293B", EMAIL_COLORS.white)}
-              </div>
-              <div style="font-size:12px;opacity:.9;margin-top:8px;">Offres filtr\u00E9es selon ton profil et r\u00E9sum\u00E9es en fran\u00E7ais.</div>
+            <td style="height:6px;background:${EMAIL_COLORS.brand};line-height:6px;font-size:0;">&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="padding:22px 24px 10px 24px;">
+              <div style="font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:${EMAIL_COLORS.muted};font-weight:800;">JOBRADAR</div>
+              <div style="font-size:22px;font-weight:900;margin-top:6px;color:${EMAIL_COLORS.header};">Tes meilleures opportunit\u00E9s du jour</div>
+              <div style="font-size:13px;color:${EMAIL_COLORS.muted};margin-top:6px;">S\u00E9lectionn\u00E9es selon tes alertes et ton profil.</div>
+              <div style="margin-top:10px;font-size:13px;color:${EMAIL_COLORS.text};font-weight:700;">${escapeHtml(salutation)}</div>
             </td>
           </tr>
 
           <tr>
-            <td style="padding:18px 24px;border-bottom:1px solid ${EMAIL_COLORS.border};">
-              <div style="font-size:15px;color:${EMAIL_COLORS.text};line-height:1.6;">
-                ${intro}
+            <td style="padding:0 24px 18px 24px;">
+              <div style="padding:14px 16px;border:1px solid ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.bg};">
+                <div style="font-size:13px;color:${EMAIL_COLORS.text};font-weight:700;">${summaryLine}</div>
+                <div style="margin-top:12px;">
+                  <a href="${primaryCta.url}" style="display:inline-block;background:${EMAIL_COLORS.brand};color:${EMAIL_COLORS.white};text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:900;font-size:13px;">
+                    ${primaryCta.label}
+                  </a>
+                </div>
               </div>
             </td>
           </tr>
 
           <tr>
-            <td style="padding:18px 24px 8px 24px;">
+            <td style="padding:8px 24px 8px 24px;">
               <div style="font-size:14px;font-weight:900;color:${EMAIL_COLORS.text};margin-bottom:10px;">${topTitle}</div>
               ${totalCount === 0 ? allEmptyHtml : topHtml}
             </td>
@@ -554,21 +832,10 @@ function buildEmailHtml(params: {
           </tr>` : ""}
 
           <tr>
-            <td style="padding:18px 24px;border-top:1px solid ${EMAIL_COLORS.border};text-align:center;">
-              <a href="${primaryCta.url}" style="display:inline-block;background:${EMAIL_COLORS.brand};color:${EMAIL_COLORS.white};text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:900;">
-                ${primaryCta.label}
-              </a>
-              <div style="margin-top:10px;font-size:12px;">
-                <a href="${manageUrl}" style="color:${EMAIL_COLORS.muted};text-decoration:underline;">G\u00E9rer mes alertes</a>
-              </div>
-            </td>
-          </tr>
-
-          <tr>
-            <td style="padding:16px 24px;color:${EMAIL_COLORS.muted};font-size:12px;text-align:center;">
-              JobRadar by Go4Job \u2014 l\u2019assistant qui filtre et r\u00E9sume vos opportunit\u00E9s.<br/>
-              Tu re\u00E7ois cet email car tu as activ\u00E9 une alerte JobRadar.<br/>
+            <td style="padding:16px 24px;color:${EMAIL_COLORS.muted};font-size:12px;text-align:center;border-top:1px solid ${EMAIL_COLORS.border};">
               <a href="${manageUrl}" style="color:${EMAIL_COLORS.muted};text-decoration:underline;">G\u00E9rer mes alertes</a> \u00B7
+              <a href="${profileUrl}" style="color:${EMAIL_COLORS.muted};text-decoration:underline;">Modifier mon profil</a> \u00B7
+              <a href="${supportUrl}" style="color:${EMAIL_COLORS.muted};text-decoration:underline;">Support</a> \u00B7
               <a href="${unsubscribeUrl}" style="color:${EMAIL_COLORS.muted};text-decoration:underline;">Se d\u00E9sinscrire</a>
             </td>
           </tr>
@@ -581,7 +848,6 @@ function buildEmailHtml(params: {
 
 function buildEmailText(params: {
   salutation: string;
-  intro: string;
   topTitle: string;
   exploreTitle: string;
   exploreHelper: string;
@@ -589,57 +855,51 @@ function buildEmailText(params: {
   explore: DigestItem[];
   appBaseUrl: string;
   unsubscribeUrl: string;
+  alertCount: number;
 }) {
-  const { salutation, intro, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl } = params;
+  const { salutation, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount } = params;
   const appUrl = appBaseUrl.replace(/\/$/, "");
   const manageUrl = `${appUrl}/jobradar/alerts`;
   const radarUrl = `${appUrl}/jobradar`;
+  const profileUrl = `${appUrl}/jobradar/profile`;
+  const supportUrl = `${appUrl}/contact`;
   const topCount = top.length;
   const exploreCount = explore.length;
   const totalCount = topCount + exploreCount;
-  const statsLine = `Selectionnees pour ton profil • ${totalCount} opportunite${totalCount > 1 ? "s" : ""} aujourd'hui`;
-  const primaryCta =
-    totalCount === 0
-      ? { label: "Ajuster mes alertes", url: manageUrl }
-      : topCount > 0
-        ? { label: "Voir mes top matchs", url: radarUrl }
-        : { label: `Explorer mes ${totalCount} offres`, url: radarUrl };
-
+  const alertsLabel = `${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""}`;
+  const topLabel = `${topCount} top match${topCount > 1 ? "s" : ""}`;
+  const newLabel = `${totalCount} nouvelle${totalCount > 1 ? "s" : ""} offre${totalCount > 1 ? "s" : ""}`;
+  const summaryLine = `${alertsLabel} \u2022 ${topLabel} \u2022 ${newLabel}`;
+  const primaryCta = { label: "Voir mes meilleures offres", url: radarUrl };
   const itemText = (item: DigestItem) => {
     const job = item.job;
     const title = job.title ?? "Offre";
     const company = job.company_name ? ` - ${job.company_name}` : "";
-    const location = item.meta?.location ? ` (${item.meta.location})` : "";
-    const date = item.meta?.freshness || item.meta?.date || "";
-    const link = job.source_url || `${appBaseUrl}/jobradar/jobs/${job.id}`;
-    const summary = item.summary_fr ? item.summary_fr : "";
-    const lang = item.language ? ` [Langue: ${item.language}]` : "";
-    const source = item.meta?.source ? ` [Source: ${item.meta.source}]` : "";
+    const meta = [item.meta?.location ?? "", item.meta?.remote ?? ""].filter(Boolean).join(" - ");
+    const link = buildJobLink(appUrl, job);
+    const badge = item.badge ? ` [${item.badge}]` : "";
     const why = item.why && item.why.length ? `Pourquoi cette offre: ${item.why.join(", ")}` : "";
-    const tags = item.tags && item.tags.length ? `Points cles: ${item.tags.join(", ")}` : "";
     const lines = [
-      `- ${title}${company}${location}${lang}${source}`,
-      date ? `  Publie: ${date}` : "",
-      summary ? `  En bref: ${summary}` : "",
+      `- ${title}${badge}${company}`,
+      meta ? `  ${meta}` : "",
       why ? `  ${why}` : "",
-      tags ? `  ${tags}` : "",
       `  Voir l'offre: ${link}`,
     ].filter(Boolean);
     return lines.join("\n");
   };
 
-  const topText = topCount ? top.map(itemText).join("\n\n") : "- Aucun top match aujourd'hui. Voir la section Explorer ou ajuster tes alertes.";
+  const topText = topCount ? top.map(itemText).join("\n\n") : "- Aucun top match aujourd'hui. Voir la section Explorer plus d'opportunites.";
   const exploreText = exploreCount ? explore.map(itemText).join("\n\n") : "";
 
   return [
-    "Go4Job - JobRadar",
-    "Tes offres du jour",
-    statsLine,
+    "JobRadar",
+    "Tes meilleures opportunites du jour",
+    "Selectionnees selon tes alertes et ton profil.",
+    summaryLine,
     salutation,
-    intro,
     "",
     topTitle,
-    totalCount === 0 ? "Aucune offre aujourd'hui. Ajuste tes alertes pour recevoir des opportunites pertinentes." : topText,
+    totalCount === 0 ? "Aucune offre aujourd'hui. Ajuste tes alertes pour recevoir plus d'opportunites pertinentes." : topText,
     exploreCount ? "" : "",
     exploreCount ? exploreTitle : "",
     exploreCount ? exploreHelper : "",
@@ -647,6 +907,8 @@ function buildEmailText(params: {
     "",
     `${primaryCta.label}: ${primaryCta.url}`,
     `Gerer mes alertes: ${manageUrl}`,
+    `Modifier mon profil: ${profileUrl}`,
+    `Support: ${supportUrl}`,
     `Se desinscrire: ${unsubscribeUrl}`,
   ]
     .filter((line) => line !== "")
@@ -746,14 +1008,15 @@ serve(async (req) => {
       id, title, company_name, location, country, remote_type,
       published_at, posted_at, scraped_at, created_at, updated_at,
       description_text, description_html, official_desc,
-      tags, job_skills, required_skills, optional_skills,
+      tags, job_skills, required_skills, optional_skills, job_family,
       experience_years_min, experience_years_max,
-      source_url, external_id,
+      source_url, apply_url, external_id,
       ai_description, ai_description_status, ai_description_quality,
       ai_description_model, ai_description_error, ai_description_updated_at
     `)
     .eq("is_active", true)
-    .eq("is_expired", false)
+    .or("is_expired.eq.false,is_expired.is.null")
+    .or("quality_status.eq.ok,quality_status.is.null")
     .order("published_at", { ascending: false, nullsFirst: false })
     .order("scraped_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
@@ -773,6 +1036,7 @@ serve(async (req) => {
         j.remote_type,
         j.description_text,
         j.official_desc,
+        j.job_family,
         ...(j.required_skills ?? []),
         ...(j.optional_skills ?? []),
         ...(j.job_skills ?? []),
@@ -815,6 +1079,36 @@ serve(async (req) => {
 
   for (const user of users) {
     const toEmail = user.email;
+
+    const { data: hasPass, error: passErr } = await supabase.rpc("has_active_pass", {
+      p_user_id: user.id,
+    });
+    if (passErr) {
+      stats.skipped += 1;
+      await logStatus(supabase, {
+        user_id: user?.id ?? null,
+        to_email: toEmail,
+        channel: "email",
+        digest_date: digestDate,
+        status: "skipped",
+        provider: "resend",
+        error: "pass_check_failed",
+      });
+      continue;
+    }
+    if (!hasPass) {
+      stats.skipped += 1;
+      await logStatus(supabase, {
+        user_id: user?.id ?? null,
+        to_email: toEmail,
+        channel: "email",
+        digest_date: digestDate,
+        status: "skipped",
+        provider: "resend",
+        error: "pass_required",
+      });
+      continue;
+    }
 
     const { data: logExists } = await supabase
       .from("notification_logs")
@@ -888,20 +1182,25 @@ serve(async (req) => {
     const expMax = cvJson?.["experience_years_max"] as number | null;
     const cvExpValue = (expMax ?? expMin) ?? null;
 
-    const kwDisplay = new Map<string, string>();
+    const kwDisplayAlerts = new Map<string, string>();
     for (const raw of cappedAlertKeywords) {
-      const c = canonicalize(raw).toLowerCase();
-      if (c && !kwDisplay.has(c)) kwDisplay.set(c, raw);
+      const cleaned = clean(raw);
+      const c = canonicalize(cleaned).toLowerCase();
+      if (c && !kwDisplayAlerts.has(c)) kwDisplayAlerts.set(c, humanizeAlertKeyword(cleaned));
     }
+    const kwDisplayCv = new Map<string, string>();
     for (const raw of cvSkills) {
-      const c = canonicalize(raw).toLowerCase();
-      if (c && !kwDisplay.has(c)) kwDisplay.set(c, raw);
+      const cleaned = clean(raw);
+      const c = canonicalize(cleaned).toLowerCase();
+      if (c && !kwDisplayCv.has(c)) kwDisplayCv.set(c, humanizeSkillLabel(cleaned));
     }
 
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalize(k)).map((x) => x.toLowerCase())).filter(Boolean);
     const kwCv = uniq(cvSkills.map((k) => canonicalize(k)).map((x) => x.toLowerCase())).filter(Boolean);
-    const kwCount = kwAlerts.length + kwCv.length;
-
+    const profileTextForDomain = [cappedAlertKeywords.join(" "), cvSkills.join(" ")].filter(Boolean).join(" ");
+    const profileDomainScores = scoreDomains(profileTextForDomain);
+    const profileDomains = pickTopDomains(profileDomainScores, 3);
+    const topProfileScore = profileDomains.length ? profileDomainScores[profileDomains[0]] ?? 0 : 0;
     const allowAllCountries = (() => {
       if (!alerts.length) return true;
       let allowAll = false;
@@ -933,16 +1232,9 @@ serve(async (req) => {
         const hay = jobHay.get(job.id) ?? "";
         let sAlert = 0;
         let sCv = 0;
-        const reasons: string[] = [];
-        for (const k of kwAlerts) if (k && hay.includes(k)) {
-          sAlert += 1;
-          reasons.push(kwDisplay.get(k) ?? k);
-        }
-        for (const k of kwCv) if (k && hay.includes(k)) {
-          sCv += 1;
-          reasons.push(kwDisplay.get(k) ?? k);
-        }
-        const why = uniq(reasons).slice(0, 4);
+
+        for (const k of kwAlerts) if (k && hay.includes(k)) sAlert += 1;
+        for (const k of kwCv) if (k && hay.includes(k)) sCv += 1;
 
         const jobMin = job.experience_years_min ?? null;
         const jobMax = job.experience_years_max ?? null;
@@ -957,28 +1249,147 @@ serve(async (req) => {
 
         const denom = kwAlerts.length * 2 + kwCv.length * 1 + (expConsidered ? 2 : 0);
         const weighted = sAlert * 2 + sCv * 1 + (expOk ? 2 : 0);
-        const p = denom ? Math.round((weighted / denom) * 100) : 0;
+        const advancedScore = denom ? Math.round((weighted / denom) * 100) : 0;
 
-        const signalCount = kwCount + (expOk ? 1 : 0);
-        if (signalCount && !(sAlert + sCv >= 1 || expOk)) return null;
+        const dataQuality = computeDataQuality(job);
+        const jobIsSparse = dataQuality.job_is_sparse;
+
+        const profileTokens = expandProfileTokens(buildProfileTokens(cappedAlertKeywords, cvSkills));
+        const titleText = canonicalize([job.title, job.company_name].filter(Boolean).join(" "));
+        const metaText = canonicalize(
+          [
+            job.job_family,
+            ...(job.tags ?? []),
+            ...(job.required_skills ?? []),
+            ...(job.optional_skills ?? []),
+            ...(job.job_skills ?? []),
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+        const descText = canonicalize(pickDescText(job));
+
+        const jobTextForDomain = [
+          job.job_family,
+          ...(job.tags ?? []),
+          ...(job.required_skills ?? []),
+          ...(job.optional_skills ?? []),
+          ...(job.job_skills ?? []),
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const jobDomainScores = scoreDomains(jobTextForDomain);
+        const jobDomain = pickPrimaryDomain(jobDomainScores);
+        const jobDomainScore = jobDomain ? jobDomainScores[jobDomain] ?? 0 : 0;
+        const domainMatch = Boolean(jobDomain && profileDomains.includes(jobDomain));
+        const strongMismatch =
+          Boolean(jobDomain) && profileDomains.length > 0 && !domainMatch && jobDomainScore >= 2 && topProfileScore >= 2;
+
+        const titleScoreRes = computeTokenScore(profileTokens, titleText);
+        const metaScoreRes = metaText ? computeTokenScore(profileTokens, metaText) : { score: 0, matched: [] as string[] };
+        const descScoreRes = descText ? computeTokenScore(profileTokens, descText) : { score: 0, matched: [] as string[] };
+
+        const metaConsidered = metaText.length >= 3;
+        const descConsidered = descText.length >= 50;
+        const weights = computeLayerWeights(jobIsSparse, metaConsidered, descConsidered);
+
+        let simpleScore = Math.round(
+          (titleScoreRes.score * weights.title +
+            (metaConsidered ? metaScoreRes.score * weights.meta : 0) +
+            (descConsidered ? descScoreRes.score * weights.desc : 0)) * 100,
+        );
+
+        if (jobIsSparse && isGenericTitle(job.title ?? "") && !metaConsidered && simpleScore > 45) {
+          simpleScore = 45;
+        }
+
+        if (strongMismatch) return null;
+
+        const evidenceTitle = titleScoreRes.matched.length > 0;
+        const evidenceMeta = metaScoreRes.matched.length > 0;
+        const evidenceDesc = descScoreRes.matched.length > 0;
+        const evidenceDomain = domainMatch;
+        const evidenceExp = expOk;
+        const evidenceCount = [
+          evidenceTitle,
+          evidenceMeta,
+          evidenceDesc,
+          evidenceDomain,
+          evidenceExp,
+        ].filter(Boolean).length;
+
+        const sparseNeedsStrongTitle = jobIsSparse && !metaConsidered;
+        const strongTitle = titleScoreRes.score >= 0.35;
+        const titleVeryStrong = titleScoreRes.score >= 0.55 && !isGenericTitle(job.title ?? "");
+        const effectiveEvidenceCount = evidenceCount + (titleVeryStrong && evidenceTitle ? 1 : 0);
+        const passesEvidence =
+          (effectiveEvidenceCount >= 2 && (!sparseNeedsStrongTitle || strongTitle)) ||
+          (sparseNeedsStrongTitle && titleVeryStrong);
+
+        if (simpleScore < SIMPLE_MIN || !passesEvidence) return null;
 
         if (!allowAllCountries) {
           const jc = (job.country ?? "").trim().toUpperCase();
           if (jc && jc.length === 2 && !allowedCountries.has(jc)) return null;
         }
 
-        return { job, p, s: sAlert + sCv, why };
+        const reasons: string[] = [];
+        const used = new Set<string>();
+        const add = (text: string | null) => {
+          if (!text || reasons.length >= 2) return;
+          const t = collapseWhitespace(text);
+          if (!t || used.has(t)) return;
+          used.add(t);
+          reasons.push(t);
+        };
+
+        const matchedTokens = [
+          ...titleScoreRes.matched,
+          ...metaScoreRes.matched,
+          ...descScoreRes.matched,
+        ];
+
+        const alertKeyword = pickAlertKeywordMatch(matchedTokens, kwAlerts, kwDisplayAlerts);
+        add(fitReason("Correspond à ton alerte", alertKeyword));
+
+        const loc = pickLocationLabel(job);
+        add(fitReason("Compatible avec ta recherche de postes en", loc));
+
+        const cvSkill = pickCvSkillMatch(kwCv, hay, kwDisplayCv);
+        add(fitReason("Compétences en", cvSkill, " proches du besoin"));
+
+        if (expOk) {
+          add(fitReason("Missions cohérentes avec ton expérience", job.title ?? null));
+        }
+
+        if (domainMatch) {
+          add("Secteur aligné avec ton profil");
+        }
+
+        if (!reasons.length) {
+          add("Profil compatible avec cette offre");
+        }
+
+        const isTopMatch = advancedScore >= TOP_MIN && dataQuality.score >= DATA_QUALITY_MIN;
+
+        return {
+          job,
+          simpleScore,
+          advancedScore,
+          why: reasons.slice(0, 2),
+          isTopMatch,
+        };
       })
-      .filter(Boolean) as Array<{ job: JobRow; p: number; s: number; why: string[] }>;
+      .filter(Boolean) as Array<{ job: JobRow; simpleScore: number; advancedScore: number; why: string[]; isTopMatch: boolean }>;
 
     exploreMatches.sort((a, b) => {
-      if (b.p !== a.p) return b.p - a.p;
-      if (b.s !== a.s) return b.s - a.s;
+      if (b.simpleScore !== a.simpleScore) return b.simpleScore - a.simpleScore;
+      if (b.advancedScore !== a.advancedScore) return b.advancedScore - a.advancedScore;
       return getJobTimeMs(b.job) - getJobTimeMs(a.job);
     });
 
-    const topMatches = exploreMatches.filter((x) => x.p >= TOP_MIN).map((x) => x.job);
-    const explore = exploreMatches.filter((x) => x.p >= EXP_MIN && x.p <= EXP_MAX).map((x) => x.job);
+    const topMatches = exploreMatches.filter((x) => x.isTopMatch).map((x) => x.job);
+    const explore = exploreMatches.filter((x) => !x.isTopMatch).map((x) => x.job);
 
     let selectedTop = topMatches.slice(0, MAX_ITEMS);
     let selectedExplore: JobRow[] = [];
@@ -1030,44 +1441,38 @@ serve(async (req) => {
 
     stats.emails_planned += 1;
 
-    const subject = "Go4Job \u2014 Tes offres du jour";
+    const subject = "JobRadar \u2014 Tes meilleures opportunit\u00E9s du jour";
     const topCount = selectedTop.length;
     const exploreCount = selectedExplore.length;
     const totalCount = topCount + exploreCount;
     const preview = totalCount === 0
-      ? "Aucune offre aujourd\u2019hui. Ajuste tes alertes pour plus d\u2019opportunit\u00E9s."
-      : `${topCount} top match${topCount > 1 ? "s" : ""} \u00B7 ${exploreCount} \u00E0 explorer`;
-    const introText = totalCount === 0
-      ? `${salutation}\nAucune offre aujourd\u2019hui pour tes crit\u00E8res. Ajuste tes alertes pour recevoir des opportunit\u00E9s plus proches de ton profil.`
-      : `${salutation}\nVoici ta synth\u00E8se du jour : ${topCount} top match${topCount > 1 ? "s" : ""} et ${exploreCount} \u00E0 explorer.\nChaque offre est filtr\u00E9e selon ton profil et r\u00E9sum\u00E9e en fran\u00E7ais pour gagner du temps.`;
-    const introHtml = totalCount === 0
-      ? `${salutation}<br/>Aucune offre aujourd\u2019hui pour tes crit\u00E8res. Ajuste tes alertes pour recevoir des opportunit\u00E9s plus proches de ton profil.`
-      : `${salutation}<br/>Voici ta synth\u00E8se du jour : <b>${topCount} top match${topCount > 1 ? "s" : ""}</b> et <b>${exploreCount} \u00E0 explorer</b>.<br/>Chaque offre est filtr\u00E9e selon ton profil et r\u00E9sum\u00E9e en fran\u00E7ais pour gagner du temps.`;
+      ? "Aucune offre aujourd'hui. Ajuste tes alertes pour demain."
+      : "Tes meilleures opportunit\u00E9s du jour, s\u00E9lectionn\u00E9es pour toi.";
     const unsubToken = await sign(cronSecret, `unsubscribe:${user.id}`);
     const unsubscribeUrl = `${functionsBase}/unsubscribe?uid=${encodeURIComponent(user.id)}&t=${encodeURIComponent(unsubToken)}`;
 
     const html = buildEmailHtml({
       salutation,
       preview,
-      intro: introHtml,
-      topTitle: "Top matchs (\u2265 65)",
-      exploreTitle: "Explorer (50\u201364)",
-      exploreHelper: "Tu peux aussi explorer ces opportunit\u00E9s proches de ton profil.",
-      top: buildItems(selectedTop, reasonsByJobId),
-      explore: buildItems(selectedExplore, reasonsByJobId),
+      topTitle: "Top matchs",
+      exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
+      exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
+      top: buildItems(selectedTop, reasonsByJobId, "Top match"),
+      explore: buildItems(selectedExplore, reasonsByJobId, "Tr\u00E8s pertinent"),
       appBaseUrl,
       unsubscribeUrl,
+      alertCount: alerts.length,
     });
     const text = buildEmailText({
       salutation,
-      intro: introText,
-      topTitle: "Top matchs (\u2265 65)",
-      exploreTitle: "Explorer (50\u201364)",
-      exploreHelper: "Tu peux aussi explorer ces opportunit\u00E9s proches de ton profil.",
-      top: buildItems(selectedTop, reasonsByJobId),
-      explore: buildItems(selectedExplore, reasonsByJobId),
+      topTitle: "Top matchs",
+      exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
+      exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
+      top: buildItems(selectedTop, reasonsByJobId, "Top match"),
+      explore: buildItems(selectedExplore, reasonsByJobId, "Tr\u00E8s pertinent"),
       appBaseUrl,
       unsubscribeUrl,
+      alertCount: alerts.length,
     });
 
     if (dryRun) {
@@ -1134,3 +1539,7 @@ serve(async (req) => {
 
   return json(200, { ok: true, dry_run: dryRun, stats, sample });
 });
+
+
+
+

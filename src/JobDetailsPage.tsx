@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { usePass } from "./lib/usePass";
 import "./JobDetailsPage.css";
 
-type ApplicationStatus = "saved" | "queued" | "in_progress" | "submitted" | "failed";
+type ApplicationStatus =
+  | "saved"
+  | "queued"
+  | "in_progress"
+  | "submitted"
+  | "sent"
+  | "withdrawn"
+  | "retired"
+  | "expired"
+  | "failed";
 
 type JobRow = {
   id: string;
@@ -69,18 +79,46 @@ function isUuid(v: unknown): v is string {
   );
 }
 
+function safeExternalUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+function safeHostLabel(raw: string | null): string | null {
+  try {
+    if (!raw) return null;
+    const u = new URL(raw);
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
 function statusLabel(s: ApplicationStatus) {
   switch (s) {
     case "saved":
-      return "A postuler";
     case "queued":
-      return "En file";
+      return "À postuler";
     case "in_progress":
-      return "En cours";
+      return "En préparation";
     case "submitted":
-      return "Envoyee";
+    case "sent":
+      return "Envoyée";
+    case "withdrawn":
+    case "retired":
+      return "Retirée";
+    case "expired":
+      return "Expirée";
     case "failed":
-      return "Echouee";
+      return "Échouée";
     default:
       return s;
   }
@@ -93,7 +131,7 @@ function statusClass(s: ApplicationStatus) {
     ? "chipQueued"
     : s === "in_progress"
     ? "chipInProgress"
-    : s === "submitted"
+    : s === "submitted" || s === "sent"
     ? "chipSubmitted"
     : "chipFailed";
 }
@@ -221,7 +259,11 @@ function extractDescFromJobJson(jobJson?: Record<string, unknown> | null) {
 export default function JobDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { session, loading } = useSession();
+  const { hasActivePass, isLoadingPass } = usePass();
+  const allowPremium = hasActivePass && !isLoadingPass;
+  const DETAILS_GATE_MESSAGE = "Choisis un pass pour accéder à l’offre complète.";
   const userId = session?.user?.id ?? null;
 
   const [job, setJob] = useState<JobRow | null>(null);
@@ -233,6 +275,16 @@ export default function JobDetailsPage() {
 
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMsg, setAiMsg] = useState<string | null>(null);
+
+  const srcUrl = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return safeExternalUrl(params.get("src"));
+  }, [location.search]);
+
+  const similarQuery = useMemo(() => {
+    if (job?.title) return job.title;
+    return safeHostLabel(srcUrl);
+  }, [job, srcUrl]);
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
@@ -246,7 +298,7 @@ export default function JobDetailsPage() {
       setJob(null);
       setApp(null);
       setBusy(false);
-      setErrorMsg("ID d'offre invalide (UUID attendu).");
+      setErrorMsg(null);
       return;
     }
 
@@ -332,6 +384,11 @@ export default function JobDetailsPage() {
     return job.apply_url || job.source_url || null;
   }, [job]);
 
+  const similarLink = useMemo(() => {
+    if (!similarQuery) return "/jobradar/feed";
+    return `/jobradar/feed?q=${encodeURIComponent(similarQuery)}`;
+  }, [similarQuery]);
+
   const desc = useMemo(() => {
     const officialText = (job?.official_desc ?? "").trim();
     const text = officialText || (job?.description_text ?? "").trim();
@@ -365,6 +422,11 @@ export default function JobDetailsPage() {
 
     if (!userId) {
       navigate("/auth", { replace: true });
+      return;
+    }
+
+    if (!allowPremium) {
+      setErrorMsg("Un pass actif est requis pour accéder à cette fonctionnalité.");
       return;
     }
 
@@ -441,6 +503,11 @@ export default function JobDetailsPage() {
       return;
     }
 
+    if (!allowPremium) {
+      setErrorMsg("Un pass actif est requis pour accéder à cette fonctionnalité.");
+      return;
+    }
+
     setAiBusy(true);
     setAiMsg(null);
     try {
@@ -449,9 +516,9 @@ export default function JobDetailsPage() {
       });
       if (error) throw error;
       if (data?.ok) {
-        setAiMsg("Generation lancee.");
+        setAiMsg("Génération lancée.");
       } else {
-        setAiMsg(data?.error ? String(data.error) : "Generation en echec.");
+        setAiMsg(data?.error ? String(data.error) : "Génération en échec.");
       }
       await load();
     } catch (e) {
@@ -473,7 +540,7 @@ export default function JobDetailsPage() {
     if (desc.aiOk) {
       return (
         <span className="chip jd-src jd-srcAi">
-          Description generee par IA
+          Description générée par IA
         </span>
       );
     }
@@ -497,7 +564,25 @@ export default function JobDetailsPage() {
         {busy ? (
           <div className="jd-empty">Chargement de l'offre...</div>
         ) : !job ? (
-          <div className="jd-empty">Offre introuvable.</div>
+          <div className="jd-missing">
+            <div className="jd-missingTitle">Cette offre n'est plus disponible</div>
+            <div className="jd-missingText">
+              Le lien a peut-être expiré ou l'offre a été retirée.
+            </div>
+            <div className="jd-missingActions">
+              <button className="btn btnPrimary" onClick={() => navigate("/jobradar/feed")}>
+                Retour au feed
+              </button>
+              <button className="btn btnGhost" onClick={() => navigate(similarLink)}>
+                Voir des offres similaires
+              </button>
+              {srcUrl && (
+                <a className="btn btnGhost" href={srcUrl} target="_blank" rel="noopener noreferrer">
+                  Ouvrir la source
+                </a>
+              )}
+            </div>
+          </div>
         ) : (
           <section className="jd-card">
             <div className="jd-head">
@@ -517,10 +602,12 @@ export default function JobDetailsPage() {
                     {statusLabel(app.status)}
                   </span>
                 )}
-                {date && <span className="chip jd-date">Publie : {date.toLocaleDateString()}</span>}
+                {date && <span className="chip jd-date">Publié : {date.toLocaleDateString()}</span>}
               </div>
             </div>
 
+            {allowPremium ? (
+              <>
             <div className="jd-actions">
               <button className="btn btnPrimary" disabled={actionBusy} onClick={postuler}>
                 {actionBusy ? "Ouverture..." : "Postuler / Soumettre"}
@@ -531,9 +618,9 @@ export default function JobDetailsPage() {
                   className="btn btnGhost"
                   disabled={actionBusy}
                   onClick={markSubmitted}
-                  title="Confirmer candidature envoyee"
+                  title="Confirmer candidature envoyée"
                 >
-                  Marquer envoyee
+                  Marquer envoyée
                 </button>
 
                 {app && (
@@ -554,19 +641,19 @@ export default function JobDetailsPage() {
               <div className="jd-descMeta">
                 {descBadge()}
                 {desc.scrapedOk && job.desc_quality != null && (
-                  <span className="chip jd-quality">Qualite: {job.desc_quality}</span>
+                  <span className="chip jd-quality">Qualité: {job.desc_quality}</span>
                 )}
                 {!desc.scrapedOk && desc.aiOk && job.ai_description_quality != null && (
-                  <span className="chip jd-quality">Qualite: {job.ai_description_quality}</span>
+                  <span className="chip jd-quality">Qualité: {job.ai_description_quality}</span>
                 )}
                 {desc.scrapedOk && job.desc_updated_at && (
                   <span className="jd-dateSmall">
-                    Mis a jour: {new Date(job.desc_updated_at).toLocaleDateString()}
+                    Mis à jour: {new Date(job.desc_updated_at).toLocaleDateString()}
                   </span>
                 )}
                 {!desc.scrapedOk && desc.aiOk && job.ai_description_updated_at && (
                   <span className="jd-dateSmall">
-                    Genere: {new Date(job.ai_description_updated_at).toLocaleDateString()}
+                    Générée: {new Date(job.ai_description_updated_at).toLocaleDateString()}
                   </span>
                 )}
               </div>
@@ -583,13 +670,13 @@ export default function JobDetailsPage() {
                 ) : (
                   <div className="jd-noDesc">
                     <div>
-                      <span className="jd-muted">Description en cours de generation...</span>
+                      <span className="jd-muted">Description en cours de génération...</span>
                       <div className="jd-genNote">
                         La description sera enrichie automatiquement si le site source ne fournit pas assez de details.
                       </div>
                     </div>
                     <button className="btn btnPrimary jd-applyBtn" onClick={generateNow} disabled={aiBusy}>
-                      {aiBusy ? "Generation..." : "Generer maintenant"}
+                      {aiBusy ? "Génération..." : "Générer maintenant"}
                     </button>
                     {aiMsg && <div className="jd-aiMsg">{aiMsg}</div>}
                   </div>
@@ -597,7 +684,7 @@ export default function JobDetailsPage() {
               </div>
 
               {!desc.scrapedOk && !desc.aiOk && job.desc_last_error && (
-                <div className="jd-descHint">Derniere tentative: {job.desc_last_error}</div>
+                <div className="jd-descHint">Dernière tentative: {job.desc_last_error}</div>
               )}
 
               {!desc.scrapedOk && !desc.aiOk && applyLink && (
@@ -606,9 +693,21 @@ export default function JobDetailsPage() {
                 </a>
               )}
             </div>
+              </>
+            ) : (
+              <div className="jd-locked">
+                <div className="jd-lockedTitle">Accès complet</div>
+                <div className="jd-lockedText">{DETAILS_GATE_MESSAGE}</div>
+                <button className="btn btnPrimary" onClick={() => navigate("/pricing")}>
+                  Choisir ce pass
+                </button>
+              </div>
+            )}
           </section>
         )}
       </main>
     </div>
   );
 }
+
+

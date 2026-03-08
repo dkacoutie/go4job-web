@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
 import {
   buildGeoPreferences,
   buildJobHay,
   computeJobMatchScore,
-  formatMatchWhyTooltip,
   type GeoRemoteBreakdown,
+  type DataQualityBreakdown,
   type MatchWhySummary,
   type SkillsQualityBreakdown,
 } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
 import "./JobRadarFeedPage.css";
@@ -42,6 +43,7 @@ type MatchRow = {
   expOk: boolean;
   geoRemote: GeoRemoteBreakdown;
   skillsQuality: SkillsQualityBreakdown;
+  dataQuality: DataQualityBreakdown;
   why: MatchWhy;
 };
 
@@ -67,6 +69,70 @@ type JobRow = {
   optional_skills?: string[] | null;
   experience_years_min?: number | null;
   experience_years_max?: number | null;
+};
+
+type JoobleResult = {
+  id?: string | null;
+  title: string;
+  company?: string | null;
+  location?: string | null;
+  snippet?: string | null;
+  url: string;
+  salary?: string | null;
+  date?: string | null;
+  zone?: "africa" | "remote" | null;
+  closed?: boolean | null;
+};
+
+type JoobleResponse = {
+  ok: boolean;
+  source: string;
+  query?: Record<string, unknown>;
+  results?: JoobleResult[];
+  filter?: { applied?: boolean; fallback?: boolean; preset?: string | null };
+  meta?: { total?: number | null; page?: number | null; size?: number | null };
+  cache?: "hit" | "miss";
+  error?: string;
+  message?: string;
+};
+
+type ExternalCheckResponse = {
+  ok: boolean;
+  closed?: boolean;
+  reason?: string;
+  error?: string;
+};
+
+type AdzunaResult = {
+  external_id?: string | null;
+  title: string;
+  company?: string | null;
+  location?: string | null;
+  snippet?: string | null;
+  url: string;
+  created?: string | null;
+  salary_min?: number | null;
+  salary_max?: number | null;
+  source?: string | null;
+};
+
+type AdzunaResponse = {
+  ok: boolean;
+  source: string;
+  query?: Record<string, unknown>;
+  results?: AdzunaResult[];
+  meta?: { total?: number | null; page?: number | null; size?: number | null; fallback?: boolean };
+  cache?: "hit" | "miss";
+  error?: string;
+  message?: string;
+};
+
+type ImportExternalResponse = {
+  ok: boolean;
+  status?: "imported" | "duplicate" | "quarantined" | "rejected_geo" | string;
+  job_id?: string | null;
+  message?: string;
+  error?: string;
 };
 
 type CvSaveResponse = {
@@ -129,10 +195,363 @@ function normalizeText(input: string) {
     .trim();
 }
 
+function formatExternalDate(raw?: string | null) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function canonicalizeUrl(raw: string) {
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.trim());
+    url.hash = "";
+    const params = new URLSearchParams(url.search);
+    const drop = [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "gclid",
+      "fbclid",
+      "igshid",
+      "mc_cid",
+      "mc_eid",
+      "ref",
+      "source",
+      "closedjob",
+    ];
+    for (const key of Array.from(params.keys())) {
+      if (drop.includes(key.toLowerCase()) || key.toLowerCase().startsWith("utm_")) {
+        params.delete(key);
+      }
+    }
+    url.search = params.toString();
+    const out = url.toString();
+    return out.endsWith("/") ? out.slice(0, -1) : out;
+  } catch {
+    return raw.trim();
+  }
+}
+
+function hasClosedJobParam(raw?: string | null) {
+  if (!raw) return false;
+  try {
+    const url = new URL(raw.trim());
+    for (const [key, value] of url.searchParams.entries()) {
+      if (key.toLowerCase() === "closedjob") {
+        const v = value.toLowerCase();
+        return v === "true" || v === "1" || v === "yes";
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return /closedjob\s*=\s*true/i.test(raw);
+}
+
+function stripClosedJobParam(raw?: string | null) {
+  if (!raw) return "";
+  try {
+    const url = new URL(raw.trim());
+    const params = new URLSearchParams(url.search);
+    for (const key of Array.from(params.keys())) {
+      if (key.toLowerCase() === "closedjob") params.delete(key);
+    }
+    url.search = params.toString();
+    return url.toString();
+  } catch {
+    return raw.trim();
+  }
+}
+
+function dedupeJooble(items: JoobleResult[]) {
+  const seen = new Set<string>();
+  const out: JoobleResult[] = [];
+  for (const item of items) {
+    const urlKey = canonicalizeUrl(item.url);
+    const titleKey = normalizeText(item.title || "");
+    const companyKey = normalizeText(item.company || "");
+    const key = urlKey || `${titleKey}|${companyKey}`;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function getRelevanceLabel(score: number) {
+  if (score >= 70) return "Très pertinent";
+  return "Pour toi";
+}
+
+const WHY_MAX_LEN = 72;
+
+function collapseSpaces(input: string) {
+  return (input ?? "").replace(/\s+/g, " ").trim();
+}
+
+function keyify(input: string) {
+  return normalizeText(canonicalizeText(input)).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function humanizeAlertKeyword(input: string) {
+  const key = keyify(input);
+  if (!key) return input;
+  if (key === "ngo" || key === "ong" || ((key.includes("ngo") || key.includes("ong")) && (key.includes("programme") || key.includes("program")))) {
+    return "ONG / programmes";
+  }
+  if (key.includes("monitoring") || key.includes("evaluation") || key.includes("m e") || key.includes("suivi evaluation")) {
+    return "suivi-évaluation";
+  }
+  if ((key.includes("administration") || key.includes("admin")) && (key.includes("operation") || key.includes("operations") || key.includes("ops"))) {
+    return "administration / opérations";
+  }
+  if (key.includes("data") && (key.includes("analyse") || key.includes("analytics") || key.includes("analyst"))) {
+    return "data / analyse";
+  }
+  if (key === "data" || key === "analyse" || key === "analysis") return "data / analyse";
+  return input;
+}
+
+function humanizeSkillLabel(input: string) {
+  const key = keyify(input);
+  if (!key) return input;
+  if (key.includes("analyse des ecarts")) return "analyse des écarts";
+  if (key.includes("parties prenantes")) return "gestion des parties prenantes";
+  if (key.includes("appel d offres") || key.includes("appels d offres")) return "appels d’offres";
+  if (key.includes("gestion budgetaire")) return "gestion budgétaire";
+  if (key.includes("tresorerie")) return "gestion de trésorerie";
+  if (key.includes("coordination de projets") || key.includes("coordination projet")) return "coordination de projets";
+  if (key.includes("reporting financier")) return "reporting financier";
+  if (key.includes("excel")) return "excel avancé";
+  if (key.includes("powerpoint")) return "powerpoint";
+  if (key.includes("sap")) return "SAP";
+  if (key.includes("fournisseurs")) return "gestion des fournisseurs";
+  if (key.includes("achats") || key.includes("approvisionnements")) return "achats / approvisionnements";
+  if (key.includes("pilotage financier") || key.includes("suivi de performance")) return "pilotage financier";
+  if (key.includes("conformite") || key.includes("compliance") || key.includes("audit")) return "conformité & audits";
+  if (key.includes("management d equipe") || key.includes("management d equipes") || key.includes("team management")) {
+    return "management d’équipe";
+  }
+  return input;
+}
+
+function shortenValue(value: string, maxLen: number) {
+  const cleaned = collapseSpaces(value);
+  if (cleaned.length <= maxLen) return cleaned;
+  const separators = [" / ", " - ", " | ", ", "];
+  for (const sep of separators) {
+    if (cleaned.includes(sep)) {
+      const part = cleaned.split(sep)[0]?.trim();
+      if (part && part.length <= maxLen) return part;
+    }
+  }
+  const cut = cleaned.slice(0, maxLen + 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace >= Math.max(10, maxLen - 12)) return cut.slice(0, lastSpace).trim() + "…";
+  return cleaned.slice(0, maxLen).trim() + "…";
+}
+
+function fitReason(prefix: string, value?: string | null, suffix = "") {
+  if (!value) return null;
+  const base = collapseSpaces(value);
+  if (!base) return null;
+  const budget = Math.max(12, WHY_MAX_LEN - prefix.length - suffix.length - 2);
+  const trimmed = shortenValue(base, budget);
+  const out = `${prefix} ${trimmed}${suffix}`.trim();
+  return out.length <= WHY_MAX_LEN ? out : null;
+}
+
+function cleanCvLabel(label: string) {
+  const cleaned = collapseSpaces(label.replace(/\s*\((titre|desc|titre\+desc)\)\s*$/i, ""));
+  return humanizeSkillLabel(cleaned);
+}
+
+function labelRemoteType(raw?: string | null) {
+  const rt = (raw ?? "").toLowerCase();
+  if (!rt) return null;
+  if (rt.includes("remote")) return "remote";
+  if (rt.includes("hybrid") || rt.includes("hybride")) return "hybride";
+  if (rt.includes("site") || rt.includes("office") || rt.includes("présentiel") || rt.includes("presentiel")) return "sur site";
+  return rt.trim();
+}
+
+function pickLocationLabel(job: JobRow) {
+  const remote = labelRemoteType(job.remote_type);
+  if (remote) return remote;
+  const loc = collapseSpaces(job.location ?? "");
+  if (loc && loc.length > 2) return loc;
+  const country = collapseSpaces(job.country ?? "");
+  if (country && country.length > 2) return country;
+  return null;
+}
+
+function pickAlertKeyword(why: MatchWhy, alertDisplay: Map<string, string>) {
+  const matched = why.details?.breakdown?.alert?.matched_keywords ?? [];
+  for (const key of matched) {
+    const display = alertDisplay.get(key) ?? alertDisplay.get(norm(canonicalizeText(key)));
+    if (display) return humanizeAlertKeyword(display);
+  }
+  for (const key of why.alert) {
+    const display = alertDisplay.get(key) ?? alertDisplay.get(norm(canonicalizeText(key)));
+    if (display) return humanizeAlertKeyword(display);
+  }
+  return null;
+}
+
+function buildWhyReasons(params: {
+  job: JobRow;
+  why: MatchWhy;
+  expOk: boolean;
+  geoRemote: GeoRemoteBreakdown;
+  alertDisplay: Map<string, string>;
+}) {
+  const reasons: string[] = [];
+  const used = new Set<string>();
+  const add = (text: string | null) => {
+    if (!text || reasons.length >= 2) return;
+    const t = collapseSpaces(text);
+    if (!t || used.has(t)) return;
+    used.add(t);
+    reasons.push(t);
+  };
+
+  const alertKeyword = pickAlertKeyword(params.why, params.alertDisplay);
+  add(fitReason("Correspond à ton alerte", alertKeyword));
+
+  if (reasons.length < 2 && params.geoRemote.considered && params.geoRemote.points_awarded > 0) {
+    const loc = pickLocationLabel(params.job);
+    add(fitReason("Compatible avec ta recherche de postes en", loc));
+  }
+
+  if (reasons.length < 2) {
+    const cvLabel = params.why.cv.map(cleanCvLabel).find(Boolean) ?? null;
+    add(fitReason("Compétences en", cvLabel, " proches du besoin"));
+  }
+
+  if (reasons.length < 2 && params.expOk) {
+    const func = collapseSpaces(params.job.title ?? "");
+    add(fitReason("Missions cohérentes avec ton expérience", func || null));
+  }
+
+  const domain = params.why.details?.breakdown?.domain;
+  if (reasons.length < 2 && domain?.job_domain && domain.profile_domains?.includes(domain.job_domain)) {
+    add("Secteur aligné avec ton profil");
+  }
+
+  if (!reasons.length) {
+    add("Profil compatible avec cette offre");
+  }
+
+  return reasons.slice(0, 2);
+}
+
 const STOP_WORDS = new Set([
-  "de","des","du","la","le","les","un","une","et","en","a","à","au","aux","pour","avec","sans","sur","dans","chez","ou",
-  "the","a","an","and","or","for","with","without","in","on","at","to","from",
-  "remote","remotely","hybrid","freelance","intern","internship","stage","alternance","junior","senior",
+  "de",
+  "des",
+  "du",
+  "la",
+  "le",
+  "les",
+  "un",
+  "une",
+  "et",
+  "en",
+  "a",
+  "à",
+  "au",
+  "aux",
+  "pour",
+  "avec",
+  "sans",
+  "sur",
+  "dans",
+  "chez",
+  "ou",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "for",
+  "with",
+  "without",
+  "in",
+  "on",
+  "at",
+  "to",
+  "from",
+  "remote",
+  "remotely",
+  "hybrid",
+  "freelance",
+  "intern",
+  "internship",
+  "stage",
+  "alternance",
+  "junior",
+  "senior",
+]);
+
+const AFRICA_COUNTRIES = new Set([
+  "DZ",
+  "AO",
+  "BJ",
+  "BW",
+  "BF",
+  "BI",
+  "CM",
+  "CV",
+  "CF",
+  "TD",
+  "KM",
+  "CG",
+  "CD",
+  "CI",
+  "DJ",
+  "EG",
+  "GQ",
+  "ER",
+  "SZ",
+  "ET",
+  "GA",
+  "GM",
+  "GH",
+  "GN",
+  "GW",
+  "KE",
+  "LS",
+  "LR",
+  "LY",
+  "MG",
+  "MW",
+  "ML",
+  "MR",
+  "MU",
+  "MA",
+  "MZ",
+  "NA",
+  "NE",
+  "NG",
+  "RW",
+  "ST",
+  "SN",
+  "SC",
+  "SL",
+  "SO",
+  "ZA",
+  "SS",
+  "SD",
+  "TZ",
+  "TG",
+  "TN",
+  "UG",
+  "EH",
+  "ZM",
+  "ZW",
 ]);
 
 function extractKeywordsFromAlertName(name: string): string[] {
@@ -152,11 +571,31 @@ function extractKeywordsFromAlertName(name: string): string[] {
   return uniq([phrase, ...tokens]).slice(0, 5);
 }
 
+function isRemoteLike(value: string) {
+  const v = normalizeText(value);
+  return (
+    v.includes("remote") ||
+    v.includes("teletravail") ||
+    v.includes("hybrid") ||
+    v.includes("hybride") ||
+    v.includes("full remote") ||
+    v.includes("100% remote") ||
+    v.includes("global") ||
+    v.includes("worldwide")
+  );
+}
 
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
+  const { hasActivePass, isLoadingPass } = usePass();
   const userId = session?.user?.id ?? null;
+
+  const FEED_PREVIEW_LIMIT = 4;
+  const FEED_GATE_MESSAGE = "Active ton accès JobRadar pour voir toutes tes offres recommandées.";
+  const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";
+  const allowPremium = hasActivePass && !isLoadingPass;
+  const isPreview = !allowPremium;
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
@@ -168,8 +607,13 @@ export default function JobRadarFeedPage() {
 
   const [q, setQ] = useState("");
 
-  const [matchMode, setMatchMode] = useState<"strict" | "large">("strict");
-  const STRICT_MIN_PERCENT = 70;
+  const [matchMode, setMatchMode] = useState<"strict" | "large" | "jooble" | "adzuna">("strict");
+  const STRICT_MIN_PERCENT = Number(import.meta.env.VITE_TOPMATCH_MIN ?? 55);
+  const TOP_MATCH_MIN = 70;
+  const TOP_MATCH_DQ_MIN = 0.6;
+  const MIN_FOR_YOU = 25;
+  const [onlyVeryRelevant, setOnlyVeryRelevant] = useState(false);
+  const [showTopMatchHelp, setShowTopMatchHelp] = useState(false);
 
   const [appStatusByJobId, setAppStatusByJobId] = useState<Map<string, ApplicationStatus>>(new Map());
   const [addingJobId, setAddingJobId] = useState<string | null>(null);
@@ -185,6 +629,51 @@ export default function JobRadarFeedPage() {
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  const JOOBLE_PAGE_SIZE = 20;
+  const JOOBLE_AUTO_MIN = 6;
+  const JOOBLE_AUTO_MAX_PAGES = 2;
+  const [jooblePreset, setJooblePreset] = useState<"wa_fr" | "central_fr" | "all_africa_fr">("all_africa_fr");
+  const [joobleResults, setJoobleResults] = useState<JoobleResult[]>([]);
+  const [joobleMeta, setJoobleMeta] = useState<{ total?: number | null; page?: number | null }>({});
+  const [jooblePage, setJooblePage] = useState(1);
+  const [joobleHasMore, setJoobleHasMore] = useState(true);
+  const [joobleLoading, setJoobleLoading] = useState(false);
+  const [joobleError, setJoobleError] = useState<string | null>(null);
+  const [joobleInfo, setJoobleInfo] = useState<string | null>(null);
+  const [joobleAutoPages, setJoobleAutoPages] = useState(0);
+  const [joobleClosedNotice, setJoobleClosedNotice] = useState<{
+    title?: string | null;
+    url: string;
+    jobId?: string | null;
+  } | null>(null);
+
+  const ADZUNA_PAGE_SIZE = 20;
+  const ADZUNA_AUTO_MIN = 6;
+  const ADZUNA_AUTO_MAX_PAGES = 2;
+  const [adzunaPreset, setAdzunaPreset] = useState<"wa_fr" | "central_fr" | "all_africa_fr">("all_africa_fr");
+  const [adzunaResults, setAdzunaResults] = useState<AdzunaResult[]>([]);
+  const [adzunaMeta, setAdzunaMeta] = useState<{ total?: number | null; page?: number | null }>({});
+  const [adzunaPage, setAdzunaPage] = useState(1);
+  const [adzunaHasMore, setAdzunaHasMore] = useState(true);
+  const [adzunaLoading, setAdzunaLoading] = useState(false);
+  const [adzunaError, setAdzunaError] = useState<string | null>(null);
+  const [adzunaAutoPages, setAdzunaAutoPages] = useState(0);
+  const [externalImporting, setExternalImporting] = useState<Record<string, boolean>>({});
+  const [externalImports, setExternalImports] = useState<Record<string, { status: string; jobId?: string }>>({});
+
+  function dedupeAdzuna(items: AdzunaResult[]) {
+    const seen = new Set<string>();
+    const out: AdzunaResult[] = [];
+    for (const item of items) {
+      const urlKey = canonicalizeUrl(item.url);
+      const key = urlKey || `${normalizeText(item.title || "")}|${normalizeText(item.company || "")}`;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+    return out;
+  }
 
   function scrollToResults() {
     const el = document.getElementById("jr-results");
@@ -222,12 +711,29 @@ export default function JobRadarFeedPage() {
 
   const KEYWORDS_MAX_UNIQ = 60;
   const KEYWORDS_CAP = 20;
-  const CV_SKILLS_CAP = 40;
+  const CV_SKILLS_CAP = 14;
 
   const alertKeywords = useMemo(() => {
     const fromKeywords = alerts.flatMap((a) => a.keywords ?? []);
     const fromNames = alerts.flatMap((a) => extractKeywordsFromAlertName(a.name ?? ""));
     return uniq([...fromKeywords, ...fromNames]).slice(0, KEYWORDS_MAX_UNIQ);
+  }, [alerts]);
+
+  const alertDisplayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const rawList = [
+      ...alerts.flatMap((a) => a.keywords ?? []),
+      ...alerts.flatMap((a) => (a.name ? [a.name] : [])),
+      ...alerts.flatMap((a) => extractKeywordsFromAlertName(a.name ?? "")),
+    ];
+    for (const raw of rawList) {
+      const cleaned = collapseSpaces(String(raw ?? ""));
+      if (!cleaned) continue;
+      const key = norm(canonicalizeText(cleaned));
+      if (!key || map.has(key)) continue;
+      map.set(key, humanizeAlertKeyword(cleaned));
+    }
+    return map;
   }, [alerts]);
 
   const cappedAlertKeywords = useMemo(() => alertKeywords.slice(0, KEYWORDS_CAP), [alertKeywords]);
@@ -269,6 +775,7 @@ export default function JobRadarFeedPage() {
       )
       .eq("is_active", true)
       .eq("is_expired", false)
+      .or("quality_status.eq.ok,quality_status.is.null")
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("scraped_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false })
@@ -323,6 +830,7 @@ export default function JobRadarFeedPage() {
           .select("experience_years")
           .eq("user_id", userId)
           .maybeSingle();
+
         if (pErr) {
           setProfileExp(null);
         } else {
@@ -398,9 +906,177 @@ export default function JobRadarFeedPage() {
     if (!loading && session && userId) load();
   }, [loading, session, userId, load]);
 
+  useEffect(() => {
+    if (matchMode !== "strict" || !onlyVeryRelevant) {
+      setShowTopMatchHelp(false);
+    }
+  }, [matchMode, onlyVeryRelevant]);
+
+  useEffect(() => {
+    if (matchMode !== "jooble") {
+      setJoobleClosedNotice(null);
+    }
+  }, [matchMode]);
+
+  const fetchJooble = useCallback(
+    async (page: number, reset = false) => {
+      const keywords = q.trim() || "emploi";
+      setJoobleLoading(true);
+      setJoobleError(null);
+
+      try {
+        const { data, error } = await supabase.functions.invoke<JoobleResponse>("jooble_search", {
+          body: {
+            keywords,
+            preset: jooblePreset,
+            page,
+            size: JOOBLE_PAGE_SIZE,
+          },
+        });
+
+        if (error) throw error;
+        if (!data?.ok) throw new Error(data?.message || data?.error || "Recherche Jooble indisponible");
+
+        const next = dedupeJooble(
+          (data?.results ?? []).map((j) => ({
+            ...j,
+            url: stripClosedJobParam(j.url),
+          }))
+        );
+        setJoobleInfo(data?.message ?? null);
+        setJoobleMeta({ total: data?.meta?.total ?? null, page });
+        setJoobleHasMore(
+          typeof data?.meta?.total === "number"
+            ? page * JOOBLE_PAGE_SIZE < (data.meta.total ?? 0)
+            : next.length >= JOOBLE_PAGE_SIZE
+        );
+
+        setJoobleResults((prev) => (reset ? next : dedupeJooble([...prev, ...next])));
+      } catch (e: unknown) {
+        setJoobleError(getErrorMessage(e) ?? "Recherche Jooble indisponible");
+      } finally {
+        setJoobleLoading(false);
+      }
+    },
+    [JOOBLE_PAGE_SIZE, jooblePreset, q]
+  );
+
+  useEffect(() => {
+    if (matchMode !== "jooble") return;
+    const timer = setTimeout(() => {
+      setJooblePage(1);
+      setJoobleAutoPages(0);
+      fetchJooble(1, true);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [matchMode, q, jooblePreset, fetchJooble]);
+
+  const fetchAdzuna = useCallback(
+    async (page: number, reset = false) => {
+      const keywords = q.trim() || "emploi";
+      setAdzunaLoading(true);
+      setAdzunaError(null);
+
+      try {
+        const { data, error } = await supabase.functions.invoke<AdzunaResponse>("adzuna_search", {
+          body: {
+            keywords,
+            preset: adzunaPreset,
+            page,
+            size: ADZUNA_PAGE_SIZE,
+          },
+        });
+
+        if (error) throw error;
+        if (!data?.ok) throw new Error(data?.message || data?.error || "Recherche Adzuna indisponible");
+
+        const next = dedupeAdzuna(data?.results ?? []);
+        setAdzunaMeta({ total: data?.meta?.total ?? null, page });
+        setAdzunaHasMore(
+          typeof data?.meta?.total === "number"
+            ? page * ADZUNA_PAGE_SIZE < (data.meta.total ?? 0)
+            : next.length >= ADZUNA_PAGE_SIZE
+        );
+
+        setAdzunaResults((prev) => (reset ? next : dedupeAdzuna([...prev, ...next])));
+      } catch (e: unknown) {
+        setAdzunaError(getErrorMessage(e) ?? "Recherche Adzuna indisponible");
+      } finally {
+        setAdzunaLoading(false);
+      }
+    },
+    [ADZUNA_PAGE_SIZE, adzunaPreset, q]
+  );
+
+  useEffect(() => {
+    if (matchMode !== "adzuna") return;
+    const timer = setTimeout(() => {
+      setAdzunaPage(1);
+      setAdzunaAutoPages(0);
+      fetchAdzuna(1, true);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [matchMode, q, adzunaPreset, fetchAdzuna]);
+
+  useEffect(() => {
+    if (matchMode !== "jooble") return;
+    if (joobleLoading) return;
+    if (!joobleHasMore) return;
+    if (joobleResults.length >= JOOBLE_AUTO_MIN) return;
+    if (joobleAutoPages >= JOOBLE_AUTO_MAX_PAGES) return;
+
+    setJoobleAutoPages((prev) => prev + 1);
+    loadMoreJooble();
+  }, [
+    matchMode,
+    joobleLoading,
+    joobleHasMore,
+    joobleResults.length,
+    joobleAutoPages,
+    JOOBLE_AUTO_MIN,
+    JOOBLE_AUTO_MAX_PAGES,
+  ]);
+
+  useEffect(() => {
+    if (matchMode !== "adzuna") return;
+    if (adzunaLoading) return;
+    if (!adzunaHasMore) return;
+    if (adzunaResults.length >= ADZUNA_AUTO_MIN) return;
+    if (adzunaAutoPages >= ADZUNA_AUTO_MAX_PAGES) return;
+
+    setAdzunaAutoPages((prev) => prev + 1);
+    loadMoreAdzuna();
+  }, [
+    matchMode,
+    adzunaLoading,
+    adzunaHasMore,
+    adzunaResults.length,
+    adzunaAutoPages,
+    ADZUNA_AUTO_MIN,
+    ADZUNA_AUTO_MAX_PAGES,
+  ]);
+
+  async function loadMoreAdzuna() {
+    if (adzunaLoading || !adzunaHasMore) return;
+    const nextPage = adzunaPage + 1;
+    setAdzunaPage(nextPage);
+    await fetchAdzuna(nextPage, false);
+  }
+
+  async function loadMoreJooble() {
+    if (joobleLoading || !joobleHasMore) return;
+    const nextPage = jooblePage + 1;
+    setJooblePage(nextPage);
+    await fetchJooble(nextPage, false);
+  }
+
   async function addToApplications(jobId: string) {
     if (!userId) {
       navigate("/auth", { replace: true });
+      return;
+    }
+    if (!allowPremium) {
+      pushToast({ kind: "error", title: "Accès requis", message: STANDARD_GATE_MESSAGE });
       return;
     }
     if (appStatusByJobId.has(jobId)) return;
@@ -465,13 +1141,13 @@ export default function JobRadarFeedPage() {
 
   const matches = useMemo(() => {
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
-    const kwCv = uniq(cvKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
+    const kwCv = uniq(cvKeywords.map((k) => String(k ?? "").trim()).filter(Boolean));
     const kwCount = kwAlerts.length + kwCv.length;
     const effectiveExp = cvExp ?? (profileExp != null ? { min: profileExp, max: profileExp } : null);
 
     const qCanon = norm(canonicalizeText(q));
 
-    const exploreMatches = jobs
+    const baseRows = jobs
       .map((job): MatchRow | null => {
         const hay = buildJobHay(job);
         if (qCanon && !hay.includes(qCanon)) return null;
@@ -483,7 +1159,7 @@ export default function JobRadarFeedPage() {
           cvExp: effectiveExp,
           geoPrefs,
           hay,
-          maxShown: 2,
+          maxShown: 5,
           topMatchThreshold: STRICT_MIN_PERCENT,
         });
 
@@ -496,10 +1172,13 @@ export default function JobRadarFeedPage() {
           expOk: scored.expOk,
           geoRemote: scored.geoRemote,
           skillsQuality: scored.skillsQuality,
+          dataQuality: scored.dataQuality,
           why: scored.why,
         };
       })
-      .filter((x): x is MatchRow => Boolean(x))
+      .filter((x): x is MatchRow => Boolean(x));
+
+    const forYouRows = baseRows
       .filter((x) =>
         x.signalCount
           ? x.s >= 1 || x.expOk || x.geoRemote.points_awarded > 0 || x.skillsQuality.points_awarded > 0
@@ -514,6 +1193,7 @@ export default function JobRadarFeedPage() {
 
         return geoPrefs.allowedCountries.has(jc);
       })
+      .filter((x) => x.p >= MIN_FOR_YOU)
       .filter((x) => !appStatusByJobId.has(x.job.id))
       .filter((x) => !dismissedJobIds.has(x.job.id))
       .sort((a, b) => {
@@ -522,9 +1202,30 @@ export default function JobRadarFeedPage() {
         return getJobTimeMs(b.job) - getJobTimeMs(a.job);
       });
 
-    const topMatches = exploreMatches.filter((x) => x.p >= STRICT_MIN_PERCENT);
+    const isExplorerRelevant = (job: JobRow) => {
+      const country = (job.country ?? "").trim().toUpperCase();
+      const inAfrica = AFRICA_COUNTRIES.has(country);
+      const geoHit = !geoPrefs.allowAllCountries && geoPrefs.allowedCountries.has(country);
+      const remoteHit = isRemoteLike(`${job.remote_type ?? ""} ${job.location ?? ""}`);
+      return remoteHit || inAfrica || geoHit;
+    };
 
-    return { topMatches, exploreMatches, kwCount };
+    const explorerRows = baseRows
+      .filter((x) => !appStatusByJobId.has(x.job.id))
+      .filter((x) => !dismissedJobIds.has(x.job.id))
+      .sort((a, b) => {
+        const aRel = isExplorerRelevant(a.job) ? 1 : 0;
+        const bRel = isExplorerRelevant(b.job) ? 1 : 0;
+        if (bRel !== aRel) return bRel - aRel;
+        if (b.p !== a.p) return b.p - a.p;
+        return getJobTimeMs(b.job) - getJobTimeMs(a.job);
+      });
+
+    const topMatches = forYouRows.filter(
+      (x) => x.p >= TOP_MATCH_MIN && (x.dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN
+    );
+
+    return { topMatches, exploreMatches: explorerRows, forYouRows, kwCount };
   }, [
     jobs,
     cappedAlertKeywords,
@@ -536,19 +1237,202 @@ export default function JobRadarFeedPage() {
     appStatusByJobId,
     dismissedJobIds,
     STRICT_MIN_PERCENT,
+    TOP_MATCH_MIN,
+    TOP_MATCH_DQ_MIN,
+    MIN_FOR_YOU,
   ]);
 
-  useEffect(() => {
-    if (matchMode === "strict" && matches.topMatches.length === 0) {
-      setMatchMode("large");
-    }
-  }, [matchMode, matches.topMatches.length]);
+  const forYouRows = matches.forYouRows.filter((row) => {
+    if (!onlyVeryRelevant) return true;
+    return row.p >= TOP_MATCH_MIN;
+  });
 
-  const displayed = matchMode === "strict" ? matches.topMatches : matches.exploreMatches;
+  const displayed = matchMode === "strict" ? forYouRows : matches.exploreMatches;
+  const joobleDisplayed = joobleResults;
+  const displayedLimited = isPreview ? displayed.slice(0, FEED_PREVIEW_LIMIT) : displayed;
+  const joobleLimited = isPreview ? joobleDisplayed.slice(0, FEED_PREVIEW_LIMIT) : joobleDisplayed;
+  const adzunaLimited = isPreview ? adzunaResults.slice(0, FEED_PREVIEW_LIMIT) : adzunaResults;
+  const showGateOnDisplayed = isPreview && displayed.length > FEED_PREVIEW_LIMIT;
+  const showGateOnJooble = isPreview && joobleDisplayed.length > FEED_PREVIEW_LIMIT;
+  const showGateOnAdzuna = isPreview && adzunaResults.length > FEED_PREVIEW_LIMIT;
+  const getExternalKey = (url: string) => canonicalizeUrl(url) || url;
   const openJob = (jobId: string, payload?: Record<string, unknown>) => {
     if (payload) trackJobRadarEvent("job_open", payload);
     navigate(`/jobradar/jobs/${jobId}`);
   };
+
+  const isJoobleClosed = useCallback(
+    (job: JoobleResult) => Boolean(job.closed) || hasClosedJobParam(job.url),
+    []
+  );
+
+  const archiveImportedApplication = useCallback(
+    async (jobId?: string | null) => {
+      if (!userId || !jobId) return;
+      const archivedAt = new Date().toISOString();
+      const { error } = await supabase
+        .from("applications")
+        .update({
+          status: "expired",
+          archived_at: archivedAt,
+          error_message: "Offre expirée ou indisponible",
+        })
+        .eq("user_id", userId)
+        .eq("job_id", jobId);
+
+      if (error) {
+        if (import.meta.env?.DEV) {
+          console.warn("[JobRadar] archive application failed", error);
+        }
+        return;
+      }
+
+      setAppStatusByJobId((prev) => {
+        const next = new Map(prev);
+        next.set(jobId, "failed");
+        return next;
+      });
+    },
+    [userId]
+  );
+
+  const dismissJoobleJob = useCallback((url: string) => {
+    const target = stripClosedJobParam(url);
+    setJoobleResults((prev) => prev.filter((j) => stripClosedJobParam(j.url) !== target));
+  }, []);
+
+  const handleJoobleOpen = useCallback(
+    async (job: JoobleResult, jobId?: string | null) => {
+      if (isJoobleClosed(job)) {
+        const closedUrl = stripClosedJobParam(job.url);
+        setJoobleClosedNotice({ title: job.title, url: closedUrl, jobId });
+        dismissJoobleJob(closedUrl);
+        await archiveImportedApplication(jobId);
+        return;
+      }
+
+      const safeUrl = stripClosedJobParam(job.url);
+      if (!safeUrl) return;
+
+      let didOpen = false;
+      const openNow = () => {
+        if (didOpen) return;
+        didOpen = true;
+        trackJobRadarEvent("jooble_open", { url: safeUrl });
+        window.open(safeUrl, "_blank", "noopener,noreferrer");
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        openNow();
+      }, 1200);
+
+      let closed = false;
+      try {
+        const { data, error } = await supabase.functions.invoke<ExternalCheckResponse>("check_external_job", {
+          body: { url: safeUrl, source: "jooble" },
+        });
+        if (!error && data?.ok && data?.closed) {
+          closed = true;
+        }
+      } catch {
+        // ignore check failures
+      }
+
+      window.clearTimeout(timeoutId);
+
+      if (closed) {
+        setJoobleClosedNotice({ title: job.title, url: safeUrl, jobId });
+        dismissJoobleJob(safeUrl);
+        await archiveImportedApplication(jobId);
+        return;
+      }
+
+      openNow();
+    },
+    [archiveImportedApplication, dismissJoobleJob, isJoobleClosed]
+  );
+
+  const importExternalJob = useCallback(
+    async (source: "jooble" | "adzuna", job: JoobleResult | AdzunaResult) => {
+      if (source === "jooble" && isJoobleClosed(job as JoobleResult)) {
+        const j = job as JoobleResult;
+        setJoobleClosedNotice({ title: j.title, url: j.url });
+        return;
+      }
+
+      const key = getExternalKey(job.url);
+      if (!key) return;
+
+      if (externalImporting[key]) return;
+      setExternalImporting((prev) => ({ ...prev, [key]: true }));
+
+      try {
+        const externalId =
+          source === "jooble"
+            ? (job as JoobleResult).id?.toString()
+            : (job as AdzunaResult).external_id ?? undefined;
+
+        const payload = {
+          source,
+          external_id: externalId ?? undefined,
+          url: stripClosedJobParam(job.url) || job.url,
+          title: job.title,
+          company: job.company ?? null,
+          location: job.location ?? null,
+          snippet: job.snippet ?? null,
+          raw: job,
+        };
+
+        const { data, error } = await supabase.functions.invoke<ImportExternalResponse>("import_external_job", {
+          body: payload,
+        });
+        if (error) throw error;
+        if (!data?.ok) throw new Error(data?.message || data?.error || "Import impossible");
+
+        const status = data?.status ?? "imported";
+        const jobId = data?.job_id ?? undefined;
+
+        if (status === "imported" || status === "duplicate" || status === "quarantined") {
+          setExternalImports((prev) => ({
+            ...prev,
+            [key]: { status, jobId: jobId ?? undefined },
+          }));
+        }
+
+        if (status === "imported") {
+          pushToast({
+            kind: "success",
+            title: "Importée",
+            message: "Elle apparaîtra dans “Pour toi” après analyse.",
+          });
+        } else if (status === "duplicate") {
+          pushToast({ kind: "info", title: "Déjà dans JobRadar" });
+        } else if (status === "quarantined") {
+          pushToast({
+            kind: "info",
+            title: "Importée mais non exploitable",
+            message: "Lien ou candidature manquant.",
+          });
+        } else if (status === "rejected_geo") {
+          pushToast({
+            kind: "info",
+            title: "Import limité Afrique/Remote",
+            message: data?.message ?? "Import limité Afrique/Remote pour garder JobRadar premium.",
+          });
+        } else {
+          pushToast({ kind: "info", title: "Import traité" });
+        }
+
+        trackJobRadarEvent("external_import", { source, status, url: job.url, job_id: jobId ?? null });
+      } catch (e) {
+        const msg = getErrorMessage(e) || "Import impossible";
+        pushToast({ kind: "error", title: "Import impossible", message: msg });
+      } finally {
+        setExternalImporting((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [externalImporting, pushToast, isJoobleClosed]
+  );
 
   const buildMatchEventPayload = useCallback(
     (row: MatchRow) => {
@@ -556,7 +1440,7 @@ export default function JobRadarFeedPage() {
       return {
         job_id: row.job.id,
         score: row.p,
-        is_top_match: row.p >= STRICT_MIN_PERCENT,
+        is_top_match: row.p >= TOP_MATCH_MIN && (row.dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN,
         matched_alert_count: details?.breakdown.alert.matched_count ?? 0,
         matched_cv_count: details?.breakdown.cv.matched_count ?? 0,
         exp_ok: details?.breakdown.experience.ok ?? false,
@@ -564,10 +1448,22 @@ export default function JobRadarFeedPage() {
         required_bonus_applied: (details?.breakdown.skills_quality.points_awarded ?? 0) > 0,
       };
     },
-    [STRICT_MIN_PERCENT]
+    [TOP_MATCH_MIN, TOP_MATCH_DQ_MIN]
   );
   const topCount = matches.topMatches.length;
+  const forYouCount = matches.forYouRows.length;
   const exploreCount = matches.exploreMatches.length;
+  const joobleCount = joobleResults.length;
+  const adzunaCount = adzunaResults.length;
+  const gateCard = (
+    <div className="jr-gateCard" role="group" aria-label="Accès premium JobRadar">
+      <div className="jr-gateTitle">Accès complet au feed</div>
+      <div className="jr-gateText">{FEED_GATE_MESSAGE}</div>
+      <button className="jrBtn jrBtnPrimary" type="button" onClick={() => navigate("/pricing")}>
+        Choisir ce pass
+      </button>
+    </div>
+  );
 
   return (
     <div className="jr-shell">
@@ -585,10 +1481,22 @@ export default function JobRadarFeedPage() {
                 {alerts.length} alerte{alerts.length > 1 ? "s" : ""} active{alerts.length > 1 ? "s" : ""}
               </span>
               <span className="jr-pillHero">
-                {displayed.length} offre{displayed.length > 1 ? "s" : ""}
+                {(matchMode === "jooble"
+                  ? joobleCount
+                  : matchMode === "adzuna"
+                  ? adzunaCount
+                  : displayed.length)}{" "}
+                offre
+                {(matchMode === "jooble"
+                  ? joobleCount
+                  : matchMode === "adzuna"
+                  ? adzunaCount
+                  : displayed.length) > 1
+                  ? "s"
+                  : ""}
               </span>
               <span className="jr-pillHero jr-pillStrong">
-                {topCount} top match{topCount > 1 ? "s" : ""}
+                {forYouCount} offre{forYouCount > 1 ? "s" : ""} pour toi
               </span>
             </div>
           </div>
@@ -605,7 +1513,7 @@ export default function JobRadarFeedPage() {
                 className="input"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Filtrer (ex: data analyst, react, project manager...)"
+                placeholder="Filtrer (ex. data analyst, react, project manager…)"
                 aria-label="Filtrer les offres"
               />
               {q ? (
@@ -621,13 +1529,13 @@ export default function JobRadarFeedPage() {
                 type="button"
                 onClick={() => {
                   setMatchMode("strict");
-                  trackJobRadarEvent("match_mode_select", { mode: "strict", topCount, exploreCount });
+                  trackJobRadarEvent("match_mode_select", { mode: "strict", forYouCount, exploreCount });
                 }}
-                disabled={busy || topCount === 0}
-                title={topCount === 0 ? "Aucun Top match pour l'instant" : "Offres les plus pertinentes pour toi"}
+                disabled={busy || forYouCount === 0}
+                title={forYouCount === 0 ? "Aucune offre pour l’instant" : "Offres les plus pertinentes pour toi"}
                 aria-pressed={matchMode === "strict"}
               >
-                Top matchs ({topCount})
+                Pour toi ({forYouCount})
               </button>
 
               <button
@@ -635,32 +1543,170 @@ export default function JobRadarFeedPage() {
                 type="button"
                 onClick={() => {
                   setMatchMode("large");
-                  trackJobRadarEvent("match_mode_select", { mode: "large", topCount, exploreCount });
+                  trackJobRadarEvent("match_mode_select", { mode: "large", forYouCount, exploreCount });
                 }}
                 disabled={busy}
-                title="Afficher plus d'opportunités"
+                title="Explorer les offres du moment"
                 aria-pressed={matchMode === "large"}
               >
                 Explorer ({exploreCount})
               </button>
+
+              <button
+                className={matchMode === "jooble" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                type="button"
+                onClick={() => {
+                  setMatchMode("jooble");
+                  trackJobRadarEvent("match_mode_select", { mode: "jooble" });
+                }}
+                disabled={busy}
+                title="Explorer via Jooble"
+                aria-pressed={matchMode === "jooble"}
+              >
+                Explorer (Jooble)
+              </button>
+
+              <button
+                className={matchMode === "adzuna" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                type="button"
+                onClick={() => {
+                  setMatchMode("adzuna");
+                  trackJobRadarEvent("match_mode_select", { mode: "adzuna" });
+                }}
+                disabled={busy}
+                title="Explorer via Adzuna"
+                aria-pressed={matchMode === "adzuna"}
+              >
+                Explorer (Adzuna)
+              </button>
             </div>
 
             <button className="jrBtn jrBtnOutline" onClick={load} disabled={busy} type="button">
-              {busy ? "Chargement..." : "Rafraîchir"}
+              {busy ? "Chargement…" : "Rafraîchir"}
             </button>
           </div>
 
           <div className="jr-subline">
             {matchMode === "strict"
-              ? `Top matchs : priorité à la pertinence (>= ${STRICT_MIN_PERCENT}%).`
-              : "Explorer : plus d'offres, critères moins stricts."}
+              ? "Pour toi : offres triées par pertinence."
+              : matchMode === "large"
+              ? "Explorer : sélection plus large, sans filtres trop stricts."
+              : matchMode === "jooble"
+              ? "Explorer (Jooble) : flux externe pour élargir le volume en Afrique."
+              : "Explorer (Adzuna) : flux externe pour élargir le volume en Afrique."}
           </div>
+
+          {matchMode === "strict" && (
+            <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                className={onlyVeryRelevant ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                type="button"
+                onClick={() => setOnlyVeryRelevant((v) => !v)}
+                disabled={busy}
+              >
+                Uniquement très pertinent
+              </button>
+            </div>
+          )}
+
+          {matchMode === "jooble" && (
+            <div className="jr-joobleBar">
+              <div className="jr-jooblePresets" role="tablist" aria-label="Zone Jooble">
+                <button
+                  className={jooblePreset === "wa_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setJooblePreset("wa_fr")}
+                >
+                  Afrique de l’Ouest
+                </button>
+                <button
+                  className={jooblePreset === "central_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setJooblePreset("central_fr")}
+                >
+                  Afrique centrale
+                </button>
+                <button
+                  className={jooblePreset === "all_africa_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setJooblePreset("all_africa_fr")}
+                >
+                  Afrique (FR)
+                </button>
+              </div>
+              <div className="jr-joobleMeta">
+                {joobleLoading
+                  ? "Recherche en cours…"
+                  : joobleMeta.total
+                  ? `${joobleResults.length} affichées · ≈ ${joobleMeta.total} bruts`
+                  : joobleResults.length
+                  ? `${joobleResults.length} affichées`
+                  : ""}
+                {joobleInfo ? ` · ${joobleInfo}` : ""}
+              </div>
+            </div>
+          )}
+
+          {matchMode === "adzuna" && (
+            <div className="jr-joobleBar">
+              <div className="jr-jooblePresets" role="tablist" aria-label="Zone Adzuna">
+                <button
+                  className={adzunaPreset === "wa_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setAdzunaPreset("wa_fr")}
+                >
+                  Afrique de l’Ouest
+                </button>
+                <button
+                  className={adzunaPreset === "central_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setAdzunaPreset("central_fr")}
+                >
+                  Afrique centrale
+                </button>
+                <button
+                  className={adzunaPreset === "all_africa_fr" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => setAdzunaPreset("all_africa_fr")}
+                >
+                  Afrique (FR)
+                </button>
+              </div>
+              <div className="jr-joobleMeta">
+                {adzunaLoading
+                  ? "Recherche en cours…"
+                  : adzunaMeta.total
+                  ? `${adzunaResults.length} affichées · ≈ ${adzunaMeta.total} bruts`
+                  : adzunaResults.length
+                  ? `${adzunaResults.length} affichées`
+                  : ""}
+              </div>
+            </div>
+          )}
         </section>
 
         {errorMsg && (
           <div className="jr-error">
             <div className="jr-errorText">Erreur : {errorMsg}</div>
             <button className="jrBtn jrBtnGhost" onClick={load} type="button">
+              Recharger les offres
+            </button>
+          </div>
+        )}
+
+        {matchMode === "jooble" && joobleError && joobleResults.length === 0 && (
+          <div className="jr-error">
+            <div className="jr-errorText">Erreur Jooble : {joobleError}</div>
+            <button className="jrBtn jrBtnGhost" onClick={() => fetchJooble(1, true)} type="button">
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {matchMode === "adzuna" && adzunaError && adzunaResults.length === 0 && (
+          <div className="jr-error">
+            <div className="jr-errorText">Erreur Adzuna : {adzunaError}</div>
+            <button className="jrBtn jrBtnGhost" onClick={() => fetchAdzuna(1, true)} type="button">
               Réessayer
             </button>
           </div>
@@ -677,19 +1723,85 @@ export default function JobRadarFeedPage() {
           </div>
         )}
 
-        {topCount === 0 && exploreCount > 0 && (
+        {matchMode === "jooble" && joobleClosedNotice && (
           <div style={{ marginTop: 12 }}>
             <NextStepCard
-              title="Aucun top match aujourd’hui"
-              message="Nous avons tout de même trouvé des opportunités à explorer. Ajoute ton CV ou complète ton profil pour améliorer la précision."
+              title="Offre indisponible"
+              message="Cette offre n’est plus disponible sur Jooble."
               primaryAction={{
-                label: "Voir les opportunités à explorer",
-                onClick: () => {
-                  setMatchMode("large");
+                label: "Voir des offres similaires",
+                onClick: async () => {
+                  setJoobleClosedNotice(null);
+                  await fetchJooble(1, true);
                   scrollToResults();
                 },
               }}
-              secondaryAction={{ label: "Améliorer mon profil", to: "/jobradar/profile" }}
+              secondaryAction={{
+                label: "Retirer de ma liste",
+                onClick: async () => {
+                  dismissJoobleJob(joobleClosedNotice.url);
+                  await archiveImportedApplication(joobleClosedNotice.jobId ?? null);
+                  setJoobleClosedNotice(null);
+                },
+              }}
+              tone="info"
+            />
+          </div>
+        )}
+
+        {matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && topCount === 0 && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title="Aucun Top match aujourd’hui"
+              message="On a trouvé des offres “Pour toi”, mais aucune n’atteint le niveau Top match (mode strict)."
+              primaryAction={{
+                label: "Voir Pour toi",
+                onClick: () => {
+                  setOnlyVeryRelevant(false);
+                  setShowTopMatchHelp(false);
+                  scrollToResults();
+                },
+              }}
+              secondaryAction={{
+                label: "Assouplir Top match",
+                onClick: () => setShowTopMatchHelp((prev) => !prev),
+              }}
+              tone="info"
+            />
+            {showTopMatchHelp && (
+              <div className="jr-topMatchPanel" role="note" aria-live="polite">
+                <div className="jr-topMatchPanelTitle">Top match = niveau strict</div>
+                <div className="jr-topMatchPanelText">
+                  Seuils actuels : score ≥ {TOP_MATCH_MIN} et dataQuality ≥ {TOP_MATCH_DQ_MIN}. Tu peux élargir pour voir
+                  plus d’offres.
+                </div>
+                <div className="jr-topMatchPanelActions">
+                  <button
+                    className="jrBtn jrBtnOutline"
+                    type="button"
+                    onClick={() => {
+                      setOnlyVeryRelevant(false);
+                      setShowTopMatchHelp(false);
+                      scrollToResults();
+                    }}
+                  >
+                    Top match : élargi
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && forYouRows.length === 0 && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title="Aucune offre très pertinente"
+              message="Désactive le filtre pour voir plus d’offres adaptées."
+              primaryAction={{
+                label: "Désactiver le filtre",
+                onClick: () => setOnlyVeryRelevant(false),
+              }}
               tone="info"
             />
           </div>
@@ -723,9 +1835,9 @@ export default function JobRadarFeedPage() {
                 </div>
               ))}
             </div>
-            <div className="sr-only">Chargement des offres...</div>
+            <div className="sr-only">Chargement des offres…</div>
           </div>
-        ) : alerts.length === 0 ? (
+        ) : alerts.length === 0 && matchMode !== "jooble" && matchMode !== "adzuna" ? (
           <EmptyState
             title="Tu n’as pas encore d’alerte"
             description="Crée une alerte pour activer le matching et recevoir des offres pertinentes."
@@ -733,78 +1845,243 @@ export default function JobRadarFeedPage() {
             secondaryAction={{ label: "Améliorer mon profil", to: "/jobradar/profile" }}
             tone="info"
           />
-        ) : displayed.length === 0 ? (
+        ) : matchMode !== "jooble" && displayed.length === 0 ? (
           <EmptyState
-            title="Aucune offre pour le moment"
-            description="Essaie d’élargir tes critères ou d’ajuster tes alertes."
-            primaryAction={{ label: "Ajuster mes alertes", to: "/jobradar/alerts" }}
-            secondaryAction={{ label: "Réessayer", onClick: () => load() }}
+            title="Aucune offre pour tes alertes aujourd’hui"
+            description="On n’a rien trouvé pour tes alertes aujourd’hui. Tu peux élargir tes critères ou explorer les offres du moment."
+            primaryAction={{ label: "Recharger les offres", onClick: () => load() }}
+            secondaryAction={{
+              label: "Voir Explorer (Afrique francophone)",
+              onClick: () => {
+                setMatchMode("large");
+                scrollToResults();
+              },
+            }}
+            tone="neutral"
+          />
+        ) : matchMode === "jooble" && joobleDisplayed.length === 0 && !joobleLoading ? (
+          <EmptyState
+            title="Aucun résultat Jooble pour l’instant"
+            description="Essaie un mot-clé plus large ou change de zone Afrique."
+            primaryAction={{ label: "Relancer la recherche", onClick: () => fetchJooble(1, true) }}
+            secondaryAction={{ label: "Revenir au feed", onClick: () => setMatchMode("large") }}
+            tone="neutral"
+          />
+        ) : matchMode === "adzuna" && adzunaResults.length === 0 && !adzunaLoading ? (
+          <EmptyState
+            title="Aucun résultat Adzuna pour l’instant"
+            description="Essaie un mot-clé plus large ou change de zone Afrique."
+            primaryAction={{ label: "Relancer la recherche", onClick: () => fetchAdzuna(1, true) }}
+            secondaryAction={{ label: "Revenir au feed", onClick: () => setMatchMode("large") }}
             tone="neutral"
           />
         ) : (
           <>
             <div className="jr-grid" id="jr-results">
-              {displayed.map((row) => {
-                const { job, p, signalCount, why } = row;
-                const eventPayload = buildMatchEventPayload(row);
-                const isAdding = addingJobId === job.id;
-                const isDismissing = dismissingJobId === job.id;
-                const scoreClass =
-                  p >= 80 ? "jr-score jr-scoreStrong" : p >= 60 ? "jr-score jr-scoreMid" : "jr-score";
+              {matchMode === "jooble" ? (
+                <>
+                  {joobleLimited.map((job) => {
+                    const importKey = getExternalKey(job.url);
+                    const importState = importKey ? externalImports[importKey] : undefined;
+                    const importBusy = importKey ? externalImporting[importKey] : false;
+                    const importStatus = importState?.status;
+                    const isClosed = isJoobleClosed(job);
+                    const importDisabled =
+                      importBusy || importStatus === "imported" || importStatus === "duplicate" || importStatus === "quarantined";
+                    const finalImportDisabled = importDisabled || isClosed;
+                    const dateLabel = formatExternalDate(job.date);
+                    const importLabel = importBusy
+                      ? "Import…"
+                      : importStatus === "duplicate"
+                      ? "Déjà importée"
+                      : importStatus === "quarantined"
+                      ? "Importée (non exploitable)"
+                      : importStatus === "imported"
+                      ? "Importée"
+                      : isClosed
+                      ? "Indisponible"
+                      : "Importer";
+                    return (
+                      <div className="jr-card" key={job.url} role="group">
+                        <div className="jr-cardTop">
+                          <div className="jr-title">{job.title ?? "—"}</div>
+                          <span className="jr-score jr-scoreSoft">Source : Jooble</span>
+                        </div>
+                        <div className="jr-meta">
+                          <span className="jr-company">{job.company ?? "—"}</span>
+                          <span className="jr-metaSep">•</span>
+                          <span className="jr-location">{job.location ?? "—"}</span>
+                        </div>
 
-                return (
-                  <div
-                    className="jr-card"
-                    key={job.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openJob(job.id, eventPayload)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        openJob(job.id, eventPayload);
-                      }
-                    }}
-                  >
+                        {job.snippet && <div className="jr-snippet">{job.snippet}</div>}
+
+                        <div className="jr-chips">
+                          {job.zone === "africa" && <span className="chip chipStrong">Zone : Afrique validée</span>}
+                          {job.zone === "remote" && <span className="chip chipSoft">Remote</span>}
+                          {job.salary && <span className="chip chipSoft">{job.salary}</span>}
+                          {dateLabel && <span className="chip chipSoft">Publié le {dateLabel}</span>}
+                        </div>
+
+                        <div className="jr-cardActions">
+                          <button
+                            className="jr-ctaSm"
+                            type="button"
+                            onClick={() => handleJoobleOpen(job, importState?.jobId ?? null)}
+                          >
+                            Voir l’offre
+                          </button>
+                          <button
+                            className="jr-ctaGhost"
+                            onClick={() => importExternalJob("jooble", job)}
+                            disabled={finalImportDisabled}
+                            type="button"
+                          >
+                            {importLabel}
+                          </button>
+                          {importState?.jobId && (
+                            <button
+                              className="jr-ctaGhost"
+                              onClick={() => openJob(importState.jobId!, { action: "external_view" })}
+                              type="button"
+                            >
+                              Voir dans JobRadar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {showGateOnJooble && gateCard}
+                </>
+              ) : matchMode === "adzuna" ? (
+                <>
+                  {adzunaLimited.map((job) => {
+                    const importKey = getExternalKey(job.url);
+                    const importState = importKey ? externalImports[importKey] : undefined;
+                    const importBusy = importKey ? externalImporting[importKey] : false;
+                    const importStatus = importState?.status;
+                    const importDisabled =
+                      importBusy || importStatus === "imported" || importStatus === "duplicate" || importStatus === "quarantined";
+                    const createdLabel = formatExternalDate(job.created);
+                    const importLabel = importBusy
+                      ? "Import…"
+                      : importStatus === "duplicate"
+                      ? "Déjà importée"
+                      : importStatus === "quarantined"
+                      ? "Importée (non exploitable)"
+                      : importStatus === "imported"
+                      ? "Importée"
+                      : "Importer";
+                    return (
+                      <div className="jr-card" key={job.url} role="group">
+                        <div className="jr-cardTop">
+                          <div className="jr-title">{job.title ?? "—"}</div>
+                          <span className="jr-score jr-scoreSoft">Source : Adzuna</span>
+                        </div>
+                        <div className="jr-meta">
+                          <span className="jr-company">{job.company ?? "—"}</span>
+                          <span className="jr-metaSep">•</span>
+                          <span className="jr-location">{job.location ?? "—"}</span>
+                        </div>
+
+                        {job.snippet && <div className="jr-snippet">{job.snippet}</div>}
+
+                        <div className="jr-chips">
+                          {(job.salary_min != null || job.salary_max != null) && (
+                            <span className="chip chipSoft">
+                              {job.salary_min ?? "—"} - {job.salary_max ?? "—"}
+                            </span>
+                          )}
+                          {createdLabel && <span className="chip chipSoft">Publié le {createdLabel}</span>}
+                        </div>
+
+                        <div className="jr-cardActions">
+                          <a
+                            className="jr-ctaSm"
+                            href={job.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => trackJobRadarEvent("adzuna_open", { url: job.url })}
+                          >
+                            Voir l’offre
+                          </a>
+                          <button
+                            className="jr-ctaGhost"
+                            onClick={() => importExternalJob("adzuna", job)}
+                            disabled={importDisabled}
+                            type="button"
+                          >
+                            {importLabel}
+                          </button>
+                          {importState?.jobId && (
+                            <button
+                              className="jr-ctaGhost"
+                              onClick={() => openJob(importState.jobId!, { action: "external_view" })}
+                              type="button"
+                            >
+                              Voir dans JobRadar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {showGateOnAdzuna && gateCard}
+                </>
+              ) : (
+                <>
+                  {displayedLimited.map((row) => {
+                  const { job, p, why, dataQuality } = row;
+                  const eventPayload = buildMatchEventPayload(row);
+                  const isAdding = addingJobId === job.id;
+                  const isDismissing = dismissingJobId === job.id;
+                const isTopMatch = p >= TOP_MATCH_MIN && (dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN;
+                const relevanceLabel = isTopMatch ? "Top match" : getRelevanceLabel(p);
+                const scoreClass = isTopMatch
+                  ? "jr-score jr-scoreStrong"
+                  : p >= 70
+                  ? "jr-score jr-scoreMid"
+                  : "jr-score";
+                const whyReasons = buildWhyReasons({
+                  job,
+                  why,
+                  expOk: row.expOk,
+                  geoRemote: row.geoRemote,
+                  alertDisplay: alertDisplayMap,
+                });
+                const locationLabel = [job.location ?? job.country, job.remote_type].filter(Boolean).join(" · ");
+
+                  return (
+                    <div
+                      className="jr-card"
+                      key={job.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openJob(job.id, eventPayload)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openJob(job.id, eventPayload);
+                        }
+                      }}
+                    >
                     <div className="jr-cardTop">
                       <div className="jr-title">{job.title ?? "—"}</div>
-                      <span className={scoreClass}>{signalCount ? `${p}% pertinent` : "—"}</span>
+                      <span className={scoreClass}>{relevanceLabel}</span>
                     </div>
                     <div className="jr-meta">
                       <span className="jr-company">{job.company_name ?? "—"}</span>
                       <span className="jr-metaSep">•</span>
-                      <span className="jr-location">{job.location ?? job.country ?? "—"}</span>
+                      <span className="jr-location">{locationLabel || "—"}</span>
                     </div>
 
-                    {signalCount && (why.alert.length > 0 || why.cv.length > 0 || why.tags.length > 0) ? (
-                      <div className="jr-why" title={formatMatchWhyTooltip(why.details)}>
-                        {why.alert.length > 0 && (
-                          <span className="jr-whyTag">
-                            Alertes: {why.alert.join(" · ")}
-                            {why.restAlert > 0 ? ` (+${why.restAlert})` : ""}
-                          </span>
-                        )}
-                        {why.cv.length > 0 && (
-                          <span className="jr-whyTag">
-                            CV: {why.cv.join(" · ")}
-                            {why.restCv > 0 ? ` (+${why.restCv})` : ""}
-                          </span>
-                        )}
-                        {why.tags.map((tag) => (
-                          <span className="jr-whyTag" key={tag}>
-                            {tag}
-                          </span>
+                    <div className="jr-whyBox">
+                      <div className="jr-whyTitle">Pourquoi pour toi</div>
+                      <ul className="jr-whyList">
+                        {whyReasons.map((reason) => (
+                          <li key={reason}>{reason}</li>
                         ))}
-
-                      </div>
-                    ) : null}
-
-                    <div className="jr-chips">
-                      {job.remote_type && <span className="chip chipStrong">{job.remote_type}</span>}
-                      {job.country && <span className="chip">{job.country}</span>}
-                      {job.experience_years_min != null && (
-                        <span className="chip chipSoft">Exp. {job.experience_years_min}+ ans</span>
-                      )}
+                      </ul>
                     </div>
 
                     <div className="jr-cardActions">
@@ -819,7 +2096,7 @@ export default function JobRadarFeedPage() {
                         title="Ajouter dans Mes candidatures (À postuler)"
                         type="button"
                       >
-                        {isAdding ? "Ajout..." : "Ajouter"}
+                        {isAdding ? "Ajout…" : "Ajouter"}
                       </button>
 
                       <div className="jr-footerActions">
@@ -831,7 +2108,7 @@ export default function JobRadarFeedPage() {
                           }}
                           type="button"
                         >
-                          Detail {"->"}
+                          Détail →
                         </button>
 
                         <button
@@ -845,26 +2122,45 @@ export default function JobRadarFeedPage() {
                           title="Masquer cette offre du feed"
                           type="button"
                         >
-                          {isDismissing ? "..." : "Decliner"}
+                          {isDismissing ? "…" : "Décliner"}
                         </button>
                       </div>
-
-
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-              {hasMore ? (
-                <button className="jrBtn jrBtnGhost" onClick={loadMore} disabled={loadingMore} type="button">
-                  {loadingMore ? "Chargement..." : "Charger plus"}
-                </button>
-              ) : (
-                <span style={{ opacity: 0.7, fontSize: 13 }}>Fin de la liste</span>
+                    </div>
+                  );
+                  })}
+                  {showGateOnDisplayed && gateCard}
+                </>
               )}
             </div>
+
+            {allowPremium && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                {matchMode === "jooble" ? (
+                  joobleHasMore ? (
+                    <button className="jrBtn jrBtnGhost" onClick={loadMoreJooble} disabled={joobleLoading} type="button">
+                      {joobleLoading ? "Chargement…" : "Charger plus"}
+                    </button>
+                  ) : (
+                    <span style={{ opacity: 0.7, fontSize: 13 }}>Fin de la liste</span>
+                  )
+                ) : matchMode === "adzuna" ? (
+                  adzunaHasMore ? (
+                    <button className="jrBtn jrBtnGhost" onClick={loadMoreAdzuna} disabled={adzunaLoading} type="button">
+                      {adzunaLoading ? "Chargement…" : "Charger plus"}
+                    </button>
+                  ) : (
+                    <span style={{ opacity: 0.7, fontSize: 13 }}>Fin de la liste</span>
+                  )
+                ) : hasMore ? (
+                  <button className="jrBtn jrBtnGhost" onClick={loadMore} disabled={loadingMore} type="button">
+                    {loadingMore ? "Chargement…" : "Charger plus"}
+                  </button>
+                ) : (
+                  <span style={{ opacity: 0.7, fontSize: 13 }}>Fin de la liste</span>
+                )}
+              </div>
+            )}
           </>
         )}
       </main>

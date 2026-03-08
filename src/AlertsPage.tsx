@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
@@ -269,6 +271,7 @@ function countriesLabel(codes: string[] | null | undefined, legacyCountry: strin
    Icons
 ========================= */
 function IconDots() {
+
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="5" cy="12" r="1.8"></circle>
@@ -303,7 +306,14 @@ function IconTrash() {
 export default function AlertsPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
+  const { hasActivePass, isLoadingPass } = usePass();
+  const ALERTS_GATE_MESSAGE = "Active ton accès JobRadar pour créer et gérer tes alertes.";
+  const allowPremium = hasActivePass && !isLoadingPass;
   const userId = session?.user?.id ?? null;
+  const MENU_WIDTH = 220;
+  const MENU_HEIGHT = 120;
+  const MENU_GAP = 8;
+  const MENU_PAD = 12;
 
   const [rows, setRows] = useState<AlertRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -326,11 +336,13 @@ export default function AlertsPage() {
 
   const [frequency, setFrequency] = useState<"instant" | "daily" | "weekly">("daily");
   const [chEmail, setChEmail] = useState(true);
-  const [chWhatsapp, setChWhatsapp] = useState(false);
-  const [chTelegram, setChTelegram] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
+  const menuAnchorRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const countActive = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
 
@@ -343,13 +355,17 @@ export default function AlertsPage() {
   useEffect(() => {
     function onDocDown(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
-      if (!target?.closest(".cardMenu")) setOpenCardMenuId(null);
+      if (menuRef.current && menuRef.current.contains(target)) return;
+      if (menuAnchorRef.current && menuAnchorRef.current.contains(target)) return;
+      setOpenCardMenuId(null);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpenCardMenuId(null);
-        setConfirmOpen(false);
-        setToDelete(null);
+        if (!deleteBusy) {
+          setConfirmOpen(false);
+          setToDelete(null);
+        }
       }
     }
     document.addEventListener("mousedown", onDocDown);
@@ -358,10 +374,33 @@ export default function AlertsPage() {
       document.removeEventListener("mousedown", onDocDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [deleteBusy]);
+
+  useEffect(() => {
+    if (!openCardMenuId) return;
+    const onScroll = () => setOpenCardMenuId(null);
+    const onResize = () => setOpenCardMenuId(null);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [openCardMenuId]);
+
+  useEffect(() => {
+    if (!openCardMenuId) {
+      menuAnchorRef.current = null;
+    }
+  }, [openCardMenuId]);
 
   async function fetchAlerts() {
     if (!userId) return;
+    if (!allowPremium) {
+      setRows([]);
+      setListLoading(false);
+      return;
+    }
 
     setErrorMsg(null);
     setListLoading(true);
@@ -387,7 +426,11 @@ export default function AlertsPage() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!loading && session && userId) {
+      if (!allowPremium && !isLoadingPass) {
+        setListLoading(false);
+        return;
+      }
+      if (!loading && session && userId && allowPremium) {
         await fetchAlerts();
         if (!alive) return;
       }
@@ -396,7 +439,7 @@ export default function AlertsPage() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, session, userId]);
+  }, [loading, session, userId, allowPremium, isLoadingPass]);
 
   useEffect(() => {
     const n = name.trim();
@@ -430,10 +473,14 @@ export default function AlertsPage() {
 
   async function createAlert() {
     if (!userId || busy) return;
+    if (!allowPremium) {
+      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
+      return;
+    }
 
     const n = name.trim();
     const kw = uniqClean(keywordsText.split(",").map((s) => s.trim()).filter(Boolean));
-    const channels = uniqClean([chEmail ? "email" : "", chWhatsapp ? "whatsapp" : "", chTelegram ? "telegram" : ""]).filter(Boolean);
+    const channels = uniqClean([chEmail ? "email" : ""]).filter(Boolean);
 
     // ✅ countries: null = Tous pays, sinon array
     const selectedCountries = uniqClean((countries ?? []).map((c) => c.trim()).filter(Boolean));
@@ -461,7 +508,7 @@ export default function AlertsPage() {
       return;
     }
     if (channels.length === 0) {
-      const msg = "Choisis au moins 1 canal (Email / WhatsApp / Telegram).";
+      const msg = "Choisis au moins un canal (Email).";
       setErrorMsg(msg);
       pushToast({ kind: "error", title: "Canal requis", message: msg });
       return;
@@ -512,14 +559,16 @@ export default function AlertsPage() {
 
     setFrequency("daily");
     setChEmail(true);
-    setChWhatsapp(false);
-    setChTelegram(false);
 
     fetchAlerts();
   }
 
   async function toggleActive(a: AlertRow) {
     if (!userId) return;
+    if (!allowPremium) {
+      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
+      return;
+    }
 
     const { error } = await supabase
       .from("alerts")
@@ -546,32 +595,81 @@ export default function AlertsPage() {
     setConfirmOpen(true);
   }
 
-  async function confirmDelete() {
-    if (!toDelete || !userId) return;
+  function openMenu(e: ReactMouseEvent<HTMLButtonElement>, alert: AlertRow) {
+    e.preventDefault();
+    e.stopPropagation();
 
-    setConfirmOpen(false);
+    if (openCardMenuId === alert.id) {
+      setOpenCardMenuId(null);
+      return;
+    }
+
+    const target = e.currentTarget as HTMLElement;
+    menuAnchorRef.current = target;
+    const rect = target.getBoundingClientRect();
+    const preferRight = rect.right + MENU_GAP + MENU_WIDTH <= window.innerWidth - MENU_PAD;
+    let left = preferRight ? rect.right + MENU_GAP : rect.left - MENU_GAP - MENU_WIDTH;
+    left = Math.max(MENU_PAD, Math.min(left, window.innerWidth - MENU_WIDTH - MENU_PAD));
+
+    let top = rect.top;
+    const maxTop = window.innerHeight - MENU_HEIGHT - MENU_PAD;
+    if (top > maxTop) top = Math.max(MENU_PAD, maxTop);
+
+    setMenuPos({ top, left });
+    setOpenCardMenuId(alert.id);
+  }
+
+  async function confirmDelete() {
+    if (!toDelete || !userId || deleteBusy) return;
+    if (!allowPremium) {
+      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
+      return;
+    }
+
+    setDeleteBusy(true);
     setOpenCardMenuId(null);
 
-    const { error } = await supabase
-      .from("alerts")
-      .delete()
-      .eq("id", toDelete.id)
-      .eq("user_id", userId);
+    let deleted = false;
+    let lastError: string | null = null;
 
-    if (error) {
-      setErrorMsg(error.message);
-      pushToast({ kind: "error", title: "Suppression impossible", message: error.message });
+    try {
+      const { error: directErr } = await supabase
+        .from("alerts")
+        .delete()
+        .eq("id", toDelete.id)
+        .eq("user_id", userId);
+
+      if (directErr) {
+        lastError = directErr.message;
+      } else {
+        deleted = true;
+      }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+
+    if (!deleted) {
+      const msg = lastError ?? "La suppression n?a pas ?t? confirm?e.";
+      setErrorMsg(msg);
+      pushToast({ kind: "error", title: "Suppression impossible", message: msg });
+      // eslint-disable-next-line no-console
+      console.error("[alerts] delete failed", lastError);
+      setDeleteBusy(false);
       return;
     }
 
     setRows((prev) => prev.filter((x) => x.id !== toDelete.id));
     pushToast({
       kind: "success",
-      title: "Alerte supprimée",
-      message: "Tu peux en créer une nouvelle quand tu veux.",
+      title: "Alerte supprim?e",
+      message: "Tu peux en cr?er une nouvelle quand tu veux.",
     });
+    setConfirmOpen(false);
     setToDelete(null);
+    setDeleteBusy(false);
   }
+
+  const openAlert = openCardMenuId ? rows.find((r) => r.id === openCardMenuId) ?? null : null;
 
   return (
     <div className="alerts-shell">
@@ -595,7 +693,18 @@ export default function AlertsPage() {
 
       {errorMsg && <div className="alerts-error">Erreur : {errorMsg}</div>}
 
-      <section className="alerts-card">
+      {!allowPremium ? (
+        <section className="alerts-locked">
+          <EmptyState
+            title="Accès aux alertes"
+            description={ALERTS_GATE_MESSAGE}
+            primaryAction={{ label: "Choisir ce pass", to: "/pricing" }}
+            tone="info"
+          />
+        </section>
+      ) : (
+        <>
+          <section className="alerts-card">
         <div className="alerts-cardHeader">
           <div>
             <div className="mutedTitle">CRÉER UNE ALERTE</div>
@@ -681,24 +790,16 @@ export default function AlertsPage() {
             <label className="check">
               <input type="checkbox" checked={chEmail} onChange={(e) => setChEmail(e.target.checked)} /> Email
             </label>
-
-            <label className="check">
-              <input type="checkbox" checked={chWhatsapp} onChange={(e) => setChWhatsapp(e.target.checked)} /> WhatsApp
-            </label>
-
-            <label className="check">
-              <input type="checkbox" checked={chTelegram} onChange={(e) => setChTelegram(e.target.checked)} /> Telegram
-            </label>
           </div>
 
-          <button className="btn btnPrimary btnWide" type="button" disabled={busy} onClick={createAlert}>
+          <button className="btn btnPrimary btnAlertCta" type="button" disabled={busy} onClick={createAlert}>
             {busy ? (
               <span className="btnInline">
                 <span className="spinner" aria-hidden="true" />
                 Création…
               </span>
             ) : (
-              "+ Créer une alerte"
+              "Créer l’alerte"
             )}
           </button>
         </div>
@@ -735,10 +836,11 @@ export default function AlertsPage() {
         ) : (
           <div className="listGrid">
             {rows.map((a) => {
+              const visibleChannels = (a.channels ?? []).filter((ch) => ch === "email");
               const line = [
                 countriesLabel(a.countries, a.country),
                 freqLabel(a.frequency),
-                (a.channels ?? []).map(channelLabel).join(", "),
+                visibleChannels.map(channelLabel).join(", "),
               ]
                 .filter(Boolean)
                 .join(" · ");
@@ -753,54 +855,9 @@ export default function AlertsPage() {
 
                     <div className="itemRight">
                       <div className={a.is_active ? "status on" : "status off"}>{a.is_active ? "Active" : "Pause"}</div>
-
-                      <details
-                        className="menu cardMenu"
-                        open={openCardMenuId === a.id}
-                        onToggle={(e) => {
-                          const isOpen = (e.currentTarget as HTMLDetailsElement).open;
-                          setOpenCardMenuId(isOpen ? a.id : null);
-                        }}
-                      >
-                        <summary
-                          className="iconBtn"
-                          aria-label="Actions"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setOpenCardMenuId((prev) => (prev === a.id ? null : a.id));
-                          }}
-                        >
-                          <IconDots />
-                        </summary>
-
-                        <div className="menuPanel" role="menu">
-                          <button
-                            type="button"
-                            className="menuItem"
-                            onClick={() => {
-                              setOpenCardMenuId(null);
-                              toggleActive(a);
-                            }}
-                          >
-                            <span className="menuIcon">{a.is_active ? <IconPause /> : <IconPlay />}</span>
-                            {a.is_active ? "Mettre en pause" : "Réactiver"}
-                          </button>
-
-                          <button
-                            type="button"
-                            className="menuItem danger"
-                            onClick={() => {
-                              setOpenCardMenuId(null);
-                              removeAlert(a);
-                            }}
-                          >
-                            <span className="menuIcon">
-                              <IconTrash />
-                            </span>
-                            Supprimer
-                          </button>
-                        </div>
-                      </details>
+                      <button className="iconBtn" aria-label="Actions" type="button" onClick={(e) => openMenu(e, a)}>
+                        <IconDots />
+                      </button>
                     </div>
                   </div>
 
@@ -823,7 +880,7 @@ export default function AlertsPage() {
                         <span className="chip">Tous pays</span>
                       )}
                       <span className="chip">{a.frequency}</span>
-                      <span className="chip">{(a.channels ?? []).join(" / ")}</span>
+                        {visibleChannels.length ? <span className="chip">{visibleChannels.map(channelLabel).join(" / ")}</span> : null}
                     </div>
                   </div>
                 </div>
@@ -833,21 +890,60 @@ export default function AlertsPage() {
         )}
       </section>
 
+      {openAlert && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="alerts-menu-popover"
+              role="menu"
+              ref={menuRef}
+              style={{ top: menuPos.top, left: menuPos.left }}
+            >
+              <button
+                type="button"
+                className="alerts-menuItem"
+                onClick={() => {
+                  setOpenCardMenuId(null);
+                  toggleActive(openAlert);
+                }}
+              >
+                <span className="menuIcon">{openAlert.is_active ? <IconPause /> : <IconPlay />}</span>
+                {openAlert.is_active ? "Mettre en pause" : "Réactiver"}
+              </button>
+              <button
+                type="button"
+                className="alerts-menuItem danger"
+                onClick={() => {
+                  setOpenCardMenuId(null);
+                  removeAlert(openAlert);
+                }}
+              >
+                <span className="menuIcon">
+                  <IconTrash />
+                </span>
+                Supprimer
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+
       {confirmOpen && (
         <div
           className="modalOverlay"
           onClick={() => {
+            if (deleteBusy) return;
             setConfirmOpen(false);
             setToDelete(null);
           }}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modalTitle">Supprimer cette alerte ?</div>
-            <div className="modalText">{toDelete?.name} sera supprimée définitivement.</div>
+            <div className="modalText">Cette action est d?finitive.</div>
 
             <div className="modalActions">
               <button
                 className="btn btnGhost"
+                disabled={deleteBusy}
                 onClick={() => {
                   setConfirmOpen(false);
                   setToDelete(null);
@@ -855,12 +951,14 @@ export default function AlertsPage() {
               >
                 Annuler
               </button>
-              <button className="btn btnDanger" onClick={confirmDelete}>
-                Supprimer
+              <button className="btn btnDanger" onClick={confirmDelete} disabled={deleteBusy}>
+                {deleteBusy ? "Suppression..." : "Supprimer"}
               </button>
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

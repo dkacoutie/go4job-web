@@ -100,6 +100,10 @@
   font-size: 13px;
 }
 
+.alerts-locked{
+  margin-top: 14px;
+}
+
 /* =========================================================
    Card: create alert
 ========================================================= */
@@ -440,6 +444,13 @@
 
 .btnWide{ width: 100%; }
 
+.btnAlertCta{
+  width: min(320px, 100%);
+  margin: 6px auto 0;
+  display: inline-flex;
+  justify-content: center;
+}
+
 .btnInline{
   display: inline-flex;
   align-items: center;
@@ -461,6 +472,45 @@
 .menu{ position: relative; z-index: 10; }
 .menu summary{ list-style: none; }
 .menu summary::-webkit-details-marker{ display:none; }
+
+.alerts-menu-popover{
+  position: fixed;
+  z-index: 60;
+  width: 220px;
+  background: rgba(255,255,255,0.98);
+  border: 1px solid rgba(15,23,42,0.12);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 18px 40px rgba(2,6,23,0.18);
+  display: grid;
+  gap: 4px;
+  backdrop-filter: blur(10px);
+}
+
+.alerts-menuItem{
+  width:100%;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 12px;
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  cursor:pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: rgba(15,23,42,0.92);
+  transition: background 120ms ease;
+  text-align: left;
+}
+.alerts-menuItem:hover{ background: rgba(2,6,23,0.04); }
+.alerts-menuItem:focus-visible{
+  outline: 2px solid rgba(59,130,246,0.6);
+  outline-offset: 1px;
+  background: rgba(59,130,246,0.08);
+}
+.alerts-menuItem.danger{ color: rgba(153,27,27,0.92); }
+.alerts-menuItem.danger:hover{ background: rgba(239,68,68,0.10); }
 
 .iconBtn{
   width: 34px;
@@ -586,6 +636,14 @@
   justify-content:flex-end;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.modalActions .btnDanger{
+  color: #fff !important;
+  -webkit-text-fill-color: #fff;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: 1px solid rgba(239,68,68,.55);
+  box-shadow: 0 18px 44px rgba(239,68,68,.20);
 }
 
 .btnDanger{
