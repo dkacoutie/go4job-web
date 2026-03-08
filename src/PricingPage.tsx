@@ -111,7 +111,7 @@ export default function PricingPage() {
   const loadData = async () => {
     setLoading(true);
     setErrorMsg(null);
-    setInfoMsg(null);
+    // keep infoMsg so success feedback survives the reload
 
     const { data: sData, error: sErr } = await supabase
       .from("billing_settings")
@@ -180,7 +180,9 @@ export default function PricingPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      const ctxMsg =
+        (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
+      setErrorMsg(ctxMsg || error.message);
     } else if (data?.ok) {
       setInfoMsg("Paiement validé. Ton pass est actif.");
       await loadData();
