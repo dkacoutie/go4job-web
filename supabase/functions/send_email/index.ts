@@ -56,6 +56,13 @@ serve(async (req) => {
     return json(400, { ok: false, error: "invalid_json" });
   }
 
+  const tag = (body.tag || "").trim();
+  const paystackSecret = cleanSecret(Deno.env.get("PAYSTACK_SECRET_KEY"));
+  const isPaystackTest = paystackSecret.startsWith("sk_test_");
+  if (tag === "billing_receipt" && isPaystackTest) {
+    return json(200, { ok: true, skipped: "paystack_test_mode" });
+  }
+
   const toList = normalizeToList(body.to);
   if (toList.length === 0) return json(400, { ok: false, error: "missing_to" });
 
