@@ -66,6 +66,8 @@ function formatPaymentStatus(status?: string | null) {
   switch (status) {
     case "paid":
       return { label: "Payé", tone: "success" };
+    case "paid_test":
+      return { label: "Payé (test)", tone: "success" };
     case "pending":
       return { label: "En attente", tone: "pending" };
     case "failed":
@@ -82,6 +84,7 @@ export default function SubscriptionPage() {
   const { session, loading } = useSession();
 
   const [currentPass, setCurrentPass] = useState<CurrentPass | null>(null);
+  const [isTestPass, setIsTestPass] = useState(false);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export default function SubscriptionPage() {
   const loadData = async () => {
     if (!session?.user) {
       setCurrentPass(null);
+      setIsTestPass(false);
       setPayments([]);
       setPageLoading(false);
       return;
@@ -110,6 +114,19 @@ export default function SubscriptionPage() {
 
     if (passErr) setErrorMsg(passErr.message);
     setCurrentPass((passData as CurrentPass) ?? null);
+
+    const nowIso = new Date().toISOString();
+    const { data: subData } = await supabase
+      .from("billing_subscriptions")
+      .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
+      .eq("user_id", session.user.id)
+      .eq("status", "active")
+      .gt("ends_at", nowIso)
+      .maybeSingle();
+    const testFlag =
+      (subData as any)?.source_payment?.status === "paid_test" ||
+      Boolean((subData as any)?.source_payment?.provider_payload?.test_mode);
+    setIsTestPass(Boolean(subData?.id) && testFlag);
 
     const { data: paymentsData, error: paymentsErr } = await supabase
       .from("billing_payments")
@@ -131,6 +148,8 @@ export default function SubscriptionPage() {
 
   const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
   const hasActivePass = Boolean(currentPass && currentPass.status === "active");
+  const passStatusDisplay =
+    isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
 
   const primaryCta = useMemo(
     () =>
@@ -168,7 +187,7 @@ export default function SubscriptionPage() {
             </div>
             {passStatus && (
               <span className={`subscription-pill subscription-pill--${passStatus.tone}`}>
-                {passStatus.label}
+                {passStatusDisplay}
               </span>
             )}
           </div>
@@ -194,7 +213,7 @@ export default function SubscriptionPage() {
               <div className="subscription-pass__grid">
                 <div className="subscription-pass__item">
                   <span>Statut</span>
-                  <strong>{passStatus?.label ?? "Actif"}</strong>
+                  <strong>{passStatusDisplay ?? "Actif"}</strong>
                 </div>
                 <div className="subscription-pass__item">
                   <span>Date d'activation</span>

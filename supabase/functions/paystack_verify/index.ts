@@ -117,7 +117,16 @@ Deno.serve(async (req) => {
     return json(200, { ok: true, status: "already_paid", subscription: sub || null });
   }
   if (payment.status === "paid_test") {
-    return json(200, { ok: true, status: "paid_test", activated: false });
+    if (hasActivePass) {
+      return json(200, { ok: true, status: "already_active", activated: false, test_mode: true });
+    }
+    const { data: sub, error: subErr } = await admin.rpc("activate_pass_from_payment", {
+      p_payment_id: payment.id,
+    });
+    if (subErr) {
+      return json(500, { ok: false, error: "activate_failed", message: subErr.message });
+    }
+    return json(200, { ok: true, status: "paid_test", subscription: sub || null, test_mode: true });
   }
 
   const resp = await fetch(
@@ -212,7 +221,19 @@ Deno.serve(async (req) => {
       })
       .eq("id", payment.id);
 
-    return json(200, { ok: true, status: "paid_test", activated: false });
+    if (hasActivePass) {
+      return json(200, { ok: true, status: "already_active", activated: false, test_mode: true });
+    }
+
+    const { data: sub, error: subErr } = await admin.rpc("activate_pass_from_payment", {
+      p_payment_id: payment.id,
+    });
+
+    if (subErr) {
+      return json(500, { ok: false, error: "activate_failed", message: subErr.message });
+    }
+
+    return json(200, { ok: true, status: "paid_test", subscription: sub || null, test_mode: true });
   }
 
   await admin

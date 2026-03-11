@@ -146,8 +146,14 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
           (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
         setErrorMsg(ctxMsg || error.message);
       } else if (data?.ok) {
-        if (data?.status === "paid_test" || data?.activated === false) {
-          setInfoMsg("Paiement test confirmé. Aucun accès n'a été activé.");
+        if (data?.status === "paid_test") {
+          setInfoMsg("Paiement test confirmé. Ton pass est actif (test).");
+          setShowPostCheckout(true);
+          await refreshPass();
+        } else if (data?.activated === false) {
+          setInfoMsg("Paiement confirmé. Ton pass est actif.");
+          setShowPostCheckout(true);
+          await refreshPass();
         } else {
           setInfoMsg("Paiement confirmé. Ton pass est actif.");
           setShowPostCheckout(true);

@@ -79,6 +79,7 @@ export default function PricingPage() {
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
   const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
+  const [isTestPass, setIsTestPass] = useState(false);
   const lastVerifiedRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
@@ -110,6 +111,19 @@ export default function PricingPage() {
         .maybeSingle();
       setCurrentPass((passData as CurrentPass) ?? null);
 
+      const nowIso = new Date().toISOString();
+      const { data: subData } = await supabase
+        .from("billing_subscriptions")
+        .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
+        .eq("user_id", session.user.id)
+        .eq("status", "active")
+        .gt("ends_at", nowIso)
+        .maybeSingle();
+      const testFlag =
+        (subData as any)?.source_payment?.status === "paid_test" ||
+        Boolean((subData as any)?.source_payment?.provider_payload?.test_mode);
+      setIsTestPass(Boolean(subData?.id) && testFlag);
+
       const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       const { data: recentTestPayment } = await supabase
         .from("billing_payments")
@@ -124,6 +138,7 @@ export default function PricingPage() {
     } else {
       setCurrentPass(null);
       setHasRecentTestPayment(false);
+      setIsTestPass(false);
     }
 
     setLoading(false);
@@ -164,8 +179,16 @@ export default function PricingPage() {
           (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
         setErrorMsg(ctxMsg || error.message);
       } else if (data?.ok) {
-        if (data?.status === "paid_test" || data?.activated === false) {
-          setInfoMsg("Paiement test confirme. Aucun acces n'a ete active.");
+        if (data?.status === "paid_test") {
+          setInfoMsg("Paiement test confirme. Ton pass est actif (test).");
+          setShowPostCheckout(true);
+          await loadData();
+          await refreshPass();
+        } else if (data?.activated === false) {
+          setInfoMsg("Paiement confirme. Ton pass est actif.");
+          setShowPostCheckout(true);
+          await loadData();
+          await refreshPass();
         } else {
           setInfoMsg("Paiement confirme. Ton pass est actif.");
           setShowPostCheckout(true);
@@ -203,7 +226,9 @@ export default function PricingPage() {
 
     if (currentPass && currentPass.status === "active") {
       setInfoMsg(
-        `Ton accès JobRadar est déjà actif jusqu’au ${formatDate(currentPass.ends_at)}.`
+        `Ton accès JobRadar est déjà actif${isTestPass ? " (test)" : ""} jusqu’au ${formatDate(
+          currentPass.ends_at
+        )}.`
       );
       setShowPostCheckout(true);
       return;
@@ -260,6 +285,8 @@ export default function PricingPage() {
   };
 
   const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
+  const passStatusDisplay =
+    isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
   const hasActivePass = Boolean(currentPass && currentPass.status === "active");
   const isBusy = isCheckingOut || isVerifying;
 
@@ -312,7 +339,8 @@ export default function PricingPage() {
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
-            Ton accès JobRadar est déjà actif jusqu’au <strong>{formatDate(currentPass.ends_at)}</strong>.
+            Ton accès JobRadar est déjà actif{isTestPass ? " (test)" : ""} jusqu’au{" "}
+            <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
@@ -447,7 +475,7 @@ export default function PricingPage() {
             <h2>Mon pass actuel</h2>
             {passStatus && (
               <span className={`pass-pill pass-pill--${passStatus.tone}`}>
-                {passStatus.label}
+                {passStatusDisplay}
               </span>
             )}
           </div>

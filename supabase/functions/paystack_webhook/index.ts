@@ -183,6 +183,23 @@ Deno.serve(async (req) => {
       })
       .eq("id", payment.id);
 
+    if (!hasActivePass) {
+      const { error: subErr } = await admin.rpc("activate_pass_from_payment", {
+        p_payment_id: payment.id,
+      });
+
+      if (subErr) {
+        console.error("paystack_webhook: activate failed (test)", subErr.message);
+        return new Response("activate_failed", { status: 500 });
+      }
+    } else {
+      await admin.from("billing_events").insert({
+        user_id: payment.user_id,
+        event_type: "paystack_webhook_paid_test_existing_pass",
+        payload: { reference, event },
+      });
+    }
+
     await admin.from("billing_events").insert({
       event_type: "paystack_webhook_paid_test",
       payload: { reference, event },
