@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
+import { PLAN_BENEFITS, PRICING_CURRENCIES, formatAmount, formatPaymentMethod } from "./lib/pricingHelpers";
 import "./PricingPage.css";
 
 type BillingSettings = {
@@ -38,47 +39,10 @@ type CurrentPass = {
   days_remaining: number;
 };
 
-const planBenefits: Record<string, string> = {
-  pass_7d: "Idéal pour découvrir JobRadar rapidement",
-  pass_30d: "Le plus équilibré pour une recherche active",
-  pass_90d: "Le meilleur format pour maximiser tes opportunités",
-};
-
-function formatAmount(amountMinor: number, currency: string) {
-  const frac = currency === "XOF" ? 0 : 2;
-  const amount = frac === 0 ? amountMinor : amountMinor / 100;
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: frac,
-      maximumFractionDigits: frac,
-    }).format(amount);
-  } catch {
-    return `${amount} ${currency}`;
-  }
-}
-
 function formatDate(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString("fr-FR");
-}
-
-function formatPaymentMethod(method?: string | null) {
-  if (!method) return "Tous moyens";
-  switch (method) {
-    case "mobile_money":
-      return "Mobile Money";
-    case "card":
-      return "Carte";
-    case "wallet":
-      return "Wallet";
-    case "bank_transfer":
-      return "Virement";
-    default:
-      return method.replaceAll("_", " ");
-  }
 }
 
 function formatPassStatus(status?: string | null) {
@@ -99,6 +63,10 @@ export default function PricingPage() {
   const { session } = useSession();
   const { refreshPass } = usePass();
 
+  const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
+  const paystackEnabled = Boolean(paystackPublicKey);
+  const isPaystackTest = paystackPublicKey.startsWith("pk_test_");
+
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [currentPass, setCurrentPass] = useState<CurrentPass | null>(null);
@@ -106,8 +74,11 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
+  const lastVerifiedRef = useRef<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -147,18 +118,61 @@ export default function PricingPage() {
     loadData();
   }, [session?.user?.id]);
 
+  useEffect(() => {
+    if (!session?.user) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const refFromUrl = params.get("reference") || params.get("trxref");
+    const refFromStorage = sessionStorage.getItem("paystack_ref");
+    const reference = refFromUrl || refFromStorage;
+
+    if (!reference) return;
+    if (lastVerifiedRef.current === reference) return;
+
+    lastVerifiedRef.current = reference;
+    if (refFromUrl) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    const runVerify = async () => {
+      setIsVerifying(true);
+      setInfoMsg("Verification du paiement en cours...");
+      setErrorMsg(null);
+      setShowPostCheckout(false);
+
+      const { data, error } = await supabase.functions.invoke("paystack_verify", {
+        body: { reference },
+      });
+
+      if (error) {
+        const ctxMsg =
+          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
+        setErrorMsg(ctxMsg || error.message);
+      } else if (data?.ok) {
+        if (data?.status === "paid_test" || data?.activated === false) {
+          setInfoMsg("Paiement test confirme. Aucun acces n'a ete active.");
+        } else {
+          setInfoMsg("Paiement confirme. Ton pass est actif.");
+          setShowPostCheckout(true);
+          await loadData();
+          await refreshPass();
+        }
+      } else {
+        setErrorMsg("Paiement non confirme. Aucun debit effectue.");
+      }
+
+      setIsVerifying(false);
+      sessionStorage.removeItem("paystack_ref");
+    };
+
+    runVerify();
+  }, [session?.user?.id]);
+
   const paymentsEnabled = settings?.payments_enabled !== false;
   const maintenanceMessage =
     settings?.maintenance_message || "Paiements temporairement indisponibles.";
 
-  const currencyOptions = useMemo(
-    () => [
-      { code: "XOF", label: "Afrique de l'Ouest (XOF)" },
-      { code: "USD", label: "International (USD)" },
-      { code: "EUR", label: "International (EUR)" },
-    ],
-    []
-  );
+  const currencyOptions = PRICING_CURRENCIES;
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
@@ -166,18 +180,30 @@ export default function PricingPage() {
       return;
     }
     if (!price) return;
+    if (!paystackEnabled) {
+      setErrorMsg("Paystack n'est pas configure sur le front.");
+      return;
+    }
+
+    if (currentPass && currentPass.status === "active") {
+      setInfoMsg(
+        `Ton accès JobRadar est déjà actif jusqu’au ${formatDate(currentPass.ends_at)}.`
+      );
+      setShowPostCheckout(true);
+      return;
+    }
 
     setBusyCode(plan.code);
+    setIsCheckingOut(true);
     setInfoMsg(null);
     setErrorMsg(null);
     setShowPostCheckout(false);
 
-    const { data, error } = await supabase.functions.invoke("billing_dev_checkout", {
+    const { data, error } = await supabase.functions.invoke("paystack_initialize", {
       body: {
         plan_code: plan.code,
         currency: price.currency,
         payment_method_type: price.payment_method_type ?? "any",
-        mode: "manual_dev",
       },
     });
 
@@ -185,19 +211,22 @@ export default function PricingPage() {
       const ctxMsg =
         (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
       setErrorMsg(ctxMsg || error.message);
-    } else if (data?.ok) {
-      setInfoMsg("Paiement validé. Ton pass est actif.");
-      setShowPostCheckout(true);
-      await loadData();
-      await refreshPass();
+    } else if (data?.ok && data?.authorization_url) {
+      if (data?.reference) {
+        sessionStorage.setItem("paystack_ref", data.reference as string);
+      }
+      setInfoMsg("Redirection vers Paystack...");
+      window.location.assign(data.authorization_url as string);
     } else {
-      setErrorMsg("Impossible de valider le paiement.");
+      setErrorMsg("Impossible d'initialiser le paiement Paystack.");
     }
-
     setBusyCode(null);
+    setIsCheckingOut(false);
   };
 
   const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
+  const hasActivePass = Boolean(currentPass && currentPass.status === "active");
+  const isBusy = isCheckingOut || isVerifying;
 
   return (
     <div className="pricing-shell">
@@ -217,6 +246,12 @@ export default function PricingPage() {
           <div className="pricing-banner">{maintenanceMessage}</div>
         )}
 
+        {isPaystackTest && (
+          <div className="pricing-info">Mode test Paystack actif. Aucun debit reel.</div>
+        )}
+        {!paystackEnabled && (
+          <div className="pricing-error">Paiement Paystack non configure.</div>
+        )}
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
         {showPostCheckout && (
@@ -231,10 +266,16 @@ export default function PricingPage() {
             <button
               type="button"
               className="pricing-success-actions__secondary"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/me/subscription")}
             >
-              Aller au dashboard
+              Voir mon abonnement
             </button>
+          </div>
+        )}
+
+        {hasActivePass && currentPass && (
+          <div className="pricing-info">
+            Ton accès JobRadar est déjà actif jusqu’au <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
@@ -270,7 +311,8 @@ export default function PricingPage() {
 
               const planActive = plan.is_active;
               const priceActive = price?.is_active ?? false;
-              const canBuy = paymentsEnabled && planActive && priceActive;
+              const canBuy =
+                paymentsEnabled && planActive && priceActive && !hasActivePass && paystackEnabled;
 
               let availability = "Disponible";
               let availabilityTone = "available";
@@ -283,7 +325,7 @@ export default function PricingPage() {
               }
 
               const isFeatured = plan.code === "pass_90d";
-              const benefit = planBenefits[plan.code] ?? "Le bon équilibre";
+              const benefit = PLAN_BENEFITS[plan.code] ?? "Le bon équilibre";
 
               return (
                 <div
@@ -321,10 +363,12 @@ export default function PricingPage() {
                   <button
                     type="button"
                     className="pricing-card__cta"
-                    disabled={!canBuy || busyCode === plan.code}
+                    disabled={!canBuy || busyCode === plan.code || isBusy}
                     onClick={() => onBuy(plan, price)}
                   >
-                    Choisir ce pass
+                    {busyCode === plan.code || isBusy
+                      ? "Traitement en cours…"
+                      : "Payer avec Paystack"}
                   </button>
                 </div>
               );
@@ -401,3 +445,4 @@ export default function PricingPage() {
     </div>
   );
 }
+

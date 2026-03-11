@@ -432,3 +432,6 @@ verify_jwt = false
 
 [functions.contact_submit]
 verify_jwt = false
+
+[functions.paystack_webhook]
+verify_jwt = false
