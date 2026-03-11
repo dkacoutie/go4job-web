@@ -57,6 +57,7 @@ export default function AppNav() {
     () => [
       { label: "Mon CV", path: "/me/cv" },
       { label: "Mon profil", path: "/jobradar/profile" },
+      { label: "Mon abonnement", path: "/me/subscription" },
     ],
     []
   );

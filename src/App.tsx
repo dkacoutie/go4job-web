@@ -20,6 +20,7 @@ import JobRadarFeedPage from "./JobRadarFeedPage";
 import JobDetailsPage from "./JobDetailsPage";
 
 import MyCvPage from "./MyCvPage";
+import SubscriptionPage from "./SubscriptionPage";
 import ThanksPage from "./ThanksPage";
 import PrivacyPage from "./PrivacyPage";
 import TermsPage from "./TermsPage";
@@ -127,6 +128,7 @@ export default function App() {
 
             {/* CV */}
             <Route path="/me/cv" element={<MyCvPage />} />
+            <Route path="/me/subscription" element={<SubscriptionPage />} />
 
             {/* JobRadar */}
             <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />

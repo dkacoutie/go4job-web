@@ -1,0 +1,337 @@
+﻿.subscription-shell {
+  min-height: 100vh;
+  background: #f4f7fb;
+  color: #0d1324;
+  font-family: "Source Sans 3", "Work Sans", "Manrope", "Helvetica Neue", sans-serif;
+  --jr-ink-900: #0b1324;
+  --jr-ink-700: #1a2b4a;
+  --jr-gold-600: #d4b15e;
+  --jr-gold-100: #f6edd6;
+  --jr-slate-100: #eef2f7;
+  --jr-slate-200: #d7e0ee;
+  --jr-slate-400: #94a3b8;
+}
+
+.subscription-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(140deg, #142f63 0%, #1d4a99 52%, #2b64c9 100%);
+  color: #ffffff;
+  padding: 44px 24px 54px;
+}
+
+.subscription-hero::after {
+  content: "";
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  top: -120px;
+  right: -140px;
+  background: radial-gradient(
+    circle,
+    rgba(247, 220, 143, 0.2) 0%,
+    rgba(247, 220, 143, 0) 72%
+  );
+  pointer-events: none;
+}
+
+.subscription-hero__inner {
+  max-width: 980px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.subscription-hero__kicker {
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+.subscription-hero h1 {
+  margin: 0 0 10px 0;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-family: "Libre Baskerville", "Cormorant Garamond", "Times New Roman", serif;
+}
+
+.subscription-hero p {
+  margin: 0 0 18px;
+  opacity: 0.95;
+  max-width: 520px;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.subscription-hero__cta {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+}
+
+.subscription-main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 26px 24px 64px;
+  display: grid;
+  gap: 18px;
+}
+
+.subscription-card {
+  background: #ffffff;
+  border: 1px solid var(--jr-slate-200);
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 12px 26px rgba(20, 35, 80, 0.08);
+}
+
+.subscription-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.subscription-card__head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.subscription-card__sub {
+  margin: 6px 0 0;
+  color: #5b667a;
+  font-size: 13.5px;
+}
+
+.subscription-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
+  color: #5b667a;
+}
+
+.subscription-pill--active {
+  background: #e8f3ea;
+  color: #2f6b4e;
+}
+
+.subscription-pill--expired {
+  background: #f6e2e2;
+  color: #9a2937;
+}
+
+.subscription-pill--neutral {
+  background: #eef2f7;
+  color: #5b667a;
+}
+
+.subscription-pass {
+  border: 1px solid var(--jr-slate-200);
+  border-radius: 16px;
+  padding: 16px;
+  background: var(--jr-slate-100);
+  display: grid;
+  gap: 14px;
+}
+
+.subscription-pass__title {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.subscription-pass__grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.subscription-pass__item {
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  color: #5b667a;
+}
+
+.subscription-pass__item strong {
+  color: #0b1324;
+  font-weight: 700;
+}
+
+.subscription-empty {
+  display: grid;
+  gap: 10px;
+  color: #5b667a;
+  font-size: 14.5px;
+}
+
+.subscription-empty__title {
+  font-weight: 700;
+  color: #0b1324;
+}
+
+.subscription-empty__text {
+  color: #5b667a;
+  font-size: 13.5px;
+}
+
+.subscription-plans {
+  margin-top: 16px;
+}
+
+.subscription-payments {
+  display: grid;
+  gap: 10px;
+}
+
+.subscription-payments__head,
+.subscription-payments__row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 1fr 1fr 1.4fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.subscription-payments__head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6b7280;
+  padding: 0 6px;
+}
+
+.subscription-payments__row {
+  border: 1px solid var(--jr-slate-200);
+  border-radius: 14px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.subscription-payments__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #0b1324;
+}
+
+.subscription-payments__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9aa3b2;
+  display: none;
+}
+
+.subscription-payments__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.subscription-payments__currency {
+  font-size: 11px;
+  color: #7a8796;
+  font-weight: 700;
+}
+
+.subscription-payments__ref {
+  font-family: "Source Code Pro", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  color: #5b667a;
+  word-break: break-all;
+}
+
+.subscription-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
+  color: #5b667a;
+  width: fit-content;
+}
+
+.subscription-status--success {
+  background: #e8f4f0;
+  color: #2f6b4e;
+}
+
+.subscription-status--pending {
+  background: #fff7e6;
+  color: #7a4e14;
+}
+
+.subscription-status--danger {
+  background: #f6e2e2;
+  color: #9a2937;
+}
+
+.subscription-status--neutral {
+  background: #eef2f7;
+  color: #5b667a;
+}
+
+.subscription-error {
+  border: 1px solid #f3c2c8;
+  border-radius: 14px;
+  padding: 12px 16px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 14px;
+}
+
+.subscription-loading {
+  padding: 16px 0;
+  color: #5b667a;
+}
+
+@media (max-width: 860px) {
+  .subscription-payments__head {
+    display: none;
+  }
+
+  .subscription-payments__row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .subscription-payments__cell {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .subscription-payments__label {
+    display: block;
+  }
+}
+
+@media (max-width: 720px) {
+  .subscription-hero {
+    padding: 52px 20px 60px;
+  }
+
+  .subscription-hero h1 {
+    font-size: 32px;
+  }
+
+  .subscription-main {
+    padding: 24px 20px 48px;
+  }
+
+  .subscription-card__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

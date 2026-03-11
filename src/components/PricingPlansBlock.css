@@ -1,0 +1,51 @@
+﻿.pricing-embed {
+  --jr-ink-900: #0b1324;
+  --jr-ink-800: #12203a;
+  --jr-ink-700: #1a2b4a;
+  --jr-gold-600: #d4b15e;
+  --jr-gold-500: #e1c06f;
+  --jr-gold-100: #f6edd6;
+  --jr-slate-100: #eef2f7;
+  --jr-slate-200: #d7e0ee;
+  --jr-slate-400: #94a3b8;
+  color: #0d1324;
+  font-family: "Source Sans 3", "Work Sans", "Manrope", "Helvetica Neue", sans-serif;
+}
+
+.pricing-embed__head {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.pricing-embed__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--jr-ink-900);
+}
+
+.pricing-embed__sub {
+  font-size: 13.5px;
+  color: #5b667a;
+  line-height: 1.6;
+}
+
+.pricing-embed .pricing-currency {
+  margin: 10px 0 18px;
+}
+
+.pricing-embed .pricing-grid {
+  margin-bottom: 0;
+}
+
+.pricing-embed .pricing-card {
+  box-shadow: 0 12px 26px rgba(20, 35, 80, 0.1);
+}
+
+.pricing-embed .pricing-card:hover {
+  transform: translateY(-3px);
+}
+
+.pricing-embed .pricing-success-actions {
+  margin: 6px 0 12px;
+}
