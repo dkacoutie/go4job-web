@@ -37,6 +37,12 @@ function normalizeStatus(status: string | null | undefined) {
   return s;
 }
 
+function paystackAmount(amountMinor: number, currency: string) {
+  const upper = (currency || "").toUpperCase();
+  if (upper === "XOF" || upper === "XAF") return amountMinor * 100;
+  return amountMinor;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { ok: false, error: "method_not_allowed" });
@@ -124,7 +130,8 @@ Deno.serve(async (req) => {
   const amount = typeof tx?.amount === "number" ? tx.amount : null;
   const currency = (tx?.currency ?? "").toString();
 
-  if (amount !== null && amount !== payment.amount_minor) {
+  const expectedAmount = paystackAmount(payment.amount_minor, payment.currency);
+  if (amount !== null && amount !== expectedAmount) {
     await admin
       .from("billing_payments")
       .update({

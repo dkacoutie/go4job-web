@@ -44,6 +44,12 @@ function buildReference(planCode: string) {
   return `g4j_${planCode}_${suffix}`;
 }
 
+function paystackAmount(amountMinor: number, currency: string) {
+  const upper = (currency || "").toUpperCase();
+  if (upper === "XOF" || upper === "XAF") return amountMinor * 100;
+  return amountMinor;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { ok: false, error: "method_not_allowed" });
@@ -182,7 +188,7 @@ Deno.serve(async (req) => {
 
   const initPayload = {
     email: userEmail,
-    amount: payment.amount_minor,
+    amount: paystackAmount(payment.amount_minor, payment.currency),
     currency: payment.currency,
     reference,
     callback_url: callbackUrl,

@@ -38,6 +38,12 @@ async function hmacSha512Hex(secret: string, payload: string) {
     .join("");
 }
 
+function paystackAmount(amountMinor: number, currency: string) {
+  const upper = (currency || "").toUpperCase();
+  if (upper === "XOF" || upper === "XAF") return amountMinor * 100;
+  return amountMinor;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("method_not_allowed", { status: 405 });
 
@@ -108,7 +114,8 @@ Deno.serve(async (req) => {
   const amount = typeof data?.amount === "number" ? data.amount : null;
   const currency = (data?.currency || "").toString();
 
-  if (amount !== null && amount !== payment.amount_minor) {
+  const expectedAmount = paystackAmount(payment.amount_minor, payment.currency);
+  if (amount !== null && amount !== expectedAmount) {
     await admin
       .from("billing_payments")
       .update({
