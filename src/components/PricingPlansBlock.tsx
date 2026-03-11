@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useSession } from "../lib/useSession";
@@ -43,6 +43,10 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   const { session } = useSession();
   const { refreshPass, hasActivePass } = usePass();
 
+  const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
+  const paystackEnabled = Boolean(paystackPublicKey);
+  const isPaystackTest = paystackPublicKey.startsWith("pk_test_");
+
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [currency, setCurrency] = useState<"XOF" | "USD" | "EUR">("XOF");
@@ -50,8 +54,10 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
+  const lastVerifiedRef = useRef<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -80,10 +86,60 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!session?.user) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const refFromUrl = params.get("reference") || params.get("trxref");
+    const refFromStorage = sessionStorage.getItem("paystack_ref");
+    const reference = refFromUrl || refFromStorage;
+
+    if (!reference) return;
+    if (lastVerifiedRef.current === reference) return;
+
+    lastVerifiedRef.current = reference;
+    if (refFromUrl) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    const runVerify = async () => {
+      setIsVerifying(true);
+      setInfoMsg("Vérification du paiement en cours...");
+      setErrorMsg(null);
+      setShowPostCheckout(false);
+
+      const { data, error } = await supabase.functions.invoke("paystack_verify", {
+        body: { reference },
+      });
+
+      if (error) {
+        const ctxMsg =
+          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
+        setErrorMsg(ctxMsg || error.message);
+      } else if (data?.ok) {
+        if (data?.status === "paid_test" || data?.activated === false) {
+          setInfoMsg("Paiement test confirmé. Aucun accès n'a été activé.");
+        } else {
+          setInfoMsg("Paiement confirmé. Ton pass est actif.");
+          setShowPostCheckout(true);
+          await refreshPass();
+        }
+      } else {
+        setErrorMsg("Paiement non confirmé. Aucun débit effectué.");
+      }
+
+      setIsVerifying(false);
+      sessionStorage.removeItem("paystack_ref");
+    };
+
+    runVerify();
+  }, [session?.user?.id, refreshPass]);
+
   const paymentsEnabled = settings?.payments_enabled !== false;
   const maintenanceMessage = settings?.maintenance_message || "Paiements temporairement indisponibles.";
 
   const currencyOptions = useMemo(() => PRICING_CURRENCIES, []);
+  const isBusy = isCheckingOut || isVerifying;
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
@@ -91,6 +147,10 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
       return;
     }
     if (!price) return;
+    if (!paystackEnabled) {
+      setErrorMsg("Paystack n'est pas configuré.");
+      return;
+    }
 
     if (hasActivePass) {
       setInfoMsg("Ton accès JobRadar est déjà actif. Tu peux l'utiliser maintenant.");
@@ -104,12 +164,11 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     setErrorMsg(null);
     setShowPostCheckout(false);
 
-    const { data, error } = await supabase.functions.invoke("billing_dev_checkout", {
+    const { data, error } = await supabase.functions.invoke("paystack_initialize", {
       body: {
         plan_code: plan.code,
         currency: price.currency,
         payment_method_type: price.payment_method_type ?? "any",
-        mode: "manual_dev",
       },
     });
 
@@ -117,12 +176,14 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
       const ctxMsg =
         (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
       setErrorMsg(ctxMsg || error.message);
-    } else if (data?.ok) {
-      setInfoMsg("Paiement validé. Ton pass est actif.");
-      setShowPostCheckout(true);
-      await refreshPass();
+    } else if (data?.ok && data?.authorization_url) {
+      if (data?.reference) {
+        sessionStorage.setItem("paystack_ref", data.reference as string);
+      }
+      setInfoMsg("Redirection vers Paystack...");
+      window.location.assign(data.authorization_url as string);
     } else {
-      setErrorMsg("Impossible de valider le paiement.");
+      setErrorMsg("Impossible d'initialiser le paiement Paystack.");
     }
 
     setBusyCode(null);
@@ -142,6 +203,12 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
         <div className="pricing-banner">{maintenanceMessage}</div>
       )}
 
+      {isPaystackTest && (
+        <div className="pricing-info">Mode test Paystack actif. Aucun débit réel.</div>
+      )}
+      {!paystackEnabled && (
+        <div className="pricing-error">Paiement Paystack non configuré.</div>
+      )}
       {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
       {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
@@ -188,7 +255,8 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
 
             const planActive = plan.is_active;
             const priceActive = price?.is_active ?? false;
-            const canBuy = paymentsEnabled && planActive && priceActive && !hasActivePass;
+            const canBuy =
+              paymentsEnabled && planActive && priceActive && !hasActivePass && paystackEnabled;
 
             let availability = "Disponible";
             let availabilityTone = "available";
@@ -239,10 +307,10 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
                 <button
                   type="button"
                   className="pricing-card__cta"
-                  disabled={!canBuy || busyCode === plan.code || isCheckingOut}
+                  disabled={!canBuy || busyCode === plan.code || isBusy}
                   onClick={() => onBuy(plan, price)}
                 >
-                  {busyCode === plan.code || isCheckingOut ? "Traitement en cours…" : "Choisir ce pass"}
+                  {busyCode === plan.code || isBusy ? "Traitement en cours…" : "Payer avec Paystack"}
                 </button>
               </div>
             );
@@ -252,4 +320,5 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     </section>
   );
 }
+
 
