@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+﻿import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import PricingPlansBlock from "./components/PricingPlansBlock";
 import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
 
@@ -330,7 +331,7 @@ export default function AlertsPage() {
   const [lastSuggestedFor, setLastSuggestedFor] = useState("");
   const [lastSuggestedText, setLastSuggestedText] = useState("");
 
-  // ✅ nouveau: Tous pays + multi-pays
+  // OK nouveau: Tous pays + multi-pays
   const [allCountries, setAllCountries] = useState(false);
   const [countries, setCountries] = useState<string[]>(["CI"]);
 
@@ -482,11 +483,11 @@ export default function AlertsPage() {
     const kw = uniqClean(keywordsText.split(",").map((s) => s.trim()).filter(Boolean));
     const channels = uniqClean([chEmail ? "email" : ""]).filter(Boolean);
 
-    // ✅ countries: null = Tous pays, sinon array
+    // OK countries: null = Tous pays, sinon array
     const selectedCountries = uniqClean((countries ?? []).map((c) => c.trim()).filter(Boolean));
     const countriesToSave = allCountries ? null : selectedCountries;
 
-    // ✅ legacy country (pour compat)
+    // OK legacy country (pour compat)
     const legacyCountry = countriesToSave && countriesToSave.length ? countriesToSave[0] : null;
 
     if (!n) {
@@ -522,10 +523,10 @@ export default function AlertsPage() {
       name: n,
       keywords: kw,
 
-      // ✅ nouveau champ
+      // OK nouveau champ
       countries: countriesToSave,
 
-      // ✅ legacy (compat)
+      // OK legacy (compat)
       country: legacyCountry,
 
       frequency,
@@ -695,11 +696,13 @@ export default function AlertsPage() {
 
       {!allowPremium ? (
         <section className="alerts-locked">
-          <EmptyState
-            title="Accès aux alertes"
-            description={ALERTS_GATE_MESSAGE}
-            primaryAction={{ label: "Choisir ce pass", to: "/pricing" }}
-            tone="info"
+          <div className="alerts-lockedIntro">
+            <div className="alerts-lockedTitle">Accès aux alertes</div>
+            <div className="alerts-lockedText">{ALERTS_GATE_MESSAGE}</div>
+          </div>
+          <PricingPlansBlock
+            title="Choisis ton pass"
+            subtitle="Active un pass pour créer des alertes et recevoir des opportunités ciblées."
           />
         </section>
       ) : (
@@ -963,3 +966,9 @@ export default function AlertsPage() {
     </div>
   );
 }
+
+
+
+
+
+
