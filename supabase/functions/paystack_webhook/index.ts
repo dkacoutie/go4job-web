@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
 
   const { data: payment, error: payErr } = await admin
     .from("billing_payments")
-    .select("id, status, amount_minor, currency, provider_payload")
+    .select("id, user_id, status, amount_minor, currency, provider_payload")
     .eq("provider_code", "paystack")
     .eq("provider_payment_id", reference)
     .maybeSingle();
@@ -109,6 +109,16 @@ Deno.serve(async (req) => {
   if (payment.status === "paid" || payment.status === "paid_test") {
     return new Response("ok", { status: 200 });
   }
+
+  const nowIso = new Date().toISOString();
+  const { data: activePass } = await admin
+    .from("billing_subscriptions")
+    .select("id, ends_at")
+    .eq("user_id", payment.user_id)
+    .eq("status", "active")
+    .gt("ends_at", nowIso)
+    .maybeSingle();
+  const hasActivePass = Boolean(activePass?.id);
 
   const paystackStatus = (data?.status || "").toString().toLowerCase();
   const amount = typeof data?.amount === "number" ? data.amount : null;
@@ -190,6 +200,15 @@ Deno.serve(async (req) => {
       provider_payload: { ...(payment.provider_payload ?? {}), paystack_webhook: data },
     })
     .eq("id", payment.id);
+
+  if (hasActivePass) {
+    await admin.from("billing_events").insert({
+      user_id: payment.user_id,
+      event_type: "paystack_webhook_paid_existing_pass",
+      payload: { reference, event },
+    });
+    return new Response("ok", { status: 200 });
+  }
 
   const { error: subErr } = await admin.rpc("activate_pass_from_payment", {
     p_payment_id: payment.id,

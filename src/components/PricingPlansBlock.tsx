@@ -58,6 +58,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
   const lastVerifiedRef = useRef<string | null>(null);
+  const isSubmittingRef = useRef(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -146,6 +147,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
       navigate("/auth", { state: { from: location.pathname } });
       return;
     }
+    if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
       setErrorMsg("Paystack n'est pas configuré.");
@@ -158,36 +160,48 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
       return;
     }
 
+    const pendingRef = sessionStorage.getItem("paystack_ref");
+    if (pendingRef) {
+      setInfoMsg("Un paiement est deja en cours. Termine-le avant d'en demarrer un autre.");
+      setShowPostCheckout(false);
+      return;
+    }
+
+    isSubmittingRef.current = true;
+
     setBusyCode(plan.code);
     setIsCheckingOut(true);
     setInfoMsg(null);
     setErrorMsg(null);
     setShowPostCheckout(false);
 
-    const { data, error } = await supabase.functions.invoke("paystack_initialize", {
-      body: {
-        plan_code: plan.code,
-        currency: price.currency,
-        payment_method_type: price.payment_method_type ?? "any",
-      },
-    });
+    try {
+      const { data, error } = await supabase.functions.invoke("paystack_initialize", {
+        body: {
+          plan_code: plan.code,
+          currency: price.currency,
+          payment_method_type: price.payment_method_type ?? "any",
+        },
+      });
 
-    if (error) {
-      const ctxMsg =
-        (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
-      setErrorMsg(ctxMsg || error.message);
-    } else if (data?.ok && data?.authorization_url) {
-      if (data?.reference) {
-        sessionStorage.setItem("paystack_ref", data.reference as string);
+      if (error) {
+        const ctxMsg =
+          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
+        setErrorMsg(ctxMsg || error.message);
+      } else if (data?.ok && data?.authorization_url) {
+        if (data?.reference) {
+          sessionStorage.setItem("paystack_ref", data.reference as string);
+        }
+        setInfoMsg("Redirection vers Paystack...");
+        window.location.assign(data.authorization_url as string);
+      } else {
+        setErrorMsg("Impossible d'initialiser le paiement Paystack.");
       }
-      setInfoMsg("Redirection vers Paystack...");
-      window.location.assign(data.authorization_url as string);
-    } else {
-      setErrorMsg("Impossible d'initialiser le paiement Paystack.");
+    } finally {
+      setBusyCode(null);
+      setIsCheckingOut(false);
+      isSubmittingRef.current = false;
     }
-
-    setBusyCode(null);
-    setIsCheckingOut(false);
   };
 
   return (
@@ -312,7 +326,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
                   disabled={!canBuy || busyCode === plan.code || isBusy}
                   onClick={() => onBuy(plan, price)}
                 >
-                  {busyCode === plan.code || isBusy ? "Traitement en cours…" : "Payer"}
+                  {busyCode === plan.code || isBusy ? "Traitement en cours..." : "Payer"}
                 </button>
               </div>
             );

@@ -148,6 +148,30 @@ Deno.serve(async (req) => {
     });
   }
 
+  const pendingCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { data: pendingPayment } = await admin
+    .from("billing_payments")
+    .select("id, provider_payment_id, provider_payload, created_at")
+    .eq("user_id", userId)
+    .eq("provider_code", "paystack")
+    .eq("status", "pending")
+    .gte("created_at", pendingCutoff)
+    .order("created_at", { ascending: false })
+    .maybeSingle();
+
+  if (pendingPayment?.id) {
+    const existingAuthUrl =
+      (pendingPayment.provider_payload as { paystack_init?: { authorization_url?: string } } | null)
+        ?.paystack_init?.authorization_url ?? null;
+    return json(409, {
+      ok: false,
+      error: "payment_pending",
+      message: "Un paiement Paystack est deja en cours. Termine-le avant d'en demarrer un autre.",
+      reference: pendingPayment.provider_payment_id ?? null,
+      authorization_url: existingAuthUrl,
+    });
+  }
+
   const reference = buildReference(plan.code);
   if (!webhookUrl) {
     console.warn("paystack_initialize: missing PAYSTACK_WEBHOOK_URL");

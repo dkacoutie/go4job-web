@@ -97,7 +97,20 @@ Deno.serve(async (req) => {
     return json(403, { ok: false, error: "payment_forbidden" });
   }
 
+  const nowIso = new Date().toISOString();
+  const { data: activePass } = await admin
+    .from("billing_subscriptions")
+    .select("id, ends_at")
+    .eq("user_id", payment.user_id)
+    .eq("status", "active")
+    .gt("ends_at", nowIso)
+    .maybeSingle();
+  const hasActivePass = Boolean(activePass?.id);
+
   if (payment.status === "paid") {
+    if (hasActivePass) {
+      return json(200, { ok: true, status: "already_active", activated: false });
+    }
     const { data: sub } = await admin.rpc("activate_pass_from_payment", {
       p_payment_id: payment.id,
     });
@@ -214,6 +227,15 @@ Deno.serve(async (req) => {
       },
     })
     .eq("id", payment.id);
+
+  if (hasActivePass) {
+    await admin.from("billing_events").insert({
+      user_id: payment.user_id,
+      event_type: "paystack_paid_existing_pass",
+      payload: { reference, payment_id: payment.id },
+    });
+    return json(200, { ok: true, status: "already_active", activated: false });
+  }
 
   const { data: sub, error: subErr } = await admin.rpc("activate_pass_from_payment", {
     p_payment_id: payment.id,
