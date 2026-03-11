@@ -204,7 +204,9 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
       )}
 
       {isPaystackTest && (
-        <div className="pricing-info">Mode test Paystack actif. Aucun débit réel.</div>
+        <div className="pricing-info">
+          <strong>Mode test actif. Aucun débit réel.</strong>
+        </div>
       )}
       {!paystackEnabled && (
         <div className="pricing-error">Paiement Paystack non configuré.</div>
@@ -310,7 +312,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
                   disabled={!canBuy || busyCode === plan.code || isBusy}
                   onClick={() => onBuy(plan, price)}
                 >
-                  {busyCode === plan.code || isBusy ? "Traitement en cours…" : "Payer avec Paystack"}
+                  {busyCode === plan.code || isBusy ? "Traitement en cours…" : "Payer"}
                 </button>
               </div>
             );
