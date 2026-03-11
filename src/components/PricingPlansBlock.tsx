@@ -57,6 +57,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   const [isVerifying, setIsVerifying] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
+  const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
   const lastVerifiedRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
@@ -86,6 +87,33 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!session?.user) {
+      setHasRecentTestPayment(false);
+      return;
+    }
+
+    const loadRecentTest = async () => {
+      const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data, error } = await supabase
+        .from("billing_payments")
+        .select("id, updated_at")
+        .eq("user_id", session.user.id)
+        .eq("provider_code", "paystack")
+        .eq("status", "paid_test")
+        .gte("updated_at", recentCutoff)
+        .order("updated_at", { ascending: false })
+        .maybeSingle();
+      if (error) {
+        setHasRecentTestPayment(false);
+        return;
+      }
+      setHasRecentTestPayment(Boolean(data?.id));
+    };
+
+    loadRecentTest();
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -157,6 +185,12 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     if (hasActivePass) {
       setInfoMsg("Ton accès JobRadar est déjà actif. Tu peux l'utiliser maintenant.");
       setShowPostCheckout(true);
+      return;
+    }
+
+    if (hasRecentTestPayment) {
+      setInfoMsg("Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.");
+      setShowPostCheckout(false);
       return;
     }
 
@@ -272,7 +306,12 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
             const planActive = plan.is_active;
             const priceActive = price?.is_active ?? false;
             const canBuy =
-              paymentsEnabled && planActive && priceActive && !hasActivePass && paystackEnabled;
+              paymentsEnabled &&
+              planActive &&
+              priceActive &&
+              !hasActivePass &&
+              !hasRecentTestPayment &&
+              paystackEnabled;
 
             let availability = "Disponible";
             let availabilityTone = "available";

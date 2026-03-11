@@ -78,6 +78,7 @@ export default function PricingPage() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
+  const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
   const lastVerifiedRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
@@ -108,8 +109,21 @@ export default function PricingPage() {
         .select("id, plan_code, plan_name, status, ends_at, days_remaining")
         .maybeSingle();
       setCurrentPass((passData as CurrentPass) ?? null);
+
+      const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: recentTestPayment } = await supabase
+        .from("billing_payments")
+        .select("id, updated_at")
+        .eq("user_id", session.user.id)
+        .eq("provider_code", "paystack")
+        .eq("status", "paid_test")
+        .gte("updated_at", recentCutoff)
+        .order("updated_at", { ascending: false })
+        .maybeSingle();
+      setHasRecentTestPayment(Boolean(recentTestPayment?.id));
     } else {
       setCurrentPass(null);
+      setHasRecentTestPayment(false);
     }
 
     setLoading(false);
@@ -192,6 +206,12 @@ export default function PricingPage() {
         `Ton accès JobRadar est déjà actif jusqu’au ${formatDate(currentPass.ends_at)}.`
       );
       setShowPostCheckout(true);
+      return;
+    }
+
+    if (hasRecentTestPayment) {
+      setInfoMsg("Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.");
+      setShowPostCheckout(false);
       return;
     }
 
@@ -329,7 +349,12 @@ export default function PricingPage() {
               const planActive = plan.is_active;
               const priceActive = price?.is_active ?? false;
               const canBuy =
-                paymentsEnabled && planActive && priceActive && !hasActivePass && paystackEnabled;
+                paymentsEnabled &&
+                planActive &&
+                priceActive &&
+                !hasActivePass &&
+                !hasRecentTestPayment &&
+                paystackEnabled;
 
               let availability = "Disponible";
               let availabilityTone = "available";

@@ -148,14 +148,14 @@ Deno.serve(async (req) => {
     });
   }
 
-  const pendingCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   const { data: pendingPayment } = await admin
     .from("billing_payments")
     .select("id, provider_payment_id, provider_payload, created_at")
     .eq("user_id", userId)
     .eq("provider_code", "paystack")
     .eq("status", "pending")
-    .gte("created_at", pendingCutoff)
+    .gte("created_at", recentCutoff)
     .order("created_at", { ascending: false })
     .maybeSingle();
 
@@ -169,6 +169,25 @@ Deno.serve(async (req) => {
       message: "Un paiement Paystack est deja en cours. Termine-le avant d'en demarrer un autre.",
       reference: pendingPayment.provider_payment_id ?? null,
       authorization_url: existingAuthUrl,
+    });
+  }
+
+  const { data: recentTestPayment } = await admin
+    .from("billing_payments")
+    .select("id, provider_payment_id, updated_at")
+    .eq("user_id", userId)
+    .eq("provider_code", "paystack")
+    .eq("status", "paid_test")
+    .gte("updated_at", recentCutoff)
+    .order("updated_at", { ascending: false })
+    .maybeSingle();
+
+  if (recentTestPayment?.id) {
+    return json(409, {
+      ok: false,
+      error: "test_payment_recent",
+      message: "Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.",
+      reference: recentTestPayment.provider_payment_id ?? null,
     });
   }
 
