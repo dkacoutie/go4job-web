@@ -26,6 +26,7 @@ import PrivacyPage from "./PrivacyPage";
 import TermsPage from "./TermsPage";
 import ContactPage from "./ContactPage";
 import PricingPage from "./PricingPage";
+import LandingPage from "./LandingPage";
 
 // ✅ Admin
 import AdminSourcesPage from "./AdminSourcesPage";
@@ -80,6 +81,9 @@ function AuthGate() {
 }
 
 function PublicLayout() {
+  const location = useLocation();
+  const hideFooter = location.pathname === "/landing";
+
   return (
     <div className="app-shell">
       <div className="app-container">
@@ -87,7 +91,7 @@ function PublicLayout() {
           <Outlet />
         </main>
       </div>
-      <SiteFooter />
+      {!hideFooter && <SiteFooter />}
     </div>
   );
 }
@@ -105,9 +109,10 @@ export default function App() {
             <Route path="/thanks" element={<ThanksPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/terms" element={<TermsPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/pricing" element={<PricingPage />} />
-        </Route>
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/landing" element={<LandingPage />} />
+      </Route>
 
           {/* Protected area with shared layout */}
           <Route
