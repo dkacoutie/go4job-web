@@ -33,14 +33,14 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <div
+        <a
           className="landing-hero__visual hero-media"
-          role="img"
-          aria-label="Créa publicitaire JobRadar"
+          href="/auth"
+          aria-label="Créer mon compte JobRadar"
           style={{ ["--hero-image" as any]: "url('/jobradar-hero-vertical.png')" }}
         >
           <div className="hero-media__frame" />
-        </div>
+        </a>
       </section>
 
       <section className="landing-proofbar" aria-label="Preuves">
@@ -55,19 +55,16 @@ export default function LandingPage() {
         </div>
         <div className="landing-benefits__grid">
           <div className="benefit-card">
-            <span className="benefit-icon" aria-hidden="true" />
             <h3>Gagne du temps</h3>
             <p>Ne multiplie plus les recherches dispersées sur plusieurs sites et groupes.</p>
           </div>
           <div className="benefit-card">
-            <span className="benefit-icon" aria-hidden="true" />
             <h3>Repère plus vite les bonnes opportunités</h3>
             <p>
               Accède à un grand volume d’offres et filtre plus facilement ce qui te correspond.
             </p>
           </div>
           <div className="benefit-card">
-            <span className="benefit-icon" aria-hidden="true" />
             <h3>Reste organisé</h3>
             <p>Suis tes opportunités et structure ta recherche avec plus de clarté.</p>
           </div>
