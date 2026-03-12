@@ -1,48 +1,34 @@
 .landing-shell{
   display: flex;
   flex-direction: column;
-  gap: 56px;
-  padding: 20px 0 70px;
+  gap: 48px;
+  padding: 26px 0 64px;
 }
 
 .landing-hero{
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 36px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 40px;
   align-items: center;
   padding: 32px;
   border-radius: 28px;
   background:
-    radial-gradient(900px 420px at 10% 10%, rgba(11,76,194,0.18), transparent 60%),
-    radial-gradient(780px 420px at 90% 10%, rgba(37,99,235,0.16), transparent 60%),
+    radial-gradient(900px 420px at 12% 10%, rgba(11,76,194,0.16), transparent 60%),
+    radial-gradient(780px 420px at 92% 12%, rgba(37,99,235,0.16), transparent 60%),
     rgba(255,255,255,0.9);
   border: 1px solid rgba(15,23,42,0.08);
   box-shadow: var(--shadow-lg);
-  position: relative;
-  overflow: hidden;
-}
-
-.landing-hero::after{
-  content:"";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, rgba(255,255,255,0.0) 20%, rgba(255,255,255,0.38) 60%, rgba(255,255,255,0.0) 100%);
-  opacity: 0.35;
-  pointer-events: none;
 }
 
 .landing-hero__content{
   display: grid;
-  gap: 18px;
-  position: relative;
-  z-index: 1;
+  gap: 16px;
   animation: landingFadeUp 420ms ease-out;
 }
 
 .landing-badge{
   display: inline-flex;
   align-items: center;
-  gap: 8px;
   font-weight: 700;
   font-size: 12.5px;
   color: rgba(11,76,194,0.95);
@@ -55,8 +41,8 @@
 
 .landing-hero h1{
   margin: 0;
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 1.15;
+  font-size: clamp(30px, 4.2vw, 46px);
+  line-height: 1.12;
   letter-spacing: -0.02em;
 }
 
@@ -64,7 +50,7 @@
   margin: 0;
   color: rgba(15,23,42,0.72);
   font-size: 15.5px;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 .landing-hero__cta{
@@ -78,101 +64,47 @@
   color: rgba(15,23,42,0.68);
 }
 
-.landing-hero__mockup{
+.landing-hero__visual{
   display: grid;
-  gap: 14px;
-  position: relative;
-  z-index: 1;
+  align-items: center;
+  justify-items: center;
   animation: landingFadeUp 520ms ease-out;
 }
 
-.mockup-card{
-  background: rgba(11,18,32,0.96);
-  color: #fff;
+.hero-media{
+  width: min(360px, 100%);
+  aspect-ratio: 3 / 5;
+  border-radius: 26px;
+  border: 1px solid rgba(11,76,194,0.25);
+  background:
+    var(--hero-image),
+    linear-gradient(160deg, rgba(11,76,194,0.45) 0%, rgba(2,6,23,0.95) 100%);
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 30px 70px rgba(2,6,23,0.28);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-media::after{
+  content:"";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+  pointer-events: none;
+}
+
+.hero-media__frame{
+  position: absolute;
+  inset: 12px;
   border-radius: 18px;
-  padding: 18px;
-  box-shadow: 0 20px 50px rgba(2,6,23,0.25);
-}
-
-.mockup-card--primary{
-  background: linear-gradient(140deg, #0b1a3a 0%, #0b4cc2 55%, #1d4ed8 100%);
-}
-
-.mockup-card--secondary{
-  background: rgba(15,23,42,0.92);
-}
-
-.mockup-card__title{
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  font-size: 13px;
-  text-transform: uppercase;
-  opacity: 0.85;
-  margin-bottom: 10px;
-}
-
-.mockup-card__row{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.mockup-tag{
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.18);
-  font-size: 12px;
-}
-
-.mockup-pill{
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.12);
-  font-size: 12px;
-}
-
-.mockup-card__job{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-top: 1px solid rgba(255,255,255,0.15);
-}
-
-.mockup-card__job strong{
-  display: block;
-  font-size: 14px;
-}
-
-.mockup-card__job span{
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.mockup-card__job button{
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: #fff;
-  padding: 6px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-}
-
-.mockup-card__metric{
-  display: grid;
-  gap: 4px;
-  padding: 10px 0;
-  border-top: 1px solid rgba(255,255,255,0.12);
-}
-
-.mockup-card__metric:first-child{
-  border-top: 0;
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
 .landing-section{
   display: grid;
-  gap: 26px;
+  gap: 24px;
 }
 
 .landing-section__header h2{
@@ -188,16 +120,16 @@
 
 .landing-benefits__grid{
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
 }
 
 .benefit-card{
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: var(--shadow-sm);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: var(--shadow);
 }
 
 .benefit-card h3{
@@ -229,36 +161,11 @@
   box-shadow: var(--shadow-sm);
 }
 
-.landing-reassurance__grid{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.reassurance-card{
-  background: rgba(255,255,255,0.85);
-  border: 1px solid rgba(15,23,42,0.08);
-  border-radius: 16px;
-  padding: 16px;
-  display: grid;
-  gap: 6px;
-  box-shadow: var(--shadow-sm);
-}
-
-.reassurance-card strong{
-  font-size: 14.5px;
-}
-
-.reassurance-card span{
-  font-size: 13px;
-  color: var(--muted);
-}
-
 .landing-cta-final{
-  background: linear-gradient(135deg, rgba(11,76,194,0.12), rgba(37,99,235,0.12));
+  background: linear-gradient(135deg, rgba(11,76,194,0.12), rgba(37,99,235,0.08));
   border: 1px solid rgba(15,23,42,0.08);
   border-radius: 20px;
-  padding: 24px;
+  padding: 24px 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -281,116 +188,13 @@
   color: rgba(15,23,42,0.64);
 }
 
-.landing-product{
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-  gap: 28px;
-  align-items: center;
-}
-
-.landing-product__content p{
-  color: var(--muted);
-  font-size: 14.5px;
-  line-height: 1.7;
-}
-
-.landing-product__points{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.landing-product__points div{
-  background: rgba(255,255,255,0.9);
-  border: 1px solid rgba(15,23,42,0.08);
-  border-radius: 14px;
-  padding: 10px 12px;
-  display: grid;
-  gap: 4px;
-  font-size: 12.5px;
-}
-
-.landing-product__points span{
-  color: var(--muted);
-}
-
-.product-panel{
-  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(239,246,255,0.9));
-  border: 1px solid rgba(15,23,42,0.12);
-  border-radius: 20px;
-  padding: 18px;
-  box-shadow: var(--shadow);
-}
-
-.product-panel__header{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-
-.product-panel__badge{
-  background: rgba(11,76,194,0.12);
-  color: var(--brand-700);
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 999px;
-}
-
-.product-panel__rows{
-  display: grid;
-  gap: 10px;
-}
-
-.product-panel__rows div{
-  background: #fff;
-  border: 1px solid rgba(15,23,42,0.08);
-  border-radius: 14px;
-  padding: 12px;
-  display: grid;
-  gap: 4px;
-}
-
-.product-panel__rows span{
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-.landing-faq__grid{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.landing-faq__item{
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: var(--shadow-sm);
-}
-
-.landing-faq__item h3{
-  margin: 0 0 8px;
-  font-size: 15px;
-}
-
-.landing-faq__item p{
-  margin: 0;
-  color: var(--muted);
-  font-size: 13.5px;
-  line-height: 1.6;
-}
-
 .landing-footer{
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 0 0;
+  padding: 8px 0 0;
   border-top: 1px solid rgba(15,23,42,0.08);
   color: rgba(15,23,42,0.7);
   font-size: 13.5px;
@@ -412,13 +216,13 @@
 }
 
 .benefit-icon{
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   background: rgba(11,76,194,0.1);
   border: 1px solid rgba(11,76,194,0.2);
   display: inline-block;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 @keyframes landingFadeUp{
@@ -427,13 +231,10 @@
 }
 
 @media (max-width: 980px){
-  .landing-hero,
-  .landing-product{
+  .landing-hero{
     grid-template-columns: 1fr;
   }
-  .landing-hero__mockup{
-    order: 2;
-  }
+  .landing-hero__visual{ order: 2; }
 }
 
 @media (max-width: 640px){
