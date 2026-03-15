@@ -1460,7 +1460,7 @@ export default function JobRadarFeedPage() {
       <div className="jr-gateTitle">Accès complet au feed</div>
       <div className="jr-gateText">{FEED_GATE_MESSAGE}</div>
       <button className="jrBtn jrBtnPrimary" type="button" onClick={() => navigate("/pricing")}>
-        Choisir ce pass
+        Voir les pass
       </button>
     </div>
   );

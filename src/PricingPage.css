@@ -177,7 +177,7 @@
   margin: 18px 0 24px;
 }
 
-.pill {
+.pricing-currency .pill {
   border: 1px solid #c7d2e6;
   border-radius: 999px;
   padding: 10px 18px;
@@ -190,14 +190,14 @@
   box-shadow: 0 2px 10px rgba(11, 19, 36, 0.08);
 }
 
-.pill.is-active {
+.pricing-currency .pill.is-active {
   background: #1f4ea3;
   color: #ffffff;
   border-color: #1f4ea3;
   box-shadow: 0 10px 22px rgba(31, 78, 163, 0.35);
 }
 
-.pill:focus-visible {
+.pricing-currency .pill:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 2px;
 }

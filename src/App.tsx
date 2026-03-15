@@ -27,6 +27,7 @@ import TermsPage from "./TermsPage";
 import ContactPage from "./ContactPage";
 import PricingPage from "./PricingPage";
 import LandingPage from "./LandingPage";
+import LandingAnalyticsTracker from "./components/LandingAnalyticsTracker";
 
 // ✅ Admin
 import AdminSourcesPage from "./AdminSourcesPage";
@@ -101,6 +102,7 @@ export default function App() {
     <ToastProvider>
       <PassProvider>
         <BrowserRouter>
+          <LandingAnalyticsTracker />
           <Routes>
           {/* Public */}
           <Route element={<PublicLayout />}>

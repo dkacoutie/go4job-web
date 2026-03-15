@@ -102,6 +102,29 @@
 
 .alerts-locked{
   margin-top: 14px;
+  display: grid;
+  gap: 16px;
+}
+
+.alerts-lockedIntro{
+  background: rgba(255,255,255,0.95);
+  border: 1px solid rgba(15,23,42,0.10);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.alerts-lockedTitle{
+  font-weight: 740;
+  font-size: 16px;
+  color: rgba(15,23,42,0.92);
+}
+
+.alerts-lockedText{
+  margin-top: 6px;
+  color: rgba(15,23,42,0.62);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 /* =========================================================

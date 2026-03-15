@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
 
 type Social = {
   label: string;
@@ -57,10 +57,11 @@ export default function SiteFooter() {
           <section className="site-footer__brand" aria-label="Go4Job">
             <div className="site-footer__logoText">Go4Job</div>
             <p className="site-footer__desc">
-              JobRadar â€” alertes et suivi de candidatures, pensÃ©s pour les talents d'Afrique. Simple, rapide, et fiable.
+              JobRadar - alertes et suivi de candidatures, pensés pour les talents d'Afrique.
+              Simple, rapide, et fiable.
             </p>
 
-            <div className="site-footer__socialIcons" aria-label="RÃ©seaux sociaux">
+            <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">
               {socials.map((s) => (
                 <a
                   key={s.label}
@@ -142,7 +143,7 @@ export default function SiteFooter() {
               </li>
               <li>
                 <Link className="site-footer__link" to="/privacy">
-                  Politique de confidentialitÃ©
+                  Politique de confidentialité
                 </Link>
               </li>
               <li>
@@ -155,13 +156,15 @@ export default function SiteFooter() {
         </div>
 
         <div className="site-footer__bottom" aria-label="Informations legales">
-          <div className="site-footer__copy">Â© {year} Go4Job. Tous droits rÃ©servÃ©s.</div>
+          <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
 
           <div className="site-footer__copy">
             Contact: <strong>contact@go4jobapp.com</strong>
           </div>
 
-          <div className="site-footer__note">Plateforme de recherche d'emploi assistÃ©e par l'IA.</div>
+          <div className="site-footer__note">
+            Plateforme de recherche d'emploi assistée par l'IA.
+          </div>
         </div>
       </div>
     </footer>

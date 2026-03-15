@@ -699,7 +699,7 @@ export default function JobDetailsPage() {
                 <div className="jd-lockedTitle">Accès complet</div>
                 <div className="jd-lockedText">{DETAILS_GATE_MESSAGE}</div>
                 <button className="btn btnPrimary" onClick={() => navigate("/pricing")}>
-                  Choisir ce pass
+                  Voir les pass
                 </button>
               </div>
             )}
