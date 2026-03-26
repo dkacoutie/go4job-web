@@ -17,7 +17,7 @@ type PendingGaEvent = {
 };
 
 type AnalyticsWindow = Window & {
-  dataLayer: unknown[][];
+  dataLayer?: unknown[][];
   gtag?: Gtag;
   __jrGaInitialized?: boolean;
   __jrPendingGaEvents?: PendingGaEvent[];
@@ -30,11 +30,12 @@ function getAnalyticsWindow() {
 function ensureGtagStub() {
   const win = getAnalyticsWindow();
 
-  win.dataLayer = Array.isArray(win.dataLayer) ? win.dataLayer : [];
+  const dataLayer = Array.isArray(win.dataLayer) ? win.dataLayer : [];
+  win.dataLayer = dataLayer;
 
   if (typeof win.gtag !== "function") {
     win.gtag = ((...args: unknown[]) => {
-      win.dataLayer.push(args);
+      dataLayer.push(args);
     }) as Gtag;
   }
 }
