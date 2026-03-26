@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { clearPartnerReferral, readPartnerReferral } from "./lib/partnerReferral";
 import { supabase } from "./lib/supabaseClient";
+import { trackMetaEvent } from "./lib/metaPixel";
 import { useSession } from "./lib/useSession";
+import { buildJobRadarOnboardingHref } from "./lib/jobradarOnboarding";
+import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { usePass } from "./lib/usePass";
-import { PLAN_BENEFITS, PRICING_CURRENCIES, formatAmount, formatPaymentMethod } from "./lib/pricingHelpers";
+import {
+  FEATURED_PLAN_CODE,
+  LAUNCH_REASSURANCE_POINTS,
+  PRICING_BILLING_MESSAGE,
+  PRICING_CONVERSION_MESSAGE,
+  PRICING_INDICATIVE_MESSAGE,
+  formatPlanDisplayPrices,
+  getPlanMarketing,
+} from "./lib/pricingHelpers";
 import "./PricingPage.css";
 
 type BillingSettings = {
@@ -50,9 +62,9 @@ function formatPassStatus(status?: string | null) {
     case "active":
       return { label: "Actif", tone: "active" };
     case "expired":
-      return { label: "Expiré", tone: "expired" };
+      return { label: "Expire", tone: "expired" };
     case "cancelled":
-      return { label: "Annulé", tone: "expired" };
+      return { label: "Annule", tone: "expired" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
@@ -62,6 +74,7 @@ export default function PricingPage() {
   const navigate = useNavigate();
   const { session } = useSession();
   const { refreshPass } = usePass();
+  const onboarding = useJobRadarOnboarding();
 
   const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const paystackEnabled = Boolean(paystackPublicKey);
@@ -70,7 +83,6 @@ export default function PricingPage() {
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
   const [currentPass, setCurrentPass] = useState<CurrentPass | null>(null);
-  const [currency, setCurrency] = useState<"XOF" | "USD" | "EUR">("XOF");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
@@ -86,7 +98,6 @@ export default function PricingPage() {
   const loadData = async () => {
     setLoading(true);
     setErrorMsg(null);
-    // keep infoMsg so success feedback survives the reload
 
     const { data: sData, error: sErr } = await supabase
       .from("billing_settings")
@@ -101,7 +112,7 @@ export default function PricingPage() {
         "id, code, name, duration_days, is_active, sort_order, billing_plan_prices(id, currency, amount_minor, country_group, payment_method_type, is_active)"
       )
       .order("sort_order", { ascending: true });
-    if (pErr) setErrorMsg((m) => m ?? pErr.message);
+    if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
     setPlans((pData as BillingPlan[]) ?? []);
 
     if (session?.user) {
@@ -120,8 +131,12 @@ export default function PricingPage() {
         .gt("ends_at", nowIso)
         .maybeSingle();
       const testFlag =
-        (subData as any)?.source_payment?.status === "paid_test" ||
-        Boolean((subData as any)?.source_payment?.provider_payload?.test_mode);
+        (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
+          ?.source_payment?.status === "paid_test" ||
+        Boolean(
+          (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
+            ?.provider_payload?.test_mode
+        );
       setIsTestPass(Boolean(subData?.id) && testFlag);
 
       const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -166,7 +181,7 @@ export default function PricingPage() {
 
     const runVerify = async () => {
       setIsVerifying(true);
-      setInfoMsg("Verification du paiement en cours...");
+      setInfoMsg("V\u00e9rification du paiement en cours...");
       setErrorMsg(null);
       setShowPostCheckout(false);
 
@@ -179,24 +194,17 @@ export default function PricingPage() {
           (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
         setErrorMsg(ctxMsg || error.message);
       } else if (data?.ok) {
-        if (data?.status === "paid_test") {
-          setInfoMsg("Paiement test confirme. Ton pass est actif (test).");
-          setShowPostCheckout(true);
-          await loadData();
-          await refreshPass();
-        } else if (data?.activated === false) {
-          setInfoMsg("Paiement confirme. Ton pass est actif.");
-          setShowPostCheckout(true);
-          await loadData();
-          await refreshPass();
-        } else {
-          setInfoMsg("Paiement confirme. Ton pass est actif.");
-          setShowPostCheckout(true);
-          await loadData();
-          await refreshPass();
-        }
+        setInfoMsg(
+          data?.status === "paid_test"
+            ? "Paiement test confirm\u00e9. Ton pass est actif (test)."
+            : "Paiement confirm\u00e9. Ton pass est actif."
+        );
+        setShowPostCheckout(true);
+        clearPartnerReferral();
+        await loadData();
+        await refreshPass();
       } else {
-        setErrorMsg("Paiement non confirme. Aucun debit effectue.");
+        setErrorMsg("Paiement non confirm\u00e9. Aucun d\u00e9bit effectu\u00e9.");
       }
 
       setIsVerifying(false);
@@ -204,13 +212,18 @@ export default function PricingPage() {
     };
 
     runVerify();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, refreshPass]);
 
   const paymentsEnabled = settings?.payments_enabled !== false;
   const maintenanceMessage =
     settings?.maintenance_message || "Paiements temporairement indisponibles.";
-
-  const currencyOptions = PRICING_CURRENCIES;
+  const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
+  const passStatusDisplay =
+    isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
+  const hasActivePass = Boolean(currentPass && currentPass.status === "active");
+  const isBusy = isCheckingOut || isVerifying;
+  const postCheckoutPrimaryTo = onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile");
+  const postCheckoutPrimaryLabel = onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon onboarding";
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
@@ -220,13 +233,13 @@ export default function PricingPage() {
     if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
-      setErrorMsg("Paystack n'est pas configure sur le front.");
+      setErrorMsg("Paystack n'est pas configur\u00e9 sur le front.");
       return;
     }
 
     if (currentPass && currentPass.status === "active") {
       setInfoMsg(
-        `Ton accès JobRadar est déjà actif${isTestPass ? " (test)" : ""} jusqu’au ${formatDate(
+        `Ton acc\u00e8s JobRadar est d\u00e9j\u00e0 actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
           currentPass.ends_at
         )}.`
       );
@@ -235,20 +248,19 @@ export default function PricingPage() {
     }
 
     if (hasRecentTestPayment) {
-      setInfoMsg("Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.");
+      setInfoMsg("Un paiement test r\u00e9cent existe d\u00e9j\u00e0. Attends quelques minutes avant de recommencer.");
       setShowPostCheckout(false);
       return;
     }
 
     const pendingRef = sessionStorage.getItem("paystack_ref");
     if (pendingRef) {
-      setInfoMsg("Un paiement est deja en cours. Termine-le avant d'en demarrer un autre.");
+      setInfoMsg("Un paiement est d\u00e9j\u00e0 en cours. Termine-le avant d'en d\u00e9marrer un autre.");
       setShowPostCheckout(false);
       return;
     }
 
     isSubmittingRef.current = true;
-
     setBusyCode(plan.code);
     setIsCheckingOut(true);
     setInfoMsg(null);
@@ -256,11 +268,23 @@ export default function PricingPage() {
     setShowPostCheckout(false);
 
     try {
+      const partnerReferral = readPartnerReferral();
+
+      trackMetaEvent("Subscribe", {
+        value: price.currency === "XOF" || price.currency === "XAF" ? price.amount_minor : price.amount_minor / 100,
+        currency: price.currency,
+        content_name: plan.name,
+        content_ids: [plan.code],
+      });
+
       const { data, error } = await supabase.functions.invoke("paystack_initialize", {
         body: {
           plan_code: plan.code,
           currency: price.currency,
           payment_method_type: price.payment_method_type ?? "any",
+          partner_referral_code: partnerReferral?.code ?? null,
+          partner_referral_captured_at: partnerReferral?.capturedAt ?? null,
+          partner_referral_source_path: partnerReferral?.sourcePath ?? null,
         },
       });
 
@@ -284,204 +308,226 @@ export default function PricingPage() {
     }
   };
 
-  const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
-  const passStatusDisplay =
-    isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
-  const hasActivePass = Boolean(currentPass && currentPass.status === "active");
-  const isBusy = isCheckingOut || isVerifying;
-
   return (
     <div className="pricing-shell">
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
           <div className="pricing-hero__brand">GO4JOB - JOBRADAR</div>
-          <h1>Active ton accès JobRadar</h1>
-          <p>
-            Accède à plus d’offres pertinentes, suis les meilleures opportunités et choisis
-            librement ta durée. Sans renouvellement automatique.
-          </p>
+          <div className="pricing-hero__eyebrow">{"Offre r\u00e9serv\u00e9e aux premiers utilisateurs"}</div>
+          <h1>Offre de lancement JobRadar</h1>
+          <p>{"Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar."}</p>
+          <div className="pricing-hero__signals" aria-label="Points de reassurance">
+            {LAUNCH_REASSURANCE_POINTS.map((item) => (
+              <span key={item} className="pricing-hero__signal">
+                {item}
+              </span>
+            ))}
+          </div>
         </div>
       </header>
 
       <main className="pricing-main">
-        {settings && !paymentsEnabled && (
-          <div className="pricing-banner">{maintenanceMessage}</div>
-        )}
+        {settings && !paymentsEnabled && <div className="pricing-banner">{maintenanceMessage}</div>}
 
         {isPaystackTest && (
           <div className="pricing-info">
-            <strong>Mode test actif. Aucun débit réel.</strong>
+            <strong>Mode test actif.</strong> Aucun d\u00e9bit r\u00e9el n'est effectu\u00e9.
           </div>
         )}
-        {!paystackEnabled && (
-          <div className="pricing-error">Paiement Paystack non configure.</div>
-        )}
+        {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configur\u00e9.</div>}
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
+
         {showPostCheckout && (
-          <div className="pricing-success-actions" aria-label="Suite apres achat">
+          <div className="pricing-success-actions" aria-label="Suite après achat">
             <button
               type="button"
               className="pricing-success-actions__primary"
-              onClick={() => navigate("/jobradar/feed")}
+              onClick={() => navigate(postCheckoutPrimaryTo)}
             >
-              Voir mes offres
+              {postCheckoutPrimaryLabel}
             </button>
             <button
               type="button"
               className="pricing-success-actions__secondary"
               onClick={() => navigate("/me/subscription")}
             >
-              Voir mon abonnement
+              {"Voir mon acc\u00e8s"}
             </button>
           </div>
         )}
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
-            Ton accès JobRadar est déjà actif{isTestPass ? " (test)" : ""} jusqu’au{" "}
+            {"Ton acc\u00e8s JobRadar est d\u00e9j\u00e0 actif"}
+            {isTestPass ? " (test)" : ""} jusqu'au{" "}
             <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
-        <section className="pricing-model" aria-label="Modèle des passes">
-          <div className="pricing-model__title">Un seul accès, trois durées.</div>
+        <section className="pricing-model" aria-label="Offre de lancement">
+          <div className="pricing-model__title">Offre de lancement JobRadar</div>
           <p className="pricing-model__text">
-            Tous les passes donnent accès à JobRadar. Seule la durée change : 7, 30 ou 90 jours,
-            selon ton rythme. Sans renouvellement automatique.
+            {"Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar."}
           </p>
         </section>
 
-        <section className="pricing-currency" aria-label="Sélection de devise">
-          {currencyOptions.map((c) => (
-            <button
-              key={c.code}
-              type="button"
-              className={`pill ${currency === c.code ? "is-active" : ""}`}
-              aria-pressed={currency === c.code}
-              onClick={() => setCurrency(c.code as "XOF" | "USD" | "EUR")}
-            >
-              {c.label}
-            </button>
-          ))}
+        <section className="pricing-transparency" aria-label="Transparence tarifaire">
+          <p className="pricing-transparency__title">{PRICING_BILLING_MESSAGE}</p>
+          <p className="pricing-transparency__body">{PRICING_INDICATIVE_MESSAGE}</p>
+          <p className="pricing-transparency__fine">{PRICING_CONVERSION_MESSAGE}</p>
+        </section>
+
+        <section className="pricing-help" aria-label="Besoin d'aide avant achat">
+          <div className="pricing-help__content">
+            <p className="pricing-help__title">Une question avant d’activer votre accès ?</p>
+            <p className="pricing-help__text">
+              Nous pouvons vous répondre sur l’abonnement, le paiement ou l’accès avant votre achat.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="pricing-help__cta"
+            onClick={() => navigate("/contact?from=pricing")}
+          >
+            Nous contacter
+          </button>
         </section>
 
         {loading ? (
           <div className="pricing-loading">Chargement...</div>
         ) : (
-          <section className="pricing-grid">
-            {plans.map((plan) => {
-              const prices = plan.billing_plan_prices ?? [];
-              const price = prices.find((p) => p.currency === currency) ?? null;
+          <>
+            <section className="pricing-grid">
+              {plans.map((plan) => {
+                const prices = plan.billing_plan_prices ?? [];
+                const price = prices.find((entry) => entry.currency === "XOF") ?? null;
+                const marketing = getPlanMarketing(plan.code, plan.name, plan.duration_days);
+                const displayPrices = price ? formatPlanDisplayPrices(price.amount_minor) : null;
 
-              const planActive = plan.is_active;
-              const priceActive = price?.is_active ?? false;
-              const canBuy =
-                paymentsEnabled &&
-                planActive &&
-                priceActive &&
-                !hasActivePass &&
-                !hasRecentTestPayment &&
-                paystackEnabled;
+                const planActive = plan.is_active;
+                const priceActive = Boolean(price?.is_active);
+                const canBuy =
+                  paymentsEnabled &&
+                  planActive &&
+                  priceActive &&
+                  !hasActivePass &&
+                  !hasRecentTestPayment &&
+                  paystackEnabled;
 
-              let availability = "Disponible";
-              let availabilityTone = "available";
-              if (!paymentsEnabled) {
-                availability = "Indisponible temporairement";
-                availabilityTone = "paused";
-              } else if (!planActive || !priceActive) {
-                availability = "Bientôt disponible";
-                availabilityTone = "soon";
-              }
+                let statusLabel = marketing.badge;
+                let statusTone = marketing.badgeTone;
+                if (!paymentsEnabled) {
+                  statusLabel = "Indisponible temporairement";
+                  statusTone = "paused";
+                } else if (!planActive || !priceActive) {
+                  statusLabel = "Bient\u00f4t disponible";
+                  statusTone = "soon";
+                }
 
-              const isFeatured = plan.code === "pass_90d";
-              const benefit = PLAN_BENEFITS[plan.code] ?? "Le bon équilibre";
+                const isFeatured = plan.code === FEATURED_PLAN_CODE;
 
-              return (
-                <div
-                  key={plan.id}
-                  className={`pricing-card ${isFeatured ? "is-featured" : ""}`}
-                  data-disabled={!canBuy}
-                >
-                  <div className="pricing-card__top">
-                    <div className={`pricing-card__status pricing-card__status--${availabilityTone}`}>
-                      {availability}
-                    </div>
-                    {isFeatured && <div className="pricing-card__badge">Meilleure valeur</div>}
-                  </div>
-                  <div className="pricing-card__title">{plan.name}</div>
-                  <div className="pricing-card__benefit">{benefit}</div>
-                  <div className="pricing-card__access">
-                    Accès complet à JobRadar pendant toute la durée choisie.
-                  </div>
-                  <div className="pricing-card__price">
-                    {price ? formatAmount(price.amount_minor, price.currency) : "—"}
-                  </div>
-                  <div className="pricing-card__details">
-                    <div className="pricing-card__detail">
-                      <span>Durée</span>
-                      <strong>{plan.duration_days} jours</strong>
-                    </div>
-                    {price?.payment_method_type && (
-                      <div className="pricing-card__detail">
-                        <span>Paiement</span>
-                        <strong>{formatPaymentMethod(price.payment_method_type)}</strong>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    className="pricing-card__cta"
-                    disabled={!canBuy || busyCode === plan.code || isBusy}
-                    onClick={() => onBuy(plan, price)}
+                return (
+                  <div
+                    key={plan.id}
+                    className={`pricing-card ${isFeatured ? "is-featured" : ""}`}
+                    data-disabled={!canBuy}
                   >
-                    {busyCode === plan.code || isBusy
-                      ? "Traitement en cours..."
-                      : "Payer"}
-                  </button>
-                </div>
-              );
-            })}
-          </section>
-        )}
+                    <div className="pricing-card__top">
+                      <div className={`pricing-card__status pricing-card__status--${statusTone}`}>
+                        {statusLabel}
+                      </div>
+                    </div>
 
-        <section className="pricing-reassurance">
-          <div className="reassurance-item">
-            <div className="reassurance-icon">⚡</div>
-            <div>
-              <div className="reassurance-title">Activation immédiate</div>
-              <div className="reassurance-text">Ton pass s’active dès validation.</div>
-            </div>
-          </div>
-          <div className="reassurance-item">
-            <div className="reassurance-icon">🔒</div>
-            <div>
-              <div className="reassurance-title">Paiement sécurisé</div>
-              <div className="reassurance-text">Transactions protégées et vérifiées.</div>
-            </div>
-          </div>
-          <div className="reassurance-item">
-            <div className="reassurance-icon">✅</div>
-            <div>
-              <div className="reassurance-title">Sans renouvellement automatique</div>
-              <div className="reassurance-text">Tu maîtrises la durée et le budget.</div>
-            </div>
-          </div>
-        </section>
+                    <div className="pricing-card__meta">{marketing.durationLabel}</div>
+                    <div className="pricing-card__title">{marketing.title}</div>
+                    <div className="pricing-card__benefit">{marketing.description}</div>
+                    <div className="pricing-card__access">
+                      {"Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie."}
+                    </div>
+
+                    <div className="pricing-card__priceWrap">
+                      <div className="pricing-card__price">{displayPrices?.xofLabel ?? "--"}</div>
+                      {displayPrices && (
+                        <div className="pricing-card__fx" aria-label="Equivalent indicatif en euro et dollar">
+                          {displayPrices.combinedLabel}
+                        </div>
+                      )}
+                      <div className="pricing-card__priceNote">Tarif de lancement</div>
+                    </div>
+
+                    <div className="pricing-card__details">
+                      <div className="pricing-card__detail">
+                        <span>{"Dur\u00e9e"}</span>
+                        <strong>{plan.duration_days} jours</strong>
+                      </div>
+                      <div className="pricing-card__detail">
+                        <span>{"Acc\u00e8s"}</span>
+                        <strong>Complet</strong>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="pricing-card__cta"
+                      disabled={!canBuy || busyCode === plan.code || isBusy}
+                      onClick={() => onBuy(plan, price)}
+                    >
+                      {busyCode === plan.code || isBusy ? "Traitement en cours..." : marketing.ctaLabel}
+                    </button>
+
+                    <div className="pricing-card__footnote">{marketing.launchNote}</div>
+                  </div>
+                );
+              })}
+            </section>
+
+            <section className="pricing-payments" aria-label={"Moyens de paiement accept\u00e9s"}>
+              <div className="pricing-payments__head">
+                <div className="pricing-payments__title">{"Moyens de paiement accept\u00e9s"}</div>
+                <div className="pricing-payments__sub">
+                  Payez facilement avec les moyens disponibles via notre passerelle de paiement.
+                </div>
+              </div>
+              <div className="pricing-payments__logos">
+                <div className="pricing-payments__logoCard">
+                  <img
+                    className="pricing-payments__logo pricing-payments__logo--cards"
+                    src="/logo visa mastercard.png"
+                    alt="Visa et Mastercard"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="pricing-payments__logoCard">
+                  <img
+                    className="pricing-payments__logo pricing-payments__logo--mobile"
+                    src="/mobileMoney-operateurs.png"
+                    alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            </section>
+          </>
+        )}
 
         <section className="pricing-pass">
           <div className="pricing-pass__header">
-            <h2>Mon pass actuel</h2>
+            <div>
+              <h2>{"Mon acc\u00e8s actuel"}</h2>
+              <p className="pricing-pass__sub">
+                {"Retrouve l'\u00e9tat de ton acc\u00e8s complet et la prochaine \u00e9ch\u00e9ance utile."}
+              </p>
+            </div>
             {passStatus && (
-              <span className={`pass-pill pass-pill--${passStatus.tone}`}>
-                {passStatusDisplay}
-              </span>
+              <span className={`pass-pill pass-pill--${passStatus.tone}`}>{passStatusDisplay}</span>
             )}
           </div>
+
           {!session?.user && (
             <div className="pass-empty">
-              <p>Connecte-toi pour activer ton pass en un clic.</p>
+              <p>Connecte-toi pour activer une offre de lancement en quelques instants.</p>
+              <span>Ton parcours de paiement restera identique après connexion.</span>
               <button
                 type="button"
                 className="pass-cta"
@@ -491,12 +537,14 @@ export default function PricingPage() {
               </button>
             </div>
           )}
+
           {session?.user && !currentPass && (
             <div className="pass-empty">
-              <p>Aucun pass actif pour le moment.</p>
-              <span>Choisis un pass pour démarrer.</span>
+              <p>Aucun pass actif</p>
+              <span>{"Choisis une offre de lancement pour activer ton acc\u00e8s complet \u00e0 JobRadar."}</span>
             </div>
           )}
+
           {session?.user && currentPass && (
             <div className="pass-card">
               <div className="pass-card__title">{currentPass.plan_name}</div>
@@ -515,4 +563,3 @@ export default function PricingPage() {
     </div>
   );
 }
-

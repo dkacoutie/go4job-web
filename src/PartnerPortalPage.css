@@ -1,0 +1,293 @@
+@import "./AdminSourcesPage.css";
+
+.partnerPortal {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.partnerPortal__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.partnerPortal__heroContent,
+.partnerPortal__shareCard {
+  border-radius: 26px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 24px 60px rgba(13, 38, 59, 0.08);
+}
+
+.partnerPortal__heroContent {
+  padding: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(212, 177, 94, 0.18), transparent 34%),
+    radial-gradient(circle at right center, rgba(16, 152, 173, 0.12), transparent 26%),
+    linear-gradient(135deg, #fffaf0, #f6fbff 60%, #ffffff);
+}
+
+.partnerPortal__heroTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.partnerPortal__heroTop h1,
+.partnerPortal__state h1 {
+  margin: 0;
+  font-size: clamp(28px, 3vw, 42px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.partnerPortal__heroMeta {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.partnerPortal__infoPill,
+.partnerPortal__contactBox > div,
+.partnerPortal__summaryList > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.partnerPortal__infoPill span,
+.partnerPortal__contactBox span,
+.partnerPortal__summaryList span {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.56);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.partnerPortal__shareCard {
+  padding: 24px;
+  background:
+    linear-gradient(160deg, rgba(15, 61, 117, 0.98), rgba(11, 95, 143, 0.96)),
+    #0c4870;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.partnerPortal__shareHeader h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.partnerPortal__shareHeader p {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.partnerPortal__shareBox {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.partnerPortal__shareBox span,
+.partnerPortal__shareNote {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
+
+.partnerPortal__shareBox strong {
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.partnerPortal__shareActions,
+.partnerPortal__heroActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.partnerPortal__shareActions .btn,
+.partnerPortal__heroActions .btn {
+  min-height: 42px;
+}
+
+.partnerPortal__shareCard .btn:not(.btn--primary) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.partnerPortal__metrics {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.partnerPortal__metric {
+  min-height: 136px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.partnerPortal__metric span {
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.partnerPortal__metric strong {
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.partnerPortal__grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 18px;
+}
+
+.partnerPortal__activityList,
+.partnerPortal__rows,
+.partnerPortal__summaryList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.partnerPortal__activityItem,
+.partnerPortal__row {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.025);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.partnerPortal__activityItem {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.partnerPortal__activityBody,
+.partnerPortal__rowMain,
+.partnerPortal__rowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.partnerPortal__activityBody span,
+.partnerPortal__rowMain span,
+.partnerPortal__rowMeta span {
+  color: rgba(0, 0, 0, 0.62);
+  font-size: 13px;
+}
+
+.partnerPortal__row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.partnerPortal__rowMain strong {
+  font-size: 16px;
+}
+
+.partnerPortal__rowMeta {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.partnerPortal__lists {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.partnerPortal__state {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 28px;
+}
+
+.partnerPortal__contactBox {
+  width: min(720px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.partnerPortal__hint {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(13, 95, 158, 0.08);
+  border: 1px solid rgba(13, 95, 158, 0.12);
+  color: rgba(0, 0, 0, 0.72);
+  line-height: 1.65;
+}
+
+@media (max-width: 1100px) {
+  .partnerPortal__hero,
+  .partnerPortal__grid,
+  .partnerPortal__lists {
+    grid-template-columns: 1fr;
+  }
+
+  .partnerPortal__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .partnerPortal {
+    padding: 18px 10px 34px;
+  }
+
+  .partnerPortal__heroContent,
+  .partnerPortal__shareCard {
+    padding: 20px;
+  }
+
+  .partnerPortal__heroTop,
+  .partnerPortal__activityItem,
+  .partnerPortal__row {
+    grid-template-columns: 1fr;
+  }
+
+  .partnerPortal__heroMeta,
+  .partnerPortal__metrics,
+  .partnerPortal__contactBox {
+    grid-template-columns: 1fr;
+  }
+
+  .partnerPortal__rowMeta {
+    align-items: flex-start;
+    text-align: left;
+  }
+}

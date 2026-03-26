@@ -1,9 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { clearPartnerReferral, readPartnerReferral } from "../lib/partnerReferral";
 import { supabase } from "../lib/supabaseClient";
+import { trackMetaEvent } from "../lib/metaPixel";
 import { useSession } from "../lib/useSession";
+import { buildJobRadarOnboardingHref } from "../lib/jobradarOnboarding";
+import { useJobRadarOnboarding } from "../lib/useJobRadarOnboarding";
 import { usePass } from "../lib/usePass";
-import { PLAN_BENEFITS, PRICING_CURRENCIES, formatAmount, formatPaymentMethod } from "../lib/pricingHelpers";
+import {
+  FEATURED_PLAN_CODE,
+  PRICING_BILLING_MESSAGE,
+  PRICING_CONVERSION_MESSAGE,
+  PRICING_INDICATIVE_MESSAGE,
+  formatPlanDisplayPrices,
+  getPlanMarketing,
+} from "../lib/pricingHelpers";
 import "../PricingPage.css";
 import "./PricingPlansBlock.css";
 
@@ -35,13 +46,24 @@ type PricingPlansBlockProps = {
   title?: string;
   subtitle?: string;
   showActions?: boolean;
+  postCheckoutPrimaryTo?: string;
+  postCheckoutSecondaryTo?: string;
+  postCheckoutPrimaryLabel?: string;
 };
 
-export default function PricingPlansBlock({ title, subtitle, showActions = true }: PricingPlansBlockProps) {
+export default function PricingPlansBlock({
+  title = "Offre de lancement JobRadar",
+  subtitle = "Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar.",
+  showActions = true,
+  postCheckoutPrimaryTo,
+  postCheckoutSecondaryTo = "/me/subscription",
+  postCheckoutPrimaryLabel,
+}: PricingPlansBlockProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useSession();
   const { refreshPass, hasActivePass } = usePass();
+  const onboarding = useJobRadarOnboarding();
 
   const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const paystackEnabled = Boolean(paystackPublicKey);
@@ -49,7 +71,6 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
 
   const [settings, setSettings] = useState<BillingSettings | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
-  const [currency, setCurrency] = useState<"XOF" | "USD" | "EUR">("XOF");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
@@ -78,7 +99,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
         "id, code, name, duration_days, is_active, sort_order, billing_plan_prices(id, currency, amount_minor, country_group, payment_method_type, is_active)"
       )
       .order("sort_order", { ascending: true });
-    if (pErr) setErrorMsg((m) => m ?? pErr.message);
+    if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
     setPlans((pData as BillingPlan[]) ?? []);
 
     setLoading(false);
@@ -133,7 +154,7 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
 
     const runVerify = async () => {
       setIsVerifying(true);
-      setInfoMsg("Vérification du paiement en cours...");
+      setInfoMsg("V\u00e9rification du paiement en cours...");
       setErrorMsg(null);
       setShowPostCheckout(false);
 
@@ -146,21 +167,16 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
           (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
         setErrorMsg(ctxMsg || error.message);
       } else if (data?.ok) {
-        if (data?.status === "paid_test") {
-          setInfoMsg("Paiement test confirmé. Ton pass est actif (test).");
-          setShowPostCheckout(true);
-          await refreshPass();
-        } else if (data?.activated === false) {
-          setInfoMsg("Paiement confirmé. Ton pass est actif.");
-          setShowPostCheckout(true);
-          await refreshPass();
-        } else {
-          setInfoMsg("Paiement confirmé. Ton pass est actif.");
-          setShowPostCheckout(true);
-          await refreshPass();
-        }
+        setInfoMsg(
+          data?.status === "paid_test"
+            ? "Paiement test confirm\u00e9. Ton pass est actif (test)."
+            : "Paiement confirm\u00e9. Ton pass est actif."
+        );
+        setShowPostCheckout(true);
+        clearPartnerReferral();
+        await refreshPass();
       } else {
-        setErrorMsg("Paiement non confirmé. Aucun débit effectué.");
+        setErrorMsg("Paiement non confirm\u00e9. Aucun d\u00e9bit effectu\u00e9.");
       }
 
       setIsVerifying(false);
@@ -171,10 +187,14 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
   }, [session?.user?.id, refreshPass]);
 
   const paymentsEnabled = settings?.payments_enabled !== false;
-  const maintenanceMessage = settings?.maintenance_message || "Paiements temporairement indisponibles.";
-
-  const currencyOptions = useMemo(() => PRICING_CURRENCIES, []);
+  const maintenanceMessage =
+    settings?.maintenance_message || "Paiements temporairement indisponibles.";
   const isBusy = isCheckingOut || isVerifying;
+  const checkoutPrimaryTo =
+    postCheckoutPrimaryTo ??
+    (onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile"));
+  const checkoutPrimaryLabelResolved =
+    postCheckoutPrimaryLabel ?? (onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon parcours");
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
@@ -184,31 +204,30 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
-      setErrorMsg("Paystack n'est pas configuré.");
+      setErrorMsg("Paystack n'est pas configur\u00e9.");
       return;
     }
 
     if (hasActivePass) {
-      setInfoMsg("Ton accès JobRadar est déjà actif. Tu peux l'utiliser maintenant.");
+      setInfoMsg("Ton acc\u00e8s JobRadar est d\u00e9j\u00e0 actif. Tu peux l'utiliser maintenant.");
       setShowPostCheckout(true);
       return;
     }
 
     if (hasRecentTestPayment) {
-      setInfoMsg("Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.");
+      setInfoMsg("Un paiement test r\u00e9cent existe d\u00e9j\u00e0. Attends quelques minutes avant de recommencer.");
       setShowPostCheckout(false);
       return;
     }
 
     const pendingRef = sessionStorage.getItem("paystack_ref");
     if (pendingRef) {
-      setInfoMsg("Un paiement est deja en cours. Termine-le avant d'en demarrer un autre.");
+      setInfoMsg("Un paiement est d\u00e9j\u00e0 en cours. Termine-le avant d'en d\u00e9marrer un autre.");
       setShowPostCheckout(false);
       return;
     }
 
     isSubmittingRef.current = true;
-
     setBusyCode(plan.code);
     setIsCheckingOut(true);
     setInfoMsg(null);
@@ -216,11 +235,23 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
     setShowPostCheckout(false);
 
     try {
+      const partnerReferral = readPartnerReferral();
+
+      trackMetaEvent("Subscribe", {
+        value: price.currency === "XOF" || price.currency === "XAF" ? price.amount_minor : price.amount_minor / 100,
+        currency: price.currency,
+        content_name: plan.name,
+        content_ids: [plan.code],
+      });
+
       const { data, error } = await supabase.functions.invoke("paystack_initialize", {
         body: {
           plan_code: plan.code,
           currency: price.currency,
           payment_method_type: price.payment_method_type ?? "any",
+          partner_referral_code: partnerReferral?.code ?? null,
+          partner_referral_captured_at: partnerReferral?.capturedAt ?? null,
+          partner_referral_source_path: partnerReferral?.sourcePath ?? null,
         },
       });
 
@@ -253,18 +284,14 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
         </header>
       )}
 
-      {settings && !paymentsEnabled && (
-        <div className="pricing-banner">{maintenanceMessage}</div>
-      )}
+      {settings && !paymentsEnabled && <div className="pricing-banner">{maintenanceMessage}</div>}
 
       {isPaystackTest && (
         <div className="pricing-info">
-          <strong>Mode test actif. Aucun débit réel.</strong>
+          <strong>Mode test actif.</strong> Aucun d\u00e9bit r\u00e9el n'est effectu\u00e9.
         </div>
       )}
-      {!paystackEnabled && (
-        <div className="pricing-error">Paiement Paystack non configuré.</div>
-      )}
+      {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configur\u00e9.</div>}
       {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
       {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
@@ -273,113 +300,142 @@ export default function PricingPlansBlock({ title, subtitle, showActions = true 
           <button
             type="button"
             className="pricing-success-actions__primary"
-            onClick={() => navigate("/jobradar/feed")}
+            onClick={() => navigate(checkoutPrimaryTo)}
           >
-            Voir mes offres
+            {checkoutPrimaryLabelResolved}
           </button>
           <button
             type="button"
             className="pricing-success-actions__secondary"
-            onClick={() => navigate("/me/subscription")}
+            onClick={() => navigate(postCheckoutSecondaryTo)}
           >
-            Voir mon abonnement
+            {"Voir mon acc\u00e8s"}
           </button>
         </div>
       )}
 
-      <section className="pricing-currency" aria-label="Sélection de devise">
-        {currencyOptions.map((c) => (
-          <button
-            key={c.code}
-            type="button"
-            className={`pill ${currency === c.code ? "is-active" : ""}`}
-            aria-pressed={currency === c.code}
-            onClick={() => setCurrency(c.code)}
-          >
-            {c.label}
-          </button>
-        ))}
+      <section className="pricing-transparency" aria-label="Transparence tarifaire">
+        <p className="pricing-transparency__title">{PRICING_BILLING_MESSAGE}</p>
+        <p className="pricing-transparency__body">{PRICING_INDICATIVE_MESSAGE}</p>
+        <p className="pricing-transparency__fine">{PRICING_CONVERSION_MESSAGE}</p>
       </section>
 
       {loading ? (
         <div className="pricing-loading">Chargement...</div>
       ) : (
-        <section className="pricing-grid">
-          {plans.map((plan) => {
-            const prices = plan.billing_plan_prices ?? [];
-            const price = prices.find((p) => p.currency === currency) ?? null;
+        <>
+          <section className="pricing-grid">
+            {plans.map((plan) => {
+              const prices = plan.billing_plan_prices ?? [];
+              const price = prices.find((entry) => entry.currency === "XOF") ?? null;
+              const marketing = getPlanMarketing(plan.code, plan.name, plan.duration_days);
+              const displayPrices = price ? formatPlanDisplayPrices(price.amount_minor) : null;
 
-            const planActive = plan.is_active;
-            const priceActive = price?.is_active ?? false;
-            const canBuy =
-              paymentsEnabled &&
-              planActive &&
-              priceActive &&
-              !hasActivePass &&
-              !hasRecentTestPayment &&
-              paystackEnabled;
+              const planActive = plan.is_active;
+              const priceActive = Boolean(price?.is_active);
+              const canBuy =
+                paymentsEnabled &&
+                planActive &&
+                priceActive &&
+                !hasActivePass &&
+                !hasRecentTestPayment &&
+                paystackEnabled;
 
-            let availability = "Disponible";
-            let availabilityTone = "available";
-            if (!paymentsEnabled) {
-              availability = "Indisponible temporairement";
-              availabilityTone = "paused";
-            } else if (!planActive || !priceActive) {
-              availability = "Bientôt disponible";
-              availabilityTone = "soon";
-            }
+              let statusLabel = marketing.badge;
+              let statusTone = marketing.badgeTone;
+              if (!paymentsEnabled) {
+                statusLabel = "Indisponible temporairement";
+                statusTone = "paused";
+              } else if (!planActive || !priceActive) {
+                statusLabel = "Bient\u00f4t disponible";
+                statusTone = "soon";
+              }
 
-            const isFeatured = plan.code === "pass_90d";
-            const benefit = PLAN_BENEFITS[plan.code] ?? "Le bon équilibre";
+              const isFeatured = plan.code === FEATURED_PLAN_CODE;
 
-            return (
-              <div
-                key={plan.id}
-                className={`pricing-card ${isFeatured ? "is-featured" : ""}`}
-                data-disabled={!canBuy}
-              >
-                <div className="pricing-card__top">
-                  <div className={`pricing-card__status pricing-card__status--${availabilityTone}`}>
-                    {availability}
-                  </div>
-                  {isFeatured && <div className="pricing-card__badge">Meilleure valeur</div>}
-                </div>
-                <div className="pricing-card__title">{plan.name}</div>
-                <div className="pricing-card__benefit">{benefit}</div>
-                <div className="pricing-card__access">
-                  Accès complet à JobRadar pendant toute la durée choisie.
-                </div>
-                <div className="pricing-card__price">
-                  {price ? formatAmount(price.amount_minor, price.currency) : "—"}
-                </div>
-                <div className="pricing-card__details">
-                  <div className="pricing-card__detail">
-                    <span>Durée</span>
-                    <strong>{plan.duration_days} jours</strong>
-                  </div>
-                  {price?.payment_method_type && (
-                    <div className="pricing-card__detail">
-                      <span>Paiement</span>
-                      <strong>{formatPaymentMethod(price.payment_method_type)}</strong>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  className="pricing-card__cta"
-                  disabled={!canBuy || busyCode === plan.code || isBusy}
-                  onClick={() => onBuy(plan, price)}
+              return (
+                <div
+                  key={plan.id}
+                  className={`pricing-card ${isFeatured ? "is-featured" : ""}`}
+                  data-disabled={!canBuy}
                 >
-                  {busyCode === plan.code || isBusy ? "Traitement en cours..." : "Payer"}
-                </button>
+                  <div className="pricing-card__top">
+                    <div className={`pricing-card__status pricing-card__status--${statusTone}`}>
+                      {statusLabel}
+                    </div>
+                  </div>
+
+                  <div className="pricing-card__meta">{marketing.durationLabel}</div>
+                  <div className="pricing-card__title">{marketing.title}</div>
+                  <div className="pricing-card__benefit">{marketing.description}</div>
+                  <div className="pricing-card__access">
+                    {"Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie."}
+                  </div>
+
+                  <div className="pricing-card__priceWrap">
+                    <div className="pricing-card__price">{displayPrices?.xofLabel ?? "--"}</div>
+                    {displayPrices && (
+                      <div className="pricing-card__fx" aria-label="Equivalent indicatif en euro et dollar">
+                        {displayPrices.combinedLabel}
+                      </div>
+                    )}
+                    <div className="pricing-card__priceNote">Tarif de lancement</div>
+                  </div>
+
+                  <div className="pricing-card__details">
+                    <div className="pricing-card__detail">
+                      <span>{"Dur\u00e9e"}</span>
+                      <strong>{plan.duration_days} jours</strong>
+                    </div>
+                    <div className="pricing-card__detail">
+                      <span>{"Acc\u00e8s"}</span>
+                      <strong>Complet</strong>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="pricing-card__cta"
+                    disabled={!canBuy || busyCode === plan.code || isBusy}
+                    onClick={() => onBuy(plan, price)}
+                  >
+                    {busyCode === plan.code || isBusy ? "Traitement en cours..." : marketing.ctaLabel}
+                  </button>
+
+                  <div className="pricing-card__footnote">{marketing.launchNote}</div>
+                </div>
+              );
+            })}
+          </section>
+
+          <section className="pricing-payments" aria-label={"Moyens de paiement accept\u00e9s"}>
+            <div className="pricing-payments__head">
+              <div className="pricing-payments__title">{"Moyens de paiement accept\u00e9s"}</div>
+              <div className="pricing-payments__sub">
+                Payez facilement avec les moyens disponibles via notre passerelle de paiement.
               </div>
-            );
-          })}
-        </section>
+            </div>
+            <div className="pricing-payments__logos">
+              <div className="pricing-payments__logoCard">
+                <img
+                  className="pricing-payments__logo pricing-payments__logo--cards"
+                  src="/logo visa mastercard.png"
+                  alt="Visa et Mastercard"
+                  loading="lazy"
+                />
+              </div>
+              <div className="pricing-payments__logoCard">
+                <img
+                  className="pricing-payments__logo pricing-payments__logo--mobile"
+                  src="/mobileMoney-operateurs.png"
+                  alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </section>
+        </>
       )}
     </section>
   );
 }
-
-

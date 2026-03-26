@@ -13,8 +13,10 @@ export default function AppNav() {
 
   const { session, loading } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const jobWrapRef = useRef<HTMLDivElement | null>(null);
   const accWrapRef = useRef<HTMLDivElement | null>(null);
@@ -32,6 +34,7 @@ export default function AppNav() {
     () => loc.pathname.startsWith("/me") || loc.pathname.startsWith("/jobradar/profile"),
     [loc.pathname]
   );
+  const adminActive = useMemo(() => loc.pathname.startsWith("/admin"), [loc.pathname]);
 
   const userLabel = useMemo(() => {
     const u = session?.user;
@@ -57,12 +60,24 @@ export default function AppNav() {
     () => [
       { label: "Mon CV", path: "/me/cv" },
       { label: "Mon profil", path: "/jobradar/profile" },
+      { label: "Espace partenaire", path: "/me/partner" },
       { label: "Mon abonnement", path: "/me/subscription" },
     ],
     []
   );
 
-  const closeMenus = () => setOpenMenu(null);
+  const adminItems = useMemo(
+    () => [
+      { label: "Partenaires", path: "/admin/partners" },
+      { label: "Sources", path: "/admin/sources" },
+    ],
+    []
+  );
+
+  const closeMenus = () => {
+    setOpenMenu(null);
+    setMobileNavOpen(false);
+  };
 
   const focusFirstItem = (key: Exclude<MenuKey, null>) => {
     const menu = key === "jobradar" ? jobMenuRef.current : accMenuRef.current;
@@ -76,16 +91,49 @@ export default function AppNav() {
   const toggleMenu = (key: Exclude<MenuKey, null>) => {
     setOpenMenu((prev) => {
       const next = prev === key ? null : key;
-      if (next) focusFirstItem(next);
+      if (next) {
+        setMobileNavOpen(false);
+        focusFirstItem(next);
+      }
       return next;
     });
   };
 
-  // Fermer au click outside + ESC
   useEffect(() => {
-    if (!openMenu) return;
+    closeMenus();
+  }, [loc.pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!session?.user?.id) {
+        if (!cancelled) setIsAdmin(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("is_admin")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (!cancelled) {
+        setIsAdmin(!error && !!data?.is_admin);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!openMenu && !mobileNavOpen) return;
 
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (!openMenu) return;
+
       const target = e.target as Node | null;
       if (!target) return;
 
@@ -103,10 +151,10 @@ export default function AppNav() {
 
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("touchstart", onPointerDown as any);
+      document.removeEventListener("touchstart", onPointerDown as EventListener);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [openMenu]);
+  }, [openMenu, mobileNavOpen]);
 
   const onNavigate = (path: string) => {
     closeMenus();
@@ -118,13 +166,11 @@ export default function AppNav() {
 
     setIsSigningOut(true);
     try {
-      // 1) Logout local (fiable, ne depend pas du reseau)
       const { error: localErr } = await supabase.auth.signOut({ scope: "local" });
 
       if (localErr) {
         console.warn("[signOut local] error:", localErr);
 
-        // fallback: nettoyage manuel du storage key
         try {
           localStorage.removeItem("go4job.auth");
         } catch {
@@ -132,13 +178,11 @@ export default function AppNav() {
         }
       }
 
-      // 2) Optionnel : tenter la revocation globale (peut echouer selon navigateur)
       const { error: globalErr } = await supabase.auth.signOut();
       if (globalErr) console.warn("[signOut global] error:", globalErr);
     } catch (e) {
       console.warn("[signOut] exception:", e);
 
-      // fallback final
       try {
         localStorage.removeItem("go4job.auth");
       } catch {
@@ -147,46 +191,59 @@ export default function AppNav() {
     } finally {
       closeMenus();
       setIsSigningOut(false);
-
-      // Force le prochain login a tomber sur le feed (tests)
       navigate("/auth", { replace: true, state: { from: "/jobradar/feed" } });
     }
   };
 
-  const isMenuOpen = openMenu !== null;
+  const isMenuOpen = openMenu !== null || mobileNavOpen;
 
   return (
     <div className={`appnav${isMenuOpen ? " appnav--menuOpen" : ""}`}>
       {isMenuOpen && (
-        <button
-          type="button"
-          className="appnav__backdrop"
-          aria-label="Fermer le menu"
-          onClick={closeMenus}
-        />
+        <button type="button" className="appnav__backdrop" aria-label="Fermer le menu" onClick={closeMenus} />
       )}
 
-      <button
-        className="appnav__brand"
-        onClick={() => navigate("/")}
-        type="button"
-        aria-label="Aller au dashboard"
-      >
+      <button className="appnav__brand" onClick={() => navigate("/")} type="button" aria-label="Aller au dashboard">
         <img className="appnav__logo" src={go4jobLogo} alt="Go4Job" />
       </button>
 
-      {/* Nav principale (seulement si connecte) */}
+      {!loading && session && (
+        <button
+          type="button"
+          className={`appnav__mobileToggle${mobileNavOpen ? " is-active" : ""}`}
+          aria-expanded={mobileNavOpen}
+          aria-controls="appnav-mobile-panel"
+          aria-label={mobileNavOpen ? "Fermer la navigation" : "Ouvrir la navigation"}
+          onClick={() => {
+            setOpenMenu(null);
+            setMobileNavOpen((prev) => !prev);
+          }}
+        >
+          <span className="appnav__mobileToggleIcon" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="appnav__mobileToggleLabel">Menu</span>
+        </button>
+      )}
+
       {session && (
         <nav className="appnav__links" aria-label="Navigation">
-          <button
-            type="button"
-            className={"appnav__btn " + (isActive("/") ? "is-active" : "")}
-            onClick={() => onNavigate("/")}
-          >
+          <button type="button" className={"appnav__btn " + (isActive("/") ? "is-active" : "")} onClick={() => onNavigate("/")}>
             Dashboard
           </button>
 
-          {/* JobRadar dropdown */}
+          {isAdmin && (
+            <button
+              type="button"
+              className={"appnav__btn " + (adminActive ? "is-active" : "")}
+              onClick={() => onNavigate("/admin/partners")}
+            >
+              Admin
+            </button>
+          )}
+
           <div className="appnav__menuWrap" ref={jobWrapRef}>
             <button
               type="button"
@@ -225,8 +282,7 @@ export default function AppNav() {
         </nav>
       )}
 
-      {/* Zone compte (droite) */}
-      <div className="appnav__right" aria-label="Compte">
+      <div className={`appnav__right${!session ? " appnav__right--public" : ""}`} aria-label="Compte">
         {!loading && session && (
           <div className="appnav__menuWrap" ref={accWrapRef}>
             <button
@@ -250,12 +306,7 @@ export default function AppNav() {
             </button>
 
             {openMenu === "account" && (
-              <div
-                className="appnav__menu appnav__menu--right"
-                role="menu"
-                ref={accMenuRef}
-                aria-label="Menu Compte"
-              >
+              <div className="appnav__menu appnav__menu--right" role="menu" ref={accMenuRef} aria-label="Menu Compte">
                 {accountItems.map((it) => (
                   <button
                     key={it.path}
@@ -297,6 +348,77 @@ export default function AppNav() {
           </button>
         )}
       </div>
+
+      {!loading && session && mobileNavOpen && (
+        <div className="appnav__mobilePanel" id="appnav-mobile-panel" aria-label="Navigation mobile">
+          <div className="appnav__mobilePanelHeader">
+            <div className="appnav__mobilePanelTitle">Navigation</div>
+            <div className="appnav__mobilePanelSub">{userLabel}</div>
+          </div>
+
+          <div className="appnav__mobileSection">
+            <button
+              type="button"
+              className={"appnav__mobileItem " + (isActive("/") ? "is-active" : "")}
+              onClick={() => onNavigate("/")}
+            >
+              Dashboard
+            </button>
+          </div>
+
+          {isAdmin && (
+            <div className="appnav__mobileSection">
+              <div className="appnav__mobileSectionTitle">Admin</div>
+              {adminItems.map((it) => (
+                <button
+                  key={it.path}
+                  type="button"
+                  className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
+                  onClick={() => onNavigate(it.path)}
+                >
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="appnav__mobileSection">
+            <div className="appnav__mobileSectionTitle">JobRadar</div>
+            {jobradarItems.map((it) => (
+              <button
+                key={it.path}
+                type="button"
+                className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
+                onClick={() => onNavigate(it.path)}
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="appnav__mobileSection">
+            <div className="appnav__mobileSectionTitle">Compte</div>
+            {accountItems.map((it) => (
+              <button
+                key={it.path}
+                type="button"
+                className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
+                onClick={() => onNavigate(it.path)}
+              >
+                {it.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="appnav__mobileItem appnav__mobileItem--danger"
+              onClick={onSignOut}
+              disabled={isSigningOut}
+            >
+              {isSigningOut ? "Deconnexion..." : "Se deconnecter"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
