@@ -73,6 +73,27 @@ export type DomainBreakdown = {
   passes_evidence: boolean;
 };
 
+export type RoleFamilyConfidence = "none" | "weak" | "medium" | "strong";
+export type RoleFamilyRelation = "match" | "mismatch" | "unknown";
+
+export type RoleFamilyBreakdown = {
+  profile_family: string | null;
+  profile_label: string | null;
+  profile_confidence: RoleFamilyConfidence;
+  profile_contenders: string[];
+  profile_scores: Record<string, number>;
+  profile_evidence: string[];
+  job_family: string | null;
+  job_label: string | null;
+  job_confidence: RoleFamilyConfidence;
+  job_contenders: string[];
+  job_scores: Record<string, number>;
+  job_evidence: string[];
+  relation: RoleFamilyRelation;
+  gated: boolean;
+  cap_applied: number | null;
+};
+
 export type ScoreLayersBreakdown = {
   title: number;
   meta: number;
@@ -113,6 +134,7 @@ export type MatchWhyDetails = {
       matched_generic_keywords: string[];
       impact_note?: string;
     };
+    role_family: RoleFamilyBreakdown;
     data_quality: DataQualityBreakdown;
     domain: DomainBreakdown;
     score_layers: ScoreLayersBreakdown;
@@ -157,6 +179,7 @@ export type MatchScoreResult = {
   passesEvidence: boolean;
   domainMatch: boolean;
   domainMismatch: boolean;
+  roleFamily: RoleFamilyBreakdown;
   scoreTitle: number;
   scoreMeta: number;
   scoreDesc: number;
@@ -176,12 +199,19 @@ const DESC_SPARSE_LEN = 350;
 const DESC_MIN_LEN = 50;
 
 const GENERIC_KEYWORDS = new Set([
+  "senior",
+  "lead",
   "manager",
+  "head",
+  "director",
+  "principal",
+  "chief",
   "assistant",
   "charge",
   "chargee",
   "agent",
   "responsable",
+  "gestionnaire",
   "gestion",
   "management",
   "communication",
@@ -205,9 +235,15 @@ const GENERIC_KEYWORDS = new Set([
 ]);
 
 const GENERIC_TITLE_TOKENS = new Set([
+  "senior",
+  "lead",
   "assistant",
   "officer",
   "manager",
+  "head",
+  "director",
+  "principal",
+  "chief",
   "agent",
   "intern",
   "internship",
@@ -218,6 +254,8 @@ const GENERIC_TITLE_TOKENS = new Set([
   "specialist",
   "coordinator",
   "generalist",
+  "responsable",
+  "gestionnaire",
 ]);
 
 const TOKEN_STOPWORDS = new Set([
@@ -263,6 +301,12 @@ const TOKEN_STOPWORDS = new Set([
   "alternance",
   "junior",
   "senior",
+  "lead",
+  "manager",
+  "head",
+  "director",
+  "principal",
+  "chief",
 ]);
 
 const SKILLS_FINAL_CANON: Array<{ label: string; synonyms: string[] }> = [
@@ -613,6 +657,294 @@ const DOMAIN_KEYWORDS: Record<string, string[]> = {
   ],
 };
 
+type RoleFamilyId =
+  | "project_program"
+  | "product"
+  | "engineering"
+  | "data_ai"
+  | "design_ux"
+  | "marketing_comms"
+  | "sales_bizdev"
+  | "finance_accounting"
+  | "hr_admin"
+  | "operations_supply"
+  | "legal_compliance"
+  | "customer_success"
+  | "healthcare";
+
+const ROLE_FAMILY_LABELS: Record<RoleFamilyId, string> = {
+  project_program: "Gestion de projet / programme",
+  product: "Produit",
+  engineering: "Ingenierie logicielle / plateforme",
+  data_ai: "Data / IA",
+  design_ux: "Design / UX",
+  marketing_comms: "Marketing / communication",
+  sales_bizdev: "Sales / business development",
+  finance_accounting: "Finance / comptabilite",
+  hr_admin: "RH / administration",
+  operations_supply: "Operations / supply",
+  legal_compliance: "Legal / compliance",
+  customer_success: "Support / customer success",
+  healthcare: "Sante",
+};
+
+const ROLE_FAMILY_NOISE_TOKENS = new Set([
+  "senior",
+  "lead",
+  "manager",
+  "head",
+  "director",
+  "principal",
+  "chief",
+  "responsable",
+  "gestionnaire",
+  "officer",
+  "specialist",
+  "specialiste",
+  "consultant",
+  "expert",
+]);
+
+const ROLE_FAMILY_RULES: Array<{ id: RoleFamilyId; terms: string[] }> = [
+  {
+    id: "project_program",
+    terms: [
+      "project manager",
+      "project management",
+      "program manager",
+      "programme manager",
+      "program management",
+      "programme management",
+      "chef de projet",
+      "gestion de projet",
+      "gestionnaire de projet",
+      "project coordinator",
+      "project coordination",
+      "program coordinator",
+      "programme coordinator",
+      "project officer",
+      "programme officer",
+      "pmo",
+      "projet",
+      "project",
+      "programme",
+    ],
+  },
+  {
+    id: "product",
+    terms: [
+      "product manager",
+      "product owner",
+      "product management",
+      "chef de produit",
+      "responsable produit",
+      "product strategy",
+      "produit",
+      "product",
+    ],
+  },
+  {
+    id: "engineering",
+    terms: [
+      "software engineer",
+      "software developer",
+      "platform engineer",
+      "fullstack developer",
+      "full stack developer",
+      "frontend developer",
+      "backend developer",
+      "front end developer",
+      "back end developer",
+      "mobile developer",
+      "cloud engineer",
+      "devops",
+      "site reliability",
+      "sre",
+      "developer",
+      "developpeur",
+      "software",
+      "engineering",
+      "engineer",
+      "fullstack",
+      "frontend",
+      "backend",
+      "platform",
+    ],
+  },
+  {
+    id: "data_ai",
+    terms: [
+      "data analyst",
+      "analyste data",
+      "data scientist",
+      "data engineer",
+      "analytics engineer",
+      "business intelligence",
+      "machine learning",
+      "artificial intelligence",
+      "power bi",
+      "tableau",
+      "data",
+      "analytics",
+      "sql",
+      "bi",
+      "ai",
+      "ml",
+    ],
+  },
+  {
+    id: "design_ux",
+    terms: [
+      "product designer",
+      "ux designer",
+      "ui designer",
+      "graphic designer",
+      "designer",
+      "design",
+      "ux",
+      "ui",
+    ],
+  },
+  {
+    id: "marketing_comms",
+    terms: [
+      "marketing manager",
+      "content marketing",
+      "content manager",
+      "digital marketing",
+      "growth marketing",
+      "social media",
+      "copywriter",
+      "brand",
+      "seo",
+      "marketing",
+      "communication",
+      "communications",
+      "growth",
+      "content",
+      "media",
+    ],
+  },
+  {
+    id: "sales_bizdev",
+    terms: [
+      "account executive",
+      "account manager",
+      "business development",
+      "sales manager",
+      "key account",
+      "partnership",
+      "partnerships",
+      "sales",
+      "commercial",
+      "vente",
+      "bizdev",
+    ],
+  },
+  {
+    id: "finance_accounting",
+    terms: [
+      "financial analyst",
+      "finance manager",
+      "finance",
+      "financial",
+      "accounting",
+      "accountant",
+      "controller",
+      "controle de gestion",
+      "treasury",
+      "budget",
+      "audit",
+      "fp&a",
+      "comptabilite",
+      "comptable",
+    ],
+  },
+  {
+    id: "hr_admin",
+    terms: [
+      "human resources",
+      "talent acquisition",
+      "administrative assistant",
+      "office manager",
+      "payroll",
+      "recruiter",
+      "recrutement",
+      "administration",
+      "administratif",
+      "assistant administratif",
+      "rh",
+      "paie",
+      "hr",
+    ],
+  },
+  {
+    id: "operations_supply",
+    terms: [
+      "operations manager",
+      "supply chain",
+      "procurement",
+      "purchasing",
+      "logistics",
+      "logistique",
+      "inventory",
+      "warehouse",
+      "operations",
+      "achats",
+      "supply",
+    ],
+  },
+  {
+    id: "legal_compliance",
+    terms: [
+      "legal counsel",
+      "contract manager",
+      "contracts",
+      "compliance officer",
+      "privacy",
+      "juridique",
+      "legal",
+      "compliance",
+      "risk",
+      "contract",
+    ],
+  },
+  {
+    id: "customer_success",
+    terms: [
+      "customer success",
+      "customer support",
+      "client success",
+      "service client",
+      "helpdesk",
+      "technical support",
+      "support client",
+      "support",
+    ],
+  },
+  {
+    id: "healthcare",
+    terms: [
+      "health",
+      "medical",
+      "clinical",
+      "doctor",
+      "nurse",
+      "pharmacy",
+      "pharmacien",
+      "sante",
+    ],
+  },
+];
+
+type RoleFamilyDetection = {
+  primary: RoleFamilyId | null;
+  confidence: RoleFamilyConfidence;
+  contenders: RoleFamilyId[];
+  scores: Record<string, number>;
+  evidence: string[];
+};
+
 const PROFILE_EXPANSIONS: Array<{ triggers: string[]; add: string[] }> = [
   {
     triggers: ["evenement", "event", "eventiel", "evenementiel"],
@@ -663,6 +995,13 @@ function normalizeKeyword(input: string) {
 
 function normalizeLoose(input: string) {
   return normalizeText(canonicalizeText(input ?? ""));
+}
+
+function stripRoleNoise(input: string) {
+  return normalizeLoose(input)
+    .split(/\s+/)
+    .filter((token) => token && !ROLE_FAMILY_NOISE_TOKENS.has(token))
+    .join(" ");
 }
 
 function uniq(arr: string[]) {
@@ -757,6 +1096,131 @@ function pickPrimaryDomain(scores: Record<string, number>): string | null {
   if (!sorted.length) return null;
   if (sorted[0][1] <= 0) return null;
   return sorted[0][0];
+}
+
+function roleFamilyTermWeight(term: string) {
+  if (term.includes(" ")) return 2.5;
+  if (term.length >= 8) return 1.5;
+  return 1;
+}
+
+function scoreRoleFamilies(sources: Array<{ label: string; text: string; weight: number }>) {
+  const scores: Record<string, number> = {};
+  const evidence: Record<string, string[]> = {};
+
+  for (const source of sources) {
+    const text = stripRoleNoise(source.text);
+    if (!text) continue;
+
+    for (const rule of ROLE_FAMILY_RULES) {
+      for (const term of rule.terms) {
+        const normalizedTerm = normalizeLoose(term);
+        if (!normalizedTerm || !textHasTerm(text, normalizedTerm)) continue;
+
+        const points = source.weight * roleFamilyTermWeight(normalizedTerm);
+        scores[rule.id] = (scores[rule.id] ?? 0) + points;
+        const evidenceEntry = `${source.label}:${term}`;
+        const familyEvidence = evidence[rule.id] ?? [];
+        if (!familyEvidence.includes(evidenceEntry)) familyEvidence.push(evidenceEntry);
+        evidence[rule.id] = familyEvidence;
+      }
+    }
+  }
+
+  return { scores, evidence };
+}
+
+function detectRoleFamily(sources: Array<{ label: string; text: string; weight: number }>): RoleFamilyDetection {
+  const { scores, evidence } = scoreRoleFamilies(sources);
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]) as Array<[RoleFamilyId, number]>;
+  const top = sorted[0] ?? null;
+  const secondScore = sorted[1]?.[1] ?? 0;
+  const topScore = top?.[1] ?? 0;
+  const gap = topScore - secondScore;
+
+  let confidence: RoleFamilyConfidence = "none";
+  if (topScore >= 9 && gap >= 2.5) confidence = "strong";
+  else if (topScore >= 5 && gap >= 1.5) confidence = "medium";
+  else if (topScore >= 3.5) confidence = "weak";
+
+  const primary = confidence === "none" ? null : top?.[0] ?? null;
+  const contenders =
+    primary && topScore > 0
+      ? sorted.filter(([, score]) => topScore - score <= 1.5).slice(0, 3).map(([family]) => family)
+      : [];
+
+  return {
+    primary,
+    confidence,
+    contenders,
+    scores,
+    evidence: primary ? (evidence[primary] ?? []).slice(0, 4) : [],
+  };
+}
+
+function computeRoleFamilyBreakdown(params: {
+  desiredRole?: string | null;
+  alertKeywords: string[];
+  cvKeywords: string[];
+  job: JobLike;
+}): RoleFamilyBreakdown {
+  const profileRole = detectRoleFamily([
+    { label: "desired_role", text: params.desiredRole ?? "", weight: 4 },
+    { label: "alert_keywords", text: params.alertKeywords.join(" "), weight: 2.5 },
+    { label: "cv", text: params.cvKeywords.join(" "), weight: 1.5 },
+  ]);
+
+  const jobRole = detectRoleFamily([
+    { label: "job_family", text: params.job.job_family ?? "", weight: 4 },
+    { label: "title", text: params.job.title ?? "", weight: 4 },
+    {
+      label: "tags",
+      text: [...(params.job.tags ?? []), ...(params.job.required_skills ?? []), ...(params.job.optional_skills ?? []), ...(params.job.job_skills ?? [])]
+        .filter(Boolean)
+        .join(" "),
+      weight: 2,
+    },
+  ]);
+
+  let relation: RoleFamilyRelation = "unknown";
+  let gated = false;
+  let capApplied: number | null = null;
+
+  if (profileRole.primary && jobRole.primary) {
+    const familiesOverlap =
+      profileRole.primary === jobRole.primary ||
+      profileRole.contenders.includes(jobRole.primary) ||
+      jobRole.contenders.includes(profileRole.primary);
+
+    if (familiesOverlap) {
+      relation = "match";
+    } else if (
+      (profileRole.confidence === "strong" || profileRole.confidence === "medium") &&
+      (jobRole.confidence === "strong" || jobRole.confidence === "medium")
+    ) {
+      relation = "mismatch";
+      gated = true;
+      capApplied = profileRole.confidence === "strong" && jobRole.confidence === "strong" ? 24 : 32;
+    }
+  }
+
+  return {
+    profile_family: profileRole.primary,
+    profile_label: profileRole.primary ? ROLE_FAMILY_LABELS[profileRole.primary] : null,
+    profile_confidence: profileRole.confidence,
+    profile_contenders: profileRole.contenders,
+    profile_scores: profileRole.scores,
+    profile_evidence: profileRole.evidence,
+    job_family: jobRole.primary,
+    job_label: jobRole.primary ? ROLE_FAMILY_LABELS[jobRole.primary] : null,
+    job_confidence: jobRole.confidence,
+    job_contenders: jobRole.contenders,
+    job_scores: jobRole.scores,
+    job_evidence: jobRole.evidence,
+    relation,
+    gated,
+    cap_applied: capApplied,
+  };
 }
 
 function isGenericKeyword(input: string) {
@@ -997,6 +1461,7 @@ export function computeJobMatchScore(params: {
   cvKeywords: string[];
   cvExp: CvExperience;
   geoPrefs: GeoPreferences;
+  desiredRole?: string | null;
   hay?: string;
   maxShown?: number;
   topMatchThreshold?: number;
@@ -1007,6 +1472,7 @@ export function computeJobMatchScore(params: {
     cvKeywords,
     cvExp,
     geoPrefs,
+    desiredRole,
     hay = buildJobHay(job),
     maxShown = 2,
     topMatchThreshold = 70,
@@ -1072,7 +1538,14 @@ export function computeJobMatchScore(params: {
   const dataQuality = computeDataQuality(job);
   const jobIsSparse = dataQuality.job_is_sparse;
 
-  const profileTokens = expandProfileTokens(buildProfileTokens(alertKeywords));
+  const profileSeedKeywords = desiredRole ? uniq([desiredRole, ...alertKeywords]) : alertKeywords;
+  const roleFamily = computeRoleFamilyBreakdown({
+    desiredRole,
+    alertKeywords,
+    cvKeywords,
+    job,
+  });
+  const profileTokens = expandProfileTokens(buildProfileTokens(profileSeedKeywords));
   const titleText = normalizeLoose([job.title, job.company_name].filter(Boolean).join(" "));
   const metaText = normalizeLoose(
     [
@@ -1087,7 +1560,7 @@ export function computeJobMatchScore(params: {
   );
   const descText = normalizeLoose(job.description ?? "");
 
-  const profileTextForDomain = [alertKeywords.join(" "), cvKeywords.join(" ")].filter(Boolean).join(" ");
+  const profileTextForDomain = [desiredRole, alertKeywords.join(" "), cvKeywords.join(" ")].filter(Boolean).join(" ");
   const jobTextForDomain = [
     job.job_family,
     ...(job.tags ?? []),
@@ -1139,6 +1612,10 @@ export function computeJobMatchScore(params: {
     baseScore = Math.min(baseScore, 15);
     capNote = capNote ? `${capNote}|domain_mismatch` : "domain_mismatch";
   }
+  if (roleFamily.gated && roleFamily.cap_applied != null) {
+    baseScore = Math.min(baseScore, roleFamily.cap_applied);
+    capNote = capNote ? `${capNote}|role_family_mismatch` : "role_family_mismatch";
+  }
 
   const cvSkillBonus = Math.min(40, cvSkillMatches.scoreSum * 4);
   const bonus =
@@ -1168,13 +1645,17 @@ export function computeJobMatchScore(params: {
   const strongTitle = titleScoreRes.score >= 0.35;
   const titleVeryStrong = titleScoreRes.score >= 0.55 && !isGenericTitle(job.title ?? "");
   const effectiveEvidenceCount = evidenceCount + (titleVeryStrong && evidenceTitle ? 1 : 0);
-  const passesEvidence =
+  const passesEvidenceBase =
     (effectiveEvidenceCount >= 2 && (!sparseNeedsStrongTitle || strongTitle)) ||
     (sparseNeedsStrongTitle && titleVeryStrong);
+  const passesEvidence = passesEvidenceBase && !roleFamily.gated;
 
   const scoreSimple = Math.min(100, Math.max(0, Math.round(baseScore)));
   const scoreSimpleFinal = passesEvidence ? scoreSimple : 0;
-  const score = Math.min(100, Math.max(0, Math.round(baseScore + bonus)));
+  let score = Math.min(100, Math.max(0, Math.round(baseScore + bonus)));
+  if (roleFamily.gated && roleFamily.cap_applied != null) {
+    score = Math.min(score, roleFamily.cap_applied);
+  }
 
   const kwCount = alertKeywords.length + cvKeywords.length;
   const signalCount =
@@ -1190,12 +1671,14 @@ export function computeJobMatchScore(params: {
   if (expOk && expReason) tags.push(expReason);
   if (geoRemote.considered && geoRemote.points_awarded > 0) tags.push("Geo/remote ok");
   if (matchedCvRaw.length > 0) tags.push("Competences CV detectees");
+  if (roleFamily.relation === "match" && roleFamily.job_label) tags.push(`Famille metier: ${roleFamily.job_label}`);
   if (skillsQuality.points_awarded > 0) {
     tags.push(skillsQuality.matched_required_skills.length ? "Competences requises detectees" : "Competences detectees");
   }
   if (genericMatched.length > 0) tags.push("Mots-cles generiques ponderees");
 
   const reasons: string[] = [];
+  if (roleFamily.relation === "match" && roleFamily.job_label) reasons.push(`Famille metier proche: ${roleFamily.job_label}`);
   if (titleScoreRes.matched.length) reasons.push(`Titre proche: ${titleScoreRes.matched[0]}`);
   if (metaScoreRes.matched.length) reasons.push(`Tags/skills: ${metaScoreRes.matched[0]}`);
   if (matchedCvDisplay.length) reasons.push(`CV: ${matchedCvDisplay[0]}`);
@@ -1212,6 +1695,9 @@ export function computeJobMatchScore(params: {
   const missing: string[] = [];
   if (jobIsSparse) {
     missing.push("Description manquante ou courte, analyse basee sur titre/tags.");
+  }
+  if (roleFamily.gated && roleFamily.profile_label && roleFamily.job_label) {
+    missing.push(`Famille metier incoherente: cible ${roleFamily.profile_label}, offre ${roleFamily.job_label}.`);
   }
 
   const alertDenom = sum(alertKeywords.map((k) => (isGenericKeyword(k) ? WEIGHT_ALERT_GENERIC : WEIGHT_ALERT)));
@@ -1264,6 +1750,7 @@ export function computeJobMatchScore(params: {
           ? `Generic weights: alert ${WEIGHT_ALERT}=>${WEIGHT_ALERT_GENERIC}, cv ${WEIGHT_CV}=>${WEIGHT_CV_GENERIC}`
           : undefined,
       },
+      role_family: roleFamily,
       data_quality: dataQuality,
       domain: {
         profile_domains: profileDomains,
@@ -1322,6 +1809,7 @@ export function computeJobMatchScore(params: {
     passesEvidence,
     domainMatch,
     domainMismatch: strongMismatch,
+    roleFamily,
     scoreTitle: Math.round(titleScoreRes.score * 100),
     scoreMeta: Math.round(metaScoreRes.score * 100),
     scoreDesc: Math.round(descScoreRes.score * 100),
@@ -1338,6 +1826,9 @@ export function formatMatchWhyTooltip(details: MatchWhyDetails): string {
   if (geo.considered) parts.push(`Geo ${geo.level}`);
   const skills = details.breakdown.skills_quality;
   if (skills.considered) parts.push(`Skills +${skills.points_awarded ?? 0}`);
+  const roleFamily = details.breakdown.role_family;
+  if (roleFamily.gated) parts.push(`Family cap ${roleFamily.cap_applied ?? 0}%`);
+  else if (roleFamily.relation === "match" && roleFamily.job_family) parts.push(`Family ${roleFamily.job_family}`);
   const dq = details.breakdown.data_quality;
   parts.push(`DataQ ${Math.round(dq.score * 100)}%`);
   const layers = details.breakdown.score_layers;
