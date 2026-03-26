@@ -70,7 +70,7 @@
 
 .adminPartners__kpis {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
 }
 
@@ -143,6 +143,68 @@
   gap: 8px;
   font-size: 12px;
   color: rgba(0, 0, 0, 0.66);
+}
+
+.adminPartners__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.adminPartners__rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.adminPartners__rowActions--tight {
+  gap: 6px;
+}
+
+.adminPartners__signalList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.adminPartners__signalItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+}
+
+.adminPartners__signalItem > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.adminPartners__signalItem span {
+  color: rgba(0, 0, 0, 0.64);
+  font-size: 13px;
+}
+
+.adminPartners__signalMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.adminPartners__tableRow--alert {
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.adminPartners__tableRow--muted {
+  background: rgba(15, 23, 42, 0.03);
 }
 
 .adminPartners__filtersRow {
@@ -341,10 +403,6 @@
 }
 
 @media (max-width: 1200px) {
-  .adminPartners__kpis {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .adminPartners__payoutWorkspace {
     grid-template-columns: 1fr;
   }
@@ -359,6 +417,14 @@
 
   .adminPartners__heroActions {
     justify-content: flex-start;
+  }
+
+  .adminPartners__signalItem {
+    flex-direction: column;
+  }
+
+  .adminPartners__signalMeta {
+    align-items: flex-start;
   }
 }
 

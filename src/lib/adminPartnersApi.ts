@@ -139,7 +139,7 @@ export async function fetchAdminPartnerSnapshot(): Promise<AdminPartnerSnapshot>
     supabase.from("partner_accounts").select("*").order("created_at", { ascending: false }),
     supabase.from("partner_commissions").select("*").order("calculated_at", { ascending: false }),
     supabase.from("partner_payouts").select("*").order("created_at", { ascending: false }),
-    supabase.from("partner_conversions").select("*").order("converted_at", { ascending: false }).limit(12),
+    supabase.from("partner_conversions").select("*").order("converted_at", { ascending: false }).limit(40),
   ]);
 
   if (summariesRes.error) throw new Error(summariesRes.error.message || "Impossible de charger le resume partenaires.");

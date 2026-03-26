@@ -19,8 +19,10 @@ import {
 } from "./lib/adminPartnersApi";
 import "./AdminPartnersPage.css";
 
-type AdminTab = "overview" | "partners" | "commissions" | "payouts";
+type AdminTab = "overview" | "partners" | "conversions" | "commissions" | "payouts";
+type PartnerStatusFilter = "all" | PartnerAccountStatus;
 type CommissionFilter = "all" | "pending" | "approved" | "paid" | "voided";
+type ConversionFilter = "all" | "attributed" | "disqualified";
 
 type PartnerFormState = {
   partnerId: string | null;
@@ -62,6 +64,7 @@ const PARTNER_STATUSES: PartnerAccountStatus[] = ["pending", "active", "paused",
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Vue d'ensemble" },
   { id: "partners", label: "Partenaires" },
+  { id: "conversions", label: "Conversions" },
   { id: "commissions", label: "Commissions" },
   { id: "payouts", label: "Paiements" },
 ];
@@ -72,7 +75,7 @@ const EMPTY_PARTNER_FORM: PartnerFormState = {
   contactName: "",
   contactEmail: "",
   userId: "",
-  status: "pending",
+  status: "active",
   referralCode: "",
   notes: "",
 };
@@ -151,6 +154,25 @@ function statusBadgeClass(status: string) {
   return "badge badge--blue";
 }
 
+function partnerStatusLabel(status: PartnerAccountStatus) {
+  if (status === "active") return "Actif";
+  if (status === "paused") return "En pause";
+  if (status === "inactive") return "Desactive";
+  return "Pending";
+}
+
+function conversionStatusLabel(status: PartnerConversionRow["status"]) {
+  return status === "attributed" ? "Attribuee" : "Disqualifiee";
+}
+
+function conversionEligibilityLabel(conversion: PartnerConversionRow) {
+  if (conversion.status === "disqualified") {
+    return conversion.disqualification_reason ?? "Non eligible";
+  }
+
+  return conversion.is_first_paid_subscription ? "Premier abonnement paye" : "Eligible";
+}
+
 function buildPartnerFormState(partner: PartnerAccountRow | null): PartnerFormState {
   if (!partner) return { ...EMPTY_PARTNER_FORM };
 
@@ -182,6 +204,9 @@ export default function AdminPartnersPage() {
   const [conversions, setConversions] = useState<PartnerConversionRow[]>([]);
 
   const [partnerSearch, setPartnerSearch] = useState("");
+  const [partnerStatusFilter, setPartnerStatusFilter] = useState<PartnerStatusFilter>("all");
+  const [conversionFilter, setConversionFilter] = useState<ConversionFilter>("all");
+  const [conversionSearch, setConversionSearch] = useState("");
   const [commissionFilter, setCommissionFilter] = useState<CommissionFilter>("all");
   const [commissionSearch, setCommissionSearch] = useState("");
   const [payoutSearch, setPayoutSearch] = useState("");
@@ -189,6 +214,7 @@ export default function AdminPartnersPage() {
   const [partnerFormOpen, setPartnerFormOpen] = useState(false);
   const [partnerForm, setPartnerForm] = useState<PartnerFormState>({ ...EMPTY_PARTNER_FORM });
   const [isSavingPartner, setIsSavingPartner] = useState(false);
+  const [statusUpdatingPartnerId, setStatusUpdatingPartnerId] = useState<string | null>(null);
 
   const [commissionAction, setCommissionAction] = useState<CommissionActionState | null>(null);
   const [isSavingCommissionAction, setIsSavingCommissionAction] = useState(false);
@@ -332,6 +358,8 @@ export default function AdminPartnersPage() {
       (acc, row) => {
         acc.totalPartners += 1;
         if (row.partner_status === "active") acc.activePartners += 1;
+        if (row.partner_status === "paused") acc.pausedPartners += 1;
+        if (row.partner_status === "inactive") acc.inactivePartners += 1;
         acc.totalSubscriptionsSold += row.total_subscriptions_sold ?? 0;
         acc.pendingCommissions = combineCurrencyTotals(acc.pendingCommissions, row.commissions_pending_by_currency);
         acc.approvedCommissions = combineCurrencyTotals(acc.approvedCommissions, row.commissions_approved_by_currency);
@@ -341,6 +369,8 @@ export default function AdminPartnersPage() {
       {
         totalPartners: 0,
         activePartners: 0,
+        pausedPartners: 0,
+        inactivePartners: 0,
         totalSubscriptionsSold: 0,
         pendingCommissions: {} as CurrencyTotals,
         approvedCommissions: {} as CurrencyTotals,
@@ -351,9 +381,32 @@ export default function AdminPartnersPage() {
     return totals;
   }, [summaries]);
 
+  const conversionMetrics = useMemo(() => {
+    return conversions.reduce(
+      (acc, conversion) => {
+        acc.total += 1;
+        if (conversion.status === "attributed") acc.attributed += 1;
+        if (conversion.status === "disqualified") acc.disqualified += 1;
+        return acc;
+      },
+      { total: 0, attributed: 0, disqualified: 0 }
+    );
+  }, [conversions]);
+
   const topPartners = useMemo(() => {
     return [...summaries]
       .sort((a, b) => {
+        const statusRank = (status: PartnerAccountStatus) => {
+          if (status === "active") return 0;
+          if (status === "paused") return 1;
+          if (status === "inactive") return 2;
+          return 3;
+        };
+
+        if (statusRank(a.partner_status) !== statusRank(b.partner_status)) {
+          return statusRank(a.partner_status) - statusRank(b.partner_status);
+        }
+
         if (b.total_subscriptions_sold !== a.total_subscriptions_sold) {
           return b.total_subscriptions_sold - a.total_subscriptions_sold;
         }
@@ -361,6 +414,10 @@ export default function AdminPartnersPage() {
       })
       .slice(0, 6);
   }, [summaries]);
+
+  const recentDisqualifiedConversions = useMemo(() => {
+    return conversions.filter((conversion) => conversion.status === "disqualified").slice(0, 8);
+  }, [conversions]);
 
   const recentActivity = useMemo<ActivityItem[]>(() => {
     const conversionItems = conversions.map((conversion) => ({
@@ -434,14 +491,35 @@ export default function AdminPartnersPage() {
 
   const filteredPartners = useMemo(() => {
     const search = partnerSearch.trim().toLowerCase();
-    if (!search) return summaries;
-
     return summaries.filter((row) => {
-      return [row.display_name, row.contact_email ?? "", row.referral_code].some((value) =>
+      const matchesStatus = partnerStatusFilter === "all" || row.partner_status === partnerStatusFilter;
+      if (!matchesStatus) return false;
+      if (!search) return true;
+
+      return [row.display_name, row.contact_email ?? "", row.referral_code, row.partner_status].some((value) =>
         value.toLowerCase().includes(search)
       );
     });
-  }, [partnerSearch, summaries]);
+  }, [partnerSearch, partnerStatusFilter, summaries]);
+
+  const filteredConversions = useMemo(() => {
+    const search = conversionSearch.trim().toLowerCase();
+
+    return conversions.filter((conversion) => {
+      const matchesStatus = conversionFilter === "all" || conversion.status === conversionFilter;
+      if (!matchesStatus) return false;
+      if (!search) return true;
+
+      const partnerLabel = getPartnerLabel(conversion.partner_id).toLowerCase();
+      const reason = (conversion.disqualification_reason ?? "").toLowerCase();
+      return (
+        partnerLabel.includes(search) ||
+        conversion.referral_code_used.toLowerCase().includes(search) ||
+        conversion.status.toLowerCase().includes(search) ||
+        reason.includes(search)
+      );
+    });
+  }, [conversionFilter, conversionSearch, conversions, getPartnerLabel]);
 
   const filteredCommissions = useMemo(() => {
     const search = commissionSearch.trim().toLowerCase();
@@ -565,6 +643,41 @@ export default function AdminPartnersPage() {
       });
     } finally {
       setIsSavingPartner(false);
+    }
+  };
+
+  const handlePartnerStatusChange = async (partnerId: string, nextStatus: PartnerAccountStatus) => {
+    const partner = partnerById[partnerId];
+    if (!partner || partner.status === nextStatus) return;
+
+    setStatusUpdatingPartnerId(partnerId);
+    try {
+      await upsertPartnerAccount({
+        partnerId: partner.id,
+        userId: partner.user_id,
+        status: nextStatus,
+        displayName: partner.display_name,
+        contactName: partner.contact_name,
+        contactEmail: partner.contact_email,
+        referralCode: partner.referral_code,
+        notes: partner.notes,
+      });
+
+      pushToast({
+        kind: "success",
+        title: "Statut partenaire mis a jour",
+        message: `${partner.display_name} est maintenant ${partnerStatusLabel(nextStatus).toLowerCase()}.`,
+      });
+
+      await loadData();
+    } catch (err: any) {
+      pushToast({
+        kind: "error",
+        title: "Statut non mis a jour",
+        message: err?.message ?? "Le changement de statut a echoue.",
+      });
+    } finally {
+      setStatusUpdatingPartnerId(null);
     }
   };
 
@@ -837,6 +950,16 @@ export default function AdminPartnersPage() {
               <span className="muted">Eligibles pour l'attribution</span>
             </article>
             <article className="adminPartners__kpi card">
+              <span className="adminPartners__kpiLabel">Partenaires en pause</span>
+              <strong>{overviewMetrics.pausedPartners}</strong>
+              <span className="muted">Acces temporairement suspendu</span>
+            </article>
+            <article className="adminPartners__kpi card">
+              <span className="adminPartners__kpiLabel">Partenaires desactives</span>
+              <strong>{overviewMetrics.inactivePartners}</strong>
+              <span className="muted">Acces coupe par l'equipe</span>
+            </article>
+            <article className="adminPartners__kpi card">
               <span className="adminPartners__kpiLabel">Total abonnements vendus</span>
               <strong>{overviewMetrics.totalSubscriptionsSold}</strong>
               <span className="muted">Tous plans confondus</span>
@@ -859,6 +982,11 @@ export default function AdminPartnersPage() {
               <span className="adminPartners__kpiLabel">Commissions payees</span>
               <strong>{formatCurrencyTotals(overviewMetrics.paidCommissions)}</strong>
               <span className="muted">{commissions.filter((item) => item.status === "paid").length} deja reglee(s)</span>
+            </article>
+            <article className="adminPartners__kpi card">
+              <span className="adminPartners__kpiLabel">Conversions disqualifiees</span>
+              <strong>{conversionMetrics.disqualified}</strong>
+              <span className="muted">{conversionMetrics.attributed} attribuee(s) sur {conversionMetrics.total}</span>
             </article>
           </div>
 
@@ -888,7 +1016,7 @@ export default function AdminPartnersPage() {
                           <div className="muted">{partner.contact_email ?? "Sans email"}</div>
                         </td>
                         <td>
-                          <span className={statusBadgeClass(partner.partner_status)}>{partner.partner_status}</span>
+                          <span className={statusBadgeClass(partner.partner_status)}>{partnerStatusLabel(partner.partner_status)}</span>
                         </td>
                         <td>{partner.total_subscriptions_sold}</td>
                         <td className="adminPartners__planBreakdown">
@@ -933,6 +1061,34 @@ export default function AdminPartnersPage() {
                 )}
               </div>
             </div>
+
+            <div className="card">
+              <div className="card__titleRow">
+                <h2>Conversions a surveiller</h2>
+                <span className="badge badge--red">{recentDisqualifiedConversions.length}</span>
+              </div>
+
+              {recentDisqualifiedConversions.length === 0 ? (
+                <div className="empty">Aucune conversion disqualifiee recente.</div>
+              ) : (
+                <div className="adminPartners__signalList">
+                  {recentDisqualifiedConversions.map((conversion) => (
+                    <div key={conversion.id} className="adminPartners__signalItem">
+                      <div>
+                        <strong>{getPartnerLabel(conversion.partner_id)}</strong>
+                        <span>
+                          Code {conversion.referral_code_used} | {conversion.disqualification_reason ?? "non eligible"}
+                        </span>
+                      </div>
+                      <div className="adminPartners__signalMeta">
+                        <span className="badge badge--red">{conversionStatusLabel(conversion.status)}</span>
+                        <span className="muted">{formatDateTime(conversion.converted_at)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}
@@ -942,17 +1098,31 @@ export default function AdminPartnersPage() {
           <div className="card">
             <div className="card__titleRow">
               <h2>Partenaires</h2>
-              <div className="filters">
-                <input
-                  className="search"
-                  value={partnerSearch}
-                  onChange={(event) => setPartnerSearch(event.target.value)}
-                  placeholder="Rechercher nom, email ou code..."
-                />
-                <button type="button" className="btn btn--primary" onClick={openCreatePartner}>
-                  Creer un partenaire
+            </div>
+
+            <div className="adminPartners__toolbar">
+              <input
+                className="search"
+                value={partnerSearch}
+                onChange={(event) => setPartnerSearch(event.target.value)}
+                placeholder="Rechercher nom, email, code ou statut..."
+              />
+              <button type="button" className="btn btn--primary" onClick={openCreatePartner}>
+                Creer un partenaire
+              </button>
+            </div>
+
+            <div className="adminPartners__filtersRow">
+              {(["all", "active", "paused", "inactive", "pending"] as PartnerStatusFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={`adminPartners__filterChip${partnerStatusFilter === filter ? " is-active" : ""}`}
+                  onClick={() => setPartnerStatusFilter(filter)}
+                >
+                  {filter === "all" ? "Tous les statuts" : partnerStatusLabel(filter)}
                 </button>
-              </div>
+              ))}
             </div>
 
             <div className="tableWrap">
@@ -963,9 +1133,9 @@ export default function AdminPartnersPage() {
                     <th>Code</th>
                     <th>Statut</th>
                     <th>Ventes</th>
-                    <th>7j / 30j / 90j</th>
                     <th>Total gagne</th>
-                    <th className="right">Action</th>
+                    <th>Derniere vente</th>
+                    <th className="right">Gestion</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -986,20 +1156,128 @@ export default function AdminPartnersPage() {
                           <span className="mono">{partner.referral_code}</span>
                         </td>
                         <td>
-                          <span className={statusBadgeClass(partner.partner_status)}>{partner.partner_status}</span>
+                          <span className={statusBadgeClass(partner.partner_status)}>{partnerStatusLabel(partner.partner_status)}</span>
                         </td>
-                        <td>{partner.total_subscriptions_sold}</td>
-                        <td className="adminPartners__planBreakdown">
-                          <span>7j {partner.sold_7d_count}</span>
-                          <span>30j {partner.sold_30d_count}</span>
-                          <span>90j {partner.sold_90d_count}</span>
+                        <td>
+                          <div className="adminPartners__tableTitle">{partner.total_subscriptions_sold}</div>
+                          <div className="adminPartners__planBreakdown">
+                            <span>7j {partner.sold_7d_count}</span>
+                            <span>30j {partner.sold_30d_count}</span>
+                            <span>90j {partner.sold_90d_count}</span>
+                          </div>
                         </td>
                         <td>{formatCurrencyTotals(partner.commissions_total_earned_by_currency)}</td>
+                        <td>{formatDateTime(partner.last_conversion_at)}</td>
                         <td className="right">
-                          <button type="button" className="btn" onClick={() => openEditPartner(partner.partner_id)}>
-                            Modifier
-                          </button>
+                          <div className="adminPartners__rowActions">
+                            <button
+                              type="button"
+                              className="btn btn--primary"
+                              disabled={statusUpdatingPartnerId === partner.partner_id || partner.partner_status === "active"}
+                              onClick={() => void handlePartnerStatusChange(partner.partner_id, "active")}
+                            >
+                              {statusUpdatingPartnerId === partner.partner_id && partner.partner_status !== "active" ? "..." : "Activer"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={statusUpdatingPartnerId === partner.partner_id || partner.partner_status === "paused"}
+                              onClick={() => void handlePartnerStatusChange(partner.partner_id, "paused")}
+                            >
+                              Pause
+                            </button>
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={statusUpdatingPartnerId === partner.partner_id || partner.partner_status === "inactive"}
+                              onClick={() => void handlePartnerStatusChange(partner.partner_id, "inactive")}
+                            >
+                              Desactiver
+                            </button>
+                            <button type="button" className="btn" onClick={() => openEditPartner(partner.partner_id)}>
+                              Modifier
+                            </button>
+                          </div>
                         </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {activeTab === "conversions" && !isEmpty && (
+        <section className="adminPartners__panel">
+          <div className="card">
+            <div className="card__titleRow">
+              <h2>Conversions</h2>
+              <div className="filters">
+                <input
+                  className="search"
+                  value={conversionSearch}
+                  onChange={(event) => setConversionSearch(event.target.value)}
+                  placeholder="Rechercher partenaire, code ou motif..."
+                />
+              </div>
+            </div>
+
+            <div className="adminPartners__filtersRow">
+              {(["all", "attributed", "disqualified"] as ConversionFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={`adminPartners__filterChip${conversionFilter === filter ? " is-active" : ""}`}
+                  onClick={() => setConversionFilter(filter)}
+                >
+                  {filter === "all" ? "Toutes" : conversionStatusLabel(filter)}
+                </button>
+              ))}
+            </div>
+
+            <div className="tableWrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Partenaire</th>
+                    <th>Code</th>
+                    <th>Statut</th>
+                    <th>Eligibilite</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredConversions.length === 0 ? (
+                    <tr>
+                      <td className="empty" colSpan={5}>
+                        Aucune conversion pour ces filtres.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredConversions.map((conversion) => (
+                      <tr
+                        key={conversion.id}
+                        className={conversion.status === "disqualified" ? "adminPartners__tableRow--alert" : undefined}
+                      >
+                        <td>
+                          <div className="adminPartners__tableTitle">{getPartnerLabel(conversion.partner_id)}</div>
+                          <div className="muted">{getPartnerEmail(conversion.partner_id)}</div>
+                        </td>
+                        <td>
+                          <span className="mono">{conversion.referral_code_used}</span>
+                        </td>
+                        <td>
+                          <span className={statusBadgeClass(conversion.status)}>{conversionStatusLabel(conversion.status)}</span>
+                        </td>
+                        <td>
+                          <div className="adminPartners__tableTitle">{conversionEligibilityLabel(conversion)}</div>
+                          <div className="muted">
+                            {conversion.is_first_paid_subscription ? "Commissionable" : "Hors premier abonnement"}
+                          </div>
+                        </td>
+                        <td>{formatDateTime(conversion.converted_at)}</td>
                       </tr>
                     ))
                   )}
@@ -1044,10 +1322,11 @@ export default function AdminPartnersPage() {
                   <tr>
                     <th>Partenaire</th>
                     <th>Commission</th>
-                    <th>Devise</th>
+                    <th>Base</th>
                     <th>Taux</th>
                     <th>Statut</th>
                     <th>Vente #</th>
+                    <th>Payout</th>
                     <th>Date</th>
                     <th className="right">Actions</th>
                   </tr>
@@ -1061,38 +1340,41 @@ export default function AdminPartnersPage() {
                     </tr>
                   ) : (
                     filteredCommissions.map((commission) => (
-                      <tr key={commission.id}>
+                      <tr key={commission.id} className={commission.status === "voided" ? "adminPartners__tableRow--muted" : undefined}>
                         <td>
                           <div className="adminPartners__tableTitle">{getPartnerLabel(commission.partner_id)}</div>
                           <div className="muted">{getPartnerEmail(commission.partner_id)}</div>
                         </td>
                         <td>{formatMinorAmount(commission.currency, commission.commission_amount_minor)}</td>
-                        <td>{commission.currency}</td>
+                        <td>{formatMinorAmount(commission.currency, commission.commissionable_amount_minor)}</td>
                         <td>{Number(commission.commission_rate_percent).toFixed(2)}%</td>
                         <td>
                           <span className={statusBadgeClass(commission.status)}>{commission.status}</span>
                         </td>
                         <td>{commission.sale_sequence_number}</td>
+                        <td>{commission.payout_id ? "Rattachee" : "-"}</td>
                         <td>{formatDateTime(commission.paid_at ?? commission.approved_at ?? commission.calculated_at)}</td>
                         <td className="right">
-                          {commission.status === "pending" && (
-                            <button
-                              type="button"
-                              className="btn btn--primary"
-                              onClick={() => setCommissionAction({ mode: "approve", commissionId: commission.id, notes: "" })}
-                            >
-                              Approuver
-                            </button>
-                          )}
-                          {commission.status !== "paid" && commission.status !== "voided" && (
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => setCommissionAction({ mode: "void", commissionId: commission.id, notes: commission.notes ?? "" })}
-                            >
-                              Annuler
-                            </button>
-                          )}
+                          <div className="adminPartners__rowActions adminPartners__rowActions--tight">
+                            {commission.status === "pending" && (
+                              <button
+                                type="button"
+                                className="btn btn--primary"
+                                onClick={() => setCommissionAction({ mode: "approve", commissionId: commission.id, notes: "" })}
+                              >
+                                Approuver
+                              </button>
+                            )}
+                            {commission.status !== "paid" && commission.status !== "voided" && (
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => setCommissionAction({ mode: "void", commissionId: commission.id, notes: commission.notes ?? "" })}
+                              >
+                                Annuler
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
