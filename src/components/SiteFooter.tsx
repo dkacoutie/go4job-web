@@ -94,6 +94,11 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                     </Link>
                   </li>
                   <li>
+                    <Link className="site-footer__link" to="/devenir-partenaire">
+                      Devenir partenaire
+                    </Link>
+                  </li>
+                  <li>
                     <Link className="site-footer__link" to="/contact">
                       Contact
                     </Link>
@@ -117,6 +122,11 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                   <li>
                     <Link className="site-footer__link" to="/pricing">
                       Voir les pass
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/devenir-partenaire">
+                      Programme partenaires
                     </Link>
                   </li>
                 </ul>

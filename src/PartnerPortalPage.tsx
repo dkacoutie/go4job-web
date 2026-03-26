@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "./components/ToastCenter";
 import { formatAmount } from "./lib/pricingHelpers";
 import { fetchPartnerPortalSnapshot, type PartnerDashboardSummaryRow } from "./lib/partnerPortalApi";
@@ -348,7 +348,10 @@ export default function PartnerPortalPage() {
             </div>
           </div>
           <div className="partnerPortal__heroActions">
-            <a className="btn btn--primary" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Activation%20espace%20partenaire`}>
+            <Link className="btn btn--primary" to="/devenir-partenaire">
+              Devenir partenaire
+            </Link>
+            <a className="btn" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Activation%20espace%20partenaire`}>
               Contacter l'equipe
             </a>
           </div>

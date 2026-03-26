@@ -38,6 +38,7 @@ const AdminSourcesPage = lazy(() => import("./AdminSourcesPage"));
 const AdminPartnersPage = lazy(() => import("./AdminPartnersPage"));
 const PartnerPortalPage = lazy(() => import("./PartnerPortalPage"));
 const JobRadarOnboardingPage = lazy(() => import("./JobRadarOnboardingPage"));
+const BecomePartnerPage = lazy(() => import("./BecomePartnerPage"));
 
 type AuthLocationState = {
   from?: string;
@@ -126,6 +127,14 @@ export default function App() {
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/contact" element={<ContactPage />} />
+                <Route
+                  path="/devenir-partenaire"
+                  element={
+                    <LazyRoute>
+                      <BecomePartnerPage />
+                    </LazyRoute>
+                  }
+                />
                 <Route
                   path="/pricing"
                   element={
