@@ -60,7 +60,17 @@ type ActivityItem = {
   detail: string;
 };
 
+type PartnerDetailActivityItem = {
+  id: string;
+  kind: "conversion" | "commission" | "payout";
+  at: string;
+  title: string;
+  detail: string;
+  tone: "blue" | "green" | "yellow" | "gray" | "red";
+};
+
 const PARTNER_STATUSES: PartnerAccountStatus[] = ["pending", "active", "paused", "inactive"];
+const PARTNER_REFERRAL_BASE_URL = "https://jobradar.go4jobapp.com/?ref=";
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Vue d'ensemble" },
   { id: "partners", label: "Partenaires" },
@@ -90,6 +100,23 @@ const EMPTY_PAYOUT_COMPOSER: PayoutComposerState = {
   notes: "",
   selectedCommissionIds: [],
 };
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "absolute";
+  area.style.left = "-9999px";
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand("copy");
+  document.body.removeChild(area);
+}
 
 function normalizeCurrencyTotals(value: unknown): CurrencyTotals {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -215,6 +242,7 @@ export default function AdminPartnersPage() {
   const [partnerForm, setPartnerForm] = useState<PartnerFormState>({ ...EMPTY_PARTNER_FORM });
   const [isSavingPartner, setIsSavingPartner] = useState(false);
   const [statusUpdatingPartnerId, setStatusUpdatingPartnerId] = useState<string | null>(null);
+  const [partnerDetailId, setPartnerDetailId] = useState<string | null>(null);
 
   const [commissionAction, setCommissionAction] = useState<CommissionActionState | null>(null);
   const [isSavingCommissionAction, setIsSavingCommissionAction] = useState(false);
@@ -585,15 +613,113 @@ export default function AdminPartnersPage() {
     return commissions.filter((commission) => commission.payout_id === currentPayout.id);
   }, [commissions, currentPayout]);
 
+  const selectedPartnerSummary = useMemo(
+    () => (partnerDetailId ? summaryById[partnerDetailId] ?? null : null),
+    [partnerDetailId, summaryById]
+  );
+  const selectedPartnerAccount = useMemo(
+    () => (partnerDetailId ? partnerById[partnerDetailId] ?? null : null),
+    [partnerById, partnerDetailId]
+  );
+  const selectedPartnerConversions = useMemo(() => {
+    if (!partnerDetailId) return [];
+    return conversions.filter((conversion) => conversion.partner_id === partnerDetailId).slice(0, 8);
+  }, [conversions, partnerDetailId]);
+  const selectedPartnerCommissions = useMemo(() => {
+    if (!partnerDetailId) return [];
+    return commissions.filter((commission) => commission.partner_id === partnerDetailId).slice(0, 8);
+  }, [commissions, partnerDetailId]);
+  const selectedPartnerPayouts = useMemo(() => {
+    if (!partnerDetailId) return [];
+    return payouts.filter((payout) => payout.partner_id === partnerDetailId).slice(0, 8);
+  }, [partnerDetailId, payouts]);
+  const selectedPartnerReferralLink = useMemo(() => {
+    const code = selectedPartnerSummary?.referral_code ?? selectedPartnerAccount?.referral_code ?? "";
+    if (!code) return "";
+    return `${PARTNER_REFERRAL_BASE_URL}${encodeURIComponent(code)}`;
+  }, [selectedPartnerAccount?.referral_code, selectedPartnerSummary?.referral_code]);
+  const selectedPartnerActivity = useMemo<PartnerDetailActivityItem[]>(() => {
+    if (!partnerDetailId) return [];
+
+    const conversionItems = selectedPartnerConversions.map((conversion) => ({
+      id: `detail-conversion-${conversion.id}`,
+      kind: "conversion" as const,
+      at: conversion.converted_at,
+      tone: conversion.status === "attributed" ? ("green" as const) : ("red" as const),
+      title: conversion.status === "attributed" ? "Conversion attribuee" : "Conversion disqualifiee",
+      detail:
+        conversion.status === "attributed"
+          ? `Code ${conversion.referral_code_used} | premier abonnement valide`
+          : `Code ${conversion.referral_code_used} | ${conversion.disqualification_reason ?? "non eligible"}`,
+    }));
+
+    const commissionItems = selectedPartnerCommissions.map((commission) => ({
+      id: `detail-commission-${commission.id}`,
+      kind: "commission" as const,
+      at: commission.paid_at ?? commission.approved_at ?? commission.calculated_at,
+      tone:
+        commission.status === "paid"
+          ? ("green" as const)
+          : commission.status === "approved"
+          ? ("blue" as const)
+          : commission.status === "voided"
+          ? ("red" as const)
+          : ("yellow" as const),
+      title:
+        commission.status === "paid"
+          ? "Commission payee"
+          : commission.status === "approved"
+          ? "Commission approuvee"
+          : commission.status === "voided"
+          ? "Commission annulee"
+          : "Commission en attente",
+      detail: `${formatMinorAmount(commission.currency, commission.commission_amount_minor)} | vente #${commission.sale_sequence_number}`,
+    }));
+
+    const payoutItems = selectedPartnerPayouts.map((payout) => ({
+      id: `detail-payout-${payout.id}`,
+      kind: "payout" as const,
+      at: payout.paid_at ?? payout.approved_at ?? payout.created_at,
+      tone:
+        payout.status === "paid"
+          ? ("green" as const)
+          : payout.status === "approved"
+          ? ("blue" as const)
+          : payout.status === "failed"
+          ? ("red" as const)
+          : ("gray" as const),
+      title: payout.status === "paid" ? "Payout paye" : `Payout ${payout.status}`,
+      detail: `${formatMinorAmount(payout.currency, payout.amount_minor)} | ${payout.payment_reference ?? "sans reference"}`,
+    }));
+
+    return [...conversionItems, ...commissionItems, ...payoutItems]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+  }, [partnerDetailId, selectedPartnerCommissions, selectedPartnerConversions, selectedPartnerPayouts]);
+
   const openCreatePartner = () => {
     setPartnerForm({ ...EMPTY_PARTNER_FORM });
     setPartnerFormOpen(true);
+  };
+
+  const openPartnerDetail = (partnerId: string) => {
+    setPartnerDetailId(partnerId);
+  };
+
+  const closePartnerDetail = () => {
+    setPartnerDetailId(null);
   };
 
   const openEditPartner = (partnerId: string) => {
     const partner = partnerById[partnerId] ?? null;
     setPartnerForm(buildPartnerFormState(partner));
     setPartnerFormOpen(true);
+  };
+
+  const openEditPartnerFromDetail = () => {
+    if (!partnerDetailId) return;
+    closePartnerDetail();
+    openEditPartner(partnerDetailId);
   };
 
   const closePartnerForm = () => {
@@ -678,6 +804,45 @@ export default function AdminPartnersPage() {
       });
     } finally {
       setStatusUpdatingPartnerId(null);
+    }
+  };
+
+  const handleCopyPartnerCode = async () => {
+    const code = selectedPartnerSummary?.referral_code ?? selectedPartnerAccount?.referral_code;
+    if (!code) return;
+
+    try {
+      await copyText(code);
+      pushToast({
+        kind: "success",
+        title: "Code partenaire copie",
+        message: "Le code partenaire est pret a etre partage.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Copie impossible",
+        message: "Le navigateur a bloque la copie du code.",
+      });
+    }
+  };
+
+  const handleCopyPartnerLink = async () => {
+    if (!selectedPartnerReferralLink) return;
+
+    try {
+      await copyText(selectedPartnerReferralLink);
+      pushToast({
+        kind: "success",
+        title: "Lien partenaire copie",
+        message: "Le lien partenaire est pret a etre partage.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Copie impossible",
+        message: "Le navigateur a bloque la copie du lien.",
+      });
     }
   };
 
@@ -1170,6 +1335,9 @@ export default function AdminPartnersPage() {
                         <td>{formatDateTime(partner.last_conversion_at)}</td>
                         <td className="right">
                           <div className="adminPartners__rowActions">
+                            <button type="button" className="btn" onClick={() => openPartnerDetail(partner.partner_id)}>
+                              Voir fiche
+                            </button>
                             <button
                               type="button"
                               className="btn btn--primary"
@@ -1193,9 +1361,6 @@ export default function AdminPartnersPage() {
                               onClick={() => void handlePartnerStatusChange(partner.partner_id, "inactive")}
                             >
                               Desactiver
-                            </button>
-                            <button type="button" className="btn" onClick={() => openEditPartner(partner.partner_id)}>
-                              Modifier
                             </button>
                           </div>
                         </td>
@@ -1453,6 +1618,214 @@ export default function AdminPartnersPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {partnerDetailId && selectedPartnerSummary && selectedPartnerAccount && (
+        <div className="adminPartners__overlay" role="presentation">
+          <div className="adminPartners__drawer adminPartners__drawer--wide">
+            <div className="card__titleRow">
+              <div>
+                <div className="chips">
+                  <span className="chip">Fiche partenaire</span>
+                  <span className="chip">JobRadar</span>
+                </div>
+                <h2>{selectedPartnerSummary.display_name}</h2>
+                <div className="muted">
+                  {selectedPartnerAccount.contact_email ?? "Sans email"} | code {selectedPartnerSummary.referral_code}
+                </div>
+              </div>
+              <div className="adminPartners__detailTopActions">
+                <span className={statusBadgeClass(selectedPartnerSummary.partner_status)}>
+                  {partnerStatusLabel(selectedPartnerSummary.partner_status)}
+                </span>
+                <button type="button" className="btn" onClick={closePartnerDetail}>
+                  Fermer
+                </button>
+              </div>
+            </div>
+
+            <div className="adminPartners__detailGrid">
+              <section className="card adminPartners__detailHero">
+                <div className="adminPartners__detailActions">
+                  <button type="button" className="btn" onClick={() => void handleCopyPartnerCode()}>
+                    Copier le code
+                  </button>
+                  <button type="button" className="btn" onClick={() => void handleCopyPartnerLink()}>
+                    Copier le lien
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    disabled={statusUpdatingPartnerId === selectedPartnerSummary.partner_id || selectedPartnerSummary.partner_status === "active"}
+                    onClick={() => void handlePartnerStatusChange(selectedPartnerSummary.partner_id, "active")}
+                  >
+                    Activer
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={statusUpdatingPartnerId === selectedPartnerSummary.partner_id || selectedPartnerSummary.partner_status === "paused"}
+                    onClick={() => void handlePartnerStatusChange(selectedPartnerSummary.partner_id, "paused")}
+                  >
+                    Pause
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={statusUpdatingPartnerId === selectedPartnerSummary.partner_id || selectedPartnerSummary.partner_status === "inactive"}
+                    onClick={() => void handlePartnerStatusChange(selectedPartnerSummary.partner_id, "inactive")}
+                  >
+                    Desactiver
+                  </button>
+                  <button type="button" className="btn" onClick={openEditPartnerFromDetail}>
+                    Modifier
+                  </button>
+                </div>
+
+                <div className="adminPartners__detailMetaGrid">
+                  <div className="adminPartners__detailPill">
+                    <span>Email</span>
+                    <strong>{selectedPartnerAccount.contact_email ?? "-"}</strong>
+                  </div>
+                  <div className="adminPartners__detailPill">
+                    <span>Code partenaire</span>
+                    <strong className="mono">{selectedPartnerSummary.referral_code}</strong>
+                  </div>
+                  <div className="adminPartners__detailPill">
+                    <span>Lien partenaire</span>
+                    <strong className="mono">{selectedPartnerReferralLink || "-"}</strong>
+                  </div>
+                  <div className="adminPartners__detailPill">
+                    <span>Derniere vente</span>
+                    <strong>{formatDateTime(selectedPartnerSummary.last_conversion_at)}</strong>
+                  </div>
+                </div>
+
+                <div className="adminPartners__detailStats">
+                  <div className="adminPartners__detailStat">
+                    <span>Total abonnements vendus</span>
+                    <strong>{selectedPartnerSummary.total_subscriptions_sold}</strong>
+                  </div>
+                  <div className="adminPartners__detailStat">
+                    <span>Detail 7j / 30j / 90j</span>
+                    <strong>
+                      {selectedPartnerSummary.sold_7d_count} / {selectedPartnerSummary.sold_30d_count} / {selectedPartnerSummary.sold_90d_count}
+                    </strong>
+                  </div>
+                  <div className="adminPartners__detailStat">
+                    <span>Total gagne</span>
+                    <strong>{formatCurrencyTotals(selectedPartnerSummary.commissions_total_earned_by_currency)}</strong>
+                  </div>
+                  <div className="adminPartners__detailStat">
+                    <span>Notes internes</span>
+                    <strong>{selectedPartnerAccount.notes?.trim() || "Aucune note interne"}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="card adminPartners__detailTimeline">
+                <div className="card__titleRow">
+                  <h3>Historique recent</h3>
+                  <span className="badge badge--blue">{selectedPartnerActivity.length}</span>
+                </div>
+
+                {selectedPartnerActivity.length === 0 ? (
+                  <div className="empty">Aucun historique recent pour ce partenaire.</div>
+                ) : (
+                  <div className="adminPartners__detailTimelineList">
+                    {selectedPartnerActivity.map((item) => (
+                      <div key={item.id} className="adminPartners__detailTimelineItem">
+                        <span className={`badge badge--${item.tone}`}>{item.kind}</span>
+                        <div className="adminPartners__detailTimelineBody">
+                          <strong>{item.title}</strong>
+                          <span>{item.detail}</span>
+                        </div>
+                        <div className="muted">{formatDateTime(item.at)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="card">
+                <div className="card__titleRow">
+                  <h3>Conversions recentes</h3>
+                  <span className="badge badge--yellow">{selectedPartnerConversions.length}</span>
+                </div>
+
+                {selectedPartnerConversions.length === 0 ? (
+                  <div className="empty">Aucune conversion recente.</div>
+                ) : (
+                  <div className="adminPartners__detailList">
+                    {selectedPartnerConversions.map((conversion) => (
+                      <div key={conversion.id} className="adminPartners__detailListItem">
+                        <div>
+                          <strong>{conversionStatusLabel(conversion.status)}</strong>
+                          <span>
+                            Code {conversion.referral_code_used} | {conversionEligibilityLabel(conversion)}
+                          </span>
+                        </div>
+                        <div className="muted">{formatDateTime(conversion.converted_at)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="card">
+                <div className="card__titleRow">
+                  <h3>Commissions recentes</h3>
+                  <span className="badge badge--blue">{selectedPartnerCommissions.length}</span>
+                </div>
+
+                {selectedPartnerCommissions.length === 0 ? (
+                  <div className="empty">Aucune commission recente.</div>
+                ) : (
+                  <div className="adminPartners__detailList">
+                    {selectedPartnerCommissions.map((commission) => (
+                      <div key={commission.id} className="adminPartners__detailListItem">
+                        <div>
+                          <strong>{formatMinorAmount(commission.currency, commission.commission_amount_minor)}</strong>
+                          <span>
+                            {commission.status} | vente #{commission.sale_sequence_number}
+                          </span>
+                        </div>
+                        <div className="muted">
+                          {formatDateTime(commission.paid_at ?? commission.approved_at ?? commission.calculated_at)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="card">
+                <div className="card__titleRow">
+                  <h3>Payouts recents</h3>
+                  <span className="badge badge--green">{selectedPartnerPayouts.length}</span>
+                </div>
+
+                {selectedPartnerPayouts.length === 0 ? (
+                  <div className="empty">Aucun payout recent.</div>
+                ) : (
+                  <div className="adminPartners__detailList">
+                    {selectedPartnerPayouts.map((payout) => (
+                      <div key={payout.id} className="adminPartners__detailListItem">
+                        <div>
+                          <strong>{formatMinorAmount(payout.currency, payout.amount_minor)}</strong>
+                          <span>
+                            {payout.status} | {payout.payment_reference ?? "sans reference"}
+                          </span>
+                        </div>
+                        <div className="muted">{formatDateTime(payout.paid_at ?? payout.approved_at ?? payout.created_at)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
       )}
 
       {partnerFormOpen && (
