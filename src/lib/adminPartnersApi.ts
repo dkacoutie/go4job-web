@@ -108,6 +108,19 @@ export type AdminPartnerSnapshot = {
   conversions: PartnerConversionRow[];
 };
 
+export type AdminUserRow = {
+  id: string;
+  user_id: string;
+  email: string;
+  role: "super_admin" | "admin";
+  is_active: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  is_current_user: boolean;
+  is_protected: boolean;
+};
+
 export type PartnerAccountUpsertInput = {
   partnerId?: string | null;
   userId?: string | null;
@@ -229,4 +242,28 @@ export async function markPartnerPayoutPaid(
   });
 
   return ensureNoError(error, data as PartnerPayoutRow | null, "Impossible de marquer le paiement comme paye.");
+}
+
+export async function fetchAdminUsers(): Promise<AdminUserRow[]> {
+  const { data, error } = await supabase.rpc("admin_list_admin_users");
+
+  if (error) throw new Error(error.message || "Impossible de charger les admins.");
+  return (data ?? []) as AdminUserRow[];
+}
+
+export async function grantAdminAccess(email: string): Promise<AdminUserRow> {
+  const { data, error } = await supabase.rpc("admin_grant_admin_access", {
+    p_email: email,
+  });
+
+  return ensureNoError(error, data as AdminUserRow | null, "Impossible d'ajouter cet admin.");
+}
+
+export async function setAdminUserActive(adminUserId: string, isActive: boolean): Promise<AdminUserRow> {
+  const { data, error } = await supabase.rpc("admin_set_admin_user_active", {
+    p_admin_user_id: adminUserId,
+    p_is_active: isActive,
+  });
+
+  return ensureNoError(error, data as AdminUserRow | null, "Impossible de mettre a jour cet admin.");
 }

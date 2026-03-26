@@ -74,6 +74,29 @@
   gap: 14px;
 }
 
+.adminPartners__adminSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.adminPartners__adminStats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.adminPartners__adminForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.adminPartners__adminHint {
+  font-size: 13px;
+}
+
 .adminPartners__kpi {
   display: flex;
   flex-direction: column;
@@ -539,7 +562,8 @@
   }
 
   .adminPartners__kpis,
-  .adminPartners__formGrid {
+  .adminPartners__formGrid,
+  .adminPartners__adminForm {
     grid-template-columns: 1fr;
   }
 

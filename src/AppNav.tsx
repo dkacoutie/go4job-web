@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import go4jobLogo from "./assets/go4job-logo.png";
 import "./AppNav.css";
+import { fetchIsAdminUser } from "./lib/adminAccess";
 import { useSession } from "./lib/useSession";
 import { supabase } from "./lib/supabaseClient";
 
@@ -69,10 +70,7 @@ export default function AppNav() {
   );
 
   const adminItems = useMemo(
-    () => [
-      { label: "Partenaires", path: "/admin/partners" },
-      { label: "Sources", path: "/admin/sources" },
-    ],
+    () => [{ label: "Partenaires", path: "/admin/partners" }],
     []
   );
 
@@ -117,14 +115,14 @@ export default function AppNav() {
         return;
       }
 
-      const [profileRes, partnerRes] = await Promise.all([
-        supabase.from("profiles").select("is_admin").eq("user_id", session.user.id).maybeSingle(),
+      const [isAdminUser, partnerRes] = await Promise.all([
+        fetchIsAdminUser(),
         supabase.from("partner_accounts").select("id").eq("user_id", session.user.id).maybeSingle(),
       ]);
 
       if (cancelled) return;
 
-      setIsAdmin(!profileRes.error && !!profileRes.data?.is_admin);
+      setIsAdmin(isAdminUser);
       setHasPartnerAccount(!partnerRes.error && !!partnerRes.data?.id);
     })();
 

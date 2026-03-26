@@ -1,7 +1,8 @@
-import { Suspense, lazy, type ReactNode } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
+import { Suspense, lazy, useEffect, type ReactNode } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, Outlet } from "react-router-dom";
 
 import ProtectedRoute from "./lib/ProtectedRoute";
+import AdminRoute from "./lib/AdminRoute";
 import JobRadarOnboardingGate from "./lib/JobRadarOnboardingGate";
 import { useSession } from "./lib/useSession";
 
@@ -44,6 +45,8 @@ type AuthLocationState = {
   from?: string;
 };
 
+const REDIRECT_STORAGE_KEY = "go4job_auth_redirect_to";
+
 function RouteLoader() {
   return (
     <div style={{ minHeight: "40vh", display: "grid", placeItems: "center", padding: 24 }}>
@@ -69,6 +72,34 @@ function isSafeInternalPath(path: unknown): path is string {
   return true;
 }
 
+function readStoredRedirect() {
+  try {
+    const value = localStorage.getItem(REDIRECT_STORAGE_KEY);
+    return isSafeInternalPath(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearStoredRedirect() {
+  try {
+    localStorage.removeItem(REDIRECT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function AuthRedirect({ to }: { to: string }) {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    clearStoredRedirect();
+    navigate(to, { replace: true });
+  }, [navigate, to]);
+
+  return <RouteLoader />;
+}
+
 function AuthGate() {
   const { session, loading } = useSession();
   const location = useLocation();
@@ -79,8 +110,8 @@ function AuthGate() {
 
   if (session) {
     const st = (location.state ?? {}) as AuthLocationState;
-    const redirectTo = isSafeInternalPath(st.from) ? st.from : "/jobradar/onboarding";
-    return <Navigate to={redirectTo} replace />;
+    const redirectTo = isSafeInternalPath(st.from) ? st.from : readStoredRedirect() ?? "/jobradar/onboarding";
+    return <AuthRedirect to={redirectTo} />;
   }
 
   return <AuthPage />;
@@ -191,9 +222,11 @@ export default function App() {
                 <Route
                   path="/admin/partners"
                   element={
-                    <LazyRoute>
-                      <AdminPartnersPage />
-                    </LazyRoute>
+                    <AdminRoute>
+                      <LazyRoute>
+                        <AdminPartnersPage />
+                      </LazyRoute>
+                    </AdminRoute>
                   }
                 />
                 <Route

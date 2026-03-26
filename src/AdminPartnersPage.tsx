@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase } from "./lib/supabaseClient";
 import { useToast } from "./components/ToastCenter";
 import {
   approvePartnerCommission,
   attachCommissionsToPayout,
   createPartnerPayout,
+  fetchAdminUsers,
   fetchAdminPartnerSnapshot,
+  grantAdminAccess,
   markPartnerPayoutPaid,
+  setAdminUserActive,
+  type AdminUserRow,
   type AdminPartnerSummaryRow,
   type CurrencyTotals,
   type PartnerAccountRow,
@@ -17,6 +20,7 @@ import {
   upsertPartnerAccount,
   voidPartnerCommission,
 } from "./lib/adminPartnersApi";
+import { fetchIsAdminUser, fetchIsSuperAdmin } from "./lib/adminAccess";
 import "./AdminPartnersPage.css";
 
 type AdminTab = "overview" | "partners" | "conversions" | "commissions" | "payouts";
@@ -69,6 +73,10 @@ type PartnerDetailActivityItem = {
   tone: "blue" | "green" | "yellow" | "gray" | "red";
 };
 
+type AdminManagementFormState = {
+  email: string;
+};
+
 const PARTNER_STATUSES: PartnerAccountStatus[] = ["pending", "active", "paused", "inactive"];
 const PARTNER_PROGRAM_ENTRY_URL = "https://jobradar.go4jobapp.com/devenir-partenaire";
 const PARTNER_REFERRAL_BASE_URL = "https://jobradar.go4jobapp.com/?ref=";
@@ -100,6 +108,10 @@ const EMPTY_PAYOUT_COMPOSER: PayoutComposerState = {
   paymentReference: "",
   notes: "",
   selectedCommissionIds: [],
+};
+
+const EMPTY_ADMIN_FORM: AdminManagementFormState = {
+  email: "",
 };
 
 async function copyText(text: string) {
@@ -222,6 +234,7 @@ export default function AdminPartnersPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -230,6 +243,7 @@ export default function AdminPartnersPage() {
   const [commissions, setCommissions] = useState<PartnerCommissionRow[]>([]);
   const [payouts, setPayouts] = useState<PartnerPayoutRow[]>([]);
   const [conversions, setConversions] = useState<PartnerConversionRow[]>([]);
+  const [adminUsers, setAdminUsers] = useState<AdminUserRow[]>([]);
 
   const [partnerSearch, setPartnerSearch] = useState("");
   const [partnerStatusFilter, setPartnerStatusFilter] = useState<PartnerStatusFilter>("all");
@@ -252,6 +266,9 @@ export default function AdminPartnersPage() {
   const [isSavingPayout, setIsSavingPayout] = useState(false);
   const [isAttachingCommissions, setIsAttachingCommissions] = useState(false);
   const [isMarkingPayoutPaid, setIsMarkingPayoutPaid] = useState(false);
+  const [adminForm, setAdminForm] = useState<AdminManagementFormState>({ ...EMPTY_ADMIN_FORM });
+  const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [adminStatusUpdatingId, setAdminStatusUpdatingId] = useState<string | null>(null);
 
   const currentPayout = useMemo(
     () => payouts.find((item) => item.id === payoutComposer.payoutId) ?? null,
@@ -303,45 +320,34 @@ export default function AdminPartnersPage() {
     setError(null);
 
     try {
-      const snapshot = await fetchAdminPartnerSnapshot();
+      const [snapshot, nextAdminUsers] = await Promise.all([
+        fetchAdminPartnerSnapshot(),
+        isSuperAdmin ? fetchAdminUsers() : Promise.resolve([] as AdminUserRow[]),
+      ]);
       setSummaries(snapshot.summaries);
       setPartners(snapshot.partners);
       setCommissions(snapshot.commissions);
       setPayouts(snapshot.payouts);
       setConversions(snapshot.conversions);
+      setAdminUsers(nextAdminUsers);
     } catch (err: any) {
       setError(err?.message ?? "Impossible de charger l'admin partenaires.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       setAuthLoading(true);
-
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      const user = userData?.user;
+      const [nextIsAdmin, nextIsSuperAdmin] = await Promise.all([fetchIsAdminUser(), fetchIsSuperAdmin()]);
 
       if (cancelled) return;
 
-      if (userError || !user) {
-        setIsAdmin(false);
-        setAuthLoading(false);
-        return;
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      setIsAdmin(!profileError && !!profileData?.is_admin);
+      setIsAdmin(nextIsAdmin);
+      setIsSuperAdmin(nextIsSuperAdmin);
       setAuthLoading(false);
     })();
 
@@ -349,6 +355,75 @@ export default function AdminPartnersPage() {
       cancelled = true;
     };
   }, []);
+
+  const activeAdminCount = useMemo(
+    () => adminUsers.filter((adminUser) => adminUser.is_active).length,
+    [adminUsers]
+  );
+
+  const inactiveAdminCount = useMemo(
+    () => adminUsers.filter((adminUser) => !adminUser.is_active).length,
+    [adminUsers]
+  );
+
+  const handleAdminSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const email = adminForm.email.trim().toLowerCase();
+    if (!email) {
+      pushToast({
+        kind: "error",
+        title: "Email requis",
+        message: "Renseigne l'email d'un compte existant pour lui ouvrir l'acces admin.",
+      });
+      return;
+    }
+
+    setIsSavingAdmin(true);
+    try {
+      const adminUser = await grantAdminAccess(email);
+
+      pushToast({
+        kind: "success",
+        title: adminUser.is_active ? "Admin ajoute" : "Admin mis a jour",
+        message: `${adminUser.email} peut maintenant acceder a /admin/partners.`,
+      });
+
+      setAdminForm({ ...EMPTY_ADMIN_FORM });
+      await loadData();
+    } catch (err: any) {
+      pushToast({
+        kind: "error",
+        title: "Ajout admin impossible",
+        message: err?.message ?? "Cet acces admin n'a pas pu etre cree.",
+      });
+    } finally {
+      setIsSavingAdmin(false);
+    }
+  };
+
+  const handleAdminStatusChange = async (adminUser: AdminUserRow, nextIsActive: boolean) => {
+    setAdminStatusUpdatingId(adminUser.id);
+    try {
+      await setAdminUserActive(adminUser.id, nextIsActive);
+
+      pushToast({
+        kind: "success",
+        title: nextIsActive ? "Admin reactive" : "Admin desactive",
+        message: `${adminUser.email} est maintenant ${nextIsActive ? "actif" : "inactif"}.`,
+      });
+
+      await loadData();
+    } catch (err: any) {
+      pushToast({
+        kind: "error",
+        title: "Mise a jour impossible",
+        message: err?.message ?? "Le statut admin n'a pas pu etre modifie.",
+      });
+    } finally {
+      setAdminStatusUpdatingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!authLoading && isAdmin) {
@@ -1122,6 +1197,123 @@ export default function AdminPartnersPage() {
 
       {activeTab === "overview" && !isEmpty && (
         <section className="adminPartners__panel">
+          {isSuperAdmin && (
+            <section className="card adminPartners__adminSection">
+              <div className="card__titleRow">
+                <div>
+                  <h2>Gestion des admins</h2>
+                  <div className="muted">
+                    Reserve au super admin. L'ajout ouvre l'acces a /admin/partners et la desactivation le revoque
+                    proprement via <span className="mono">is_active</span>.
+                  </div>
+                </div>
+                <div className="adminPartners__adminStats">
+                  <span className="badge badge--green">{activeAdminCount} actif(s)</span>
+                  <span className="badge badge--gray">{inactiveAdminCount} inactif(s)</span>
+                </div>
+              </div>
+
+              <form className="adminPartners__adminForm" onSubmit={handleAdminSubmit}>
+                <label className="adminPartners__field">
+                  <span>Ajouter un admin par email</span>
+                  <input
+                    value={adminForm.email}
+                    onChange={(event) => setAdminForm({ email: event.target.value })}
+                    placeholder="email d'un compte existant"
+                  />
+                </label>
+                <button type="submit" className="btn btn--primary" disabled={isSavingAdmin}>
+                  {isSavingAdmin ? "Ajout..." : "Ajouter l'admin"}
+                </button>
+              </form>
+
+              <div className="tableWrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Statut</th>
+                      <th>Protection</th>
+                      <th>Mis a jour</th>
+                      <th className="right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminUsers.length === 0 ? (
+                      <tr>
+                        <td className="empty" colSpan={6}>
+                          Aucun admin charge.
+                        </td>
+                      </tr>
+                    ) : (
+                      adminUsers.map((adminUser) => {
+                        const isBusy = adminStatusUpdatingId === adminUser.id;
+                        const canToggle = !adminUser.is_protected && !adminUser.is_current_user;
+
+                        return (
+                          <tr key={adminUser.id}>
+                            <td>
+                              <div className="adminPartners__tableTitle">{adminUser.email}</div>
+                              <div className="muted mono">{adminUser.user_id}</div>
+                            </td>
+                            <td>
+                              <span className={statusBadgeClass(adminUser.role)}>
+                                {adminUser.role === "super_admin" ? "super_admin" : "admin"}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={adminUser.is_active ? "badge badge--green" : "badge badge--gray"}>
+                                {adminUser.is_active ? "Actif" : "Inactif"}
+                              </span>
+                            </td>
+                            <td>
+                              {adminUser.is_protected ? (
+                                <span className="badge badge--yellow">Protege</span>
+                              ) : adminUser.is_current_user ? (
+                                <span className="badge badge--yellow">Vous</span>
+                              ) : (
+                                <span className="muted">-</span>
+                              )}
+                            </td>
+                            <td>{formatDateTime(adminUser.updated_at)}</td>
+                            <td className="right">
+                              {adminUser.is_active ? (
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  disabled={!canToggle || isBusy}
+                                  onClick={() => void handleAdminStatusChange(adminUser, false)}
+                                >
+                                  {isBusy ? "..." : "Desactiver"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn--primary"
+                                  disabled={!canToggle || isBusy}
+                                  onClick={() => void handleAdminStatusChange(adminUser, true)}
+                                >
+                                  {isBusy ? "..." : "Reactiver"}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="adminPartners__adminHint muted">
+                Le super admin principal et tout compte super admin sont proteges ici contre une desactivation
+                accidentelle. Un admin classique peut acceder a l'espace admin partenaires, mais ne peut pas gerer les
+                autres admins.
+              </div>
+            </section>
+          )}
+
           <div className="adminPartners__kpis">
             <article className="adminPartners__kpi card">
               <span className="adminPartners__kpiLabel">Nombre total de partenaires</span>
