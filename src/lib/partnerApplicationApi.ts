@@ -5,7 +5,17 @@ type PartnerProfilePrefill = {
   full_name: string | null;
 };
 
+export type PartnerInvitationContext = {
+  partner_id: string;
+  display_name: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  partner_status: PartnerAccountRow["status"];
+  expires_at: string;
+};
+
 export type PartnerApplicationInput = {
+  invitationToken: string;
   displayName: string;
   contactName?: string | null;
   contactEmail?: string | null;
@@ -31,8 +41,17 @@ export async function fetchOwnPartnerProfile(userId: string): Promise<PartnerPro
   return (data as PartnerProfilePrefill | null) ?? null;
 }
 
+export async function validatePartnerInvitation(invitationToken: string): Promise<PartnerInvitationContext> {
+  const { data, error } = await supabase.rpc("partner_validate_invitation", {
+    p_invitation_token: invitationToken,
+  });
+
+  return ensureNoError(error, data as PartnerInvitationContext | null, "Impossible de verifier l'invitation partenaire.");
+}
+
 export async function submitPartnerApplication(input: PartnerApplicationInput): Promise<PartnerAccountRow> {
   const { data, error } = await supabase.rpc("partner_request_apply", {
+    p_invitation_token: input.invitationToken,
     p_display_name: input.displayName,
     p_contact_name: input.contactName || null,
     p_contact_email: input.contactEmail || null,

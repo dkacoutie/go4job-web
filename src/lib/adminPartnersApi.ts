@@ -127,6 +127,16 @@ export type PartnerPayoutCreateInput = {
   notes?: string | null;
 };
 
+export type PartnerInvitationLinkResult = {
+  invitation_id: string;
+  partner_id: string;
+  display_name: string;
+  status: string;
+  expires_at: string;
+  invitation_token: string;
+  invitation_url: string;
+};
+
 function ensureNoError<T>(error: { message?: string } | null, data: T | null, fallback: string): T {
   if (error) throw new Error(error.message || fallback);
   if (data === null) throw new Error(fallback);
@@ -200,6 +210,14 @@ export async function createPartnerPayout(input: PartnerPayoutCreateInput): Prom
   });
 
   return ensureNoError(error, data as PartnerPayoutRow | null, "Impossible de creer le paiement.");
+}
+
+export async function generatePartnerInvitation(partnerId: string): Promise<PartnerInvitationLinkResult> {
+  const { data, error } = await supabase.rpc("partner_admin_generate_invitation", {
+    p_partner_id: partnerId,
+  });
+
+  return ensureNoError(error, data as PartnerInvitationLinkResult | null, "Impossible de generer l'invitation partenaire.");
 }
 
 export async function attachCommissionsToPayout(
