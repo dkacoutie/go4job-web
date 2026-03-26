@@ -9,14 +9,19 @@
 .partnerPortal__welcome {
   margin-bottom: 18px;
   display: grid;
-  gap: 16px;
-  padding: 24px;
+  gap: 18px;
+  padding: 26px;
   border-radius: 24px;
   border: 1px solid rgba(22, 163, 74, 0.18);
   background:
     radial-gradient(circle at top right, rgba(34, 197, 94, 0.12), transparent 34%),
     linear-gradient(135deg, rgba(240, 253, 244, 0.96), rgba(248, 250, 252, 0.98));
   box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+}
+
+.partnerPortal__welcomeIntro {
+  display: grid;
+  gap: 16px;
 }
 
 .partnerPortal__welcome h2 {
@@ -32,10 +37,63 @@
   line-height: 1.7;
 }
 
+.partnerPortal__welcomeFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.partnerPortal__welcomeFact {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(22, 163, 74, 0.12);
+}
+
+.partnerPortal__welcomeFact span {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.56);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.partnerPortal__welcomeFact strong {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.partnerPortal__welcomeGuide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.partnerPortal__welcomeGuide h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.partnerPortal__welcomeList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: rgba(0, 0, 0, 0.72);
+}
+
 .partnerPortal__welcomeActions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .partnerPortal__hero {
@@ -288,6 +346,11 @@
   .partnerPortal__hero,
   .partnerPortal__grid,
   .partnerPortal__lists {
+    grid-template-columns: 1fr;
+  }
+
+  .partnerPortal__welcomeFacts,
+  .partnerPortal__welcomeGuide {
     grid-template-columns: 1fr;
   }
 

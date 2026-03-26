@@ -213,6 +213,15 @@ export default function PartnerPortalPage() {
     return `${PARTNER_REFERRAL_BASE_URL}${encodeURIComponent(code)}`;
   }, [effectiveSummary?.referral_code]);
 
+  const welcomeChecklist = useMemo(
+    () => [
+      "Copie ton lien personnel pour commencer a recommander JobRadar.",
+      "Partage aussi ton code partenaire si tu communiques en direct avec ton audience.",
+      "Reviens ensuite ici pour suivre tes ventes attribuees et tes performances.",
+    ],
+    []
+  );
+
   const recentActivity = useMemo<ActivityItem[]>(() => {
     const conversionItems = conversions.map((conversion) => ({
       id: `conversion-${conversion.id}`,
@@ -424,22 +433,53 @@ export default function PartnerPortalPage() {
     <div className="partnerPortal">
       {activationWelcomeName && (
         <section className="partnerPortal__welcome card">
-          <div>
-            <span className="badge badge--green">Compte actif</span>
-            <h2>{activationWelcomeName ? `Bienvenue ${activationWelcomeName}` : "Bienvenue dans ton espace partenaire"}</h2>
-            <p>
-              Ton activation est finalisee. Commence par recuperer ton lien personnel et ton code de recommandation,
-              puis suis ici tes ventes attribuees et tes commissions.
-            </p>
+          <div className="partnerPortal__welcomeIntro">
+            <div>
+              <span className="badge badge--green">Compte partenaire pret</span>
+              <h2>{activationWelcomeName ? `Bienvenue ${activationWelcomeName}` : "Bienvenue dans ton espace partenaire"}</h2>
+              <p>
+                Ton compte partenaire est actif. Tu peux maintenant partager ton lien personnel, utiliser ton code
+                partenaire et suivre tes performances depuis cet espace.
+              </p>
+            </div>
+
+            <div className="partnerPortal__welcomeFacts">
+              <div className="partnerPortal__welcomeFact">
+                <span>Code partenaire</span>
+                <strong className="mono">{effectiveSummary.referral_code}</strong>
+              </div>
+              <div className="partnerPortal__welcomeFact">
+                <span>Lien personnel</span>
+                <strong className="mono">{referralLink}</strong>
+              </div>
+              <div className="partnerPortal__welcomeFact">
+                <span>Commission</span>
+                <strong>Premier abonnement paye du client</strong>
+              </div>
+            </div>
           </div>
 
-          <div className="partnerPortal__welcomeActions">
-            <button type="button" className="btn btn--primary" onClick={() => void copyReferralLink()}>
-              Copier mon lien partenaire
-            </button>
-            <button type="button" className="btn" onClick={() => void copyReferralCode()}>
-              Copier mon code
-            </button>
+          <div className="partnerPortal__welcomeGuide">
+            <div>
+              <h3>Que faire maintenant</h3>
+              <ul className="partnerPortal__welcomeList">
+                {welcomeChecklist.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="partnerPortal__welcomeActions">
+              <button type="button" className="btn btn--primary" onClick={() => void copyReferralLink()}>
+                Copier mon lien
+              </button>
+              <button type="button" className="btn" onClick={() => void copyReferralCode()}>
+                Copier mon code
+              </button>
+              <a className="btn" href="#partner-performances">
+                Voir mes performances
+              </a>
+            </div>
           </div>
         </section>
       )}
@@ -506,7 +546,7 @@ export default function PartnerPortalPage() {
         </div>
       </section>
 
-      <section className="partnerPortal__metrics">
+      <section className="partnerPortal__metrics" id="partner-performances">
         <article className="card partnerPortal__metric">
           <span>Total abonnements vendus</span>
           <strong>{effectiveSummary.total_subscriptions_sold}</strong>
