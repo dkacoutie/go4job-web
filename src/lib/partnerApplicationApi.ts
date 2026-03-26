@@ -40,5 +40,5 @@ export async function submitPartnerApplication(input: PartnerApplicationInput): 
     p_terms_version: input.termsVersion,
   });
 
-  return ensureNoError(error, data as PartnerAccountRow | null, "Impossible d'envoyer la demande partenaire.");
+  return ensureNoError(error, data as PartnerAccountRow | null, "Impossible d'activer le compte partenaire.");
 }

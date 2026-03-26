@@ -66,9 +66,9 @@ function statusBadgeClass(status: string) {
 function activationMessageForStatus(status: PartnerAccountRow["status"]) {
   if (status === "pending") {
     return {
-      title: "Ton espace partenaire n'est pas encore active",
+      title: "Ton compte partenaire doit etre regularise",
       body:
-        "Ton compte partenaire a bien ete cree, mais il est encore en attente de validation par l'equipe JobRadar. Des qu'il passe en actif, ton dashboard s'affichera ici automatiquement.",
+        "Ce compte provient d'un ancien flux et n'est pas aligne avec le programme actuel. Contacte l'equipe pour faire le point sur sa reprise.",
     };
   }
 
@@ -81,9 +81,9 @@ function activationMessageForStatus(status: PartnerAccountRow["status"]) {
   }
 
   return {
-    title: "Ton espace partenaire n'est pas encore disponible",
+    title: "Ton espace partenaire est desactive",
     body:
-      "Ce compte partenaire n'est pas encore actif. Contacte l'equipe JobRadar si tu penses qu'il devrait etre accessible des maintenant.",
+      "Ce compte partenaire est desactive. Contacte l'equipe JobRadar si une reactivation doit etre envisagee.",
   };
 }
 
@@ -331,11 +331,11 @@ export default function PartnerPortalPage() {
     return (
       <div className="partnerPortal">
         <section className="partnerPortal__state card">
-          <span className="badge badge--yellow">Activation requise</span>
-          <h1>Ton espace partenaire n'est pas encore active</h1>
+          <span className="badge badge--blue">Programme partenaires</span>
+          <h1>Aucun compte partenaire rattache a ce profil</h1>
           <p className="subtitle">
-            Aucun compte partenaire n'est encore rattache a ce profil. Si tu fais deja partie du programme
-            partenaires JobRadar, l'equipe peut l'activer et le lier a ton compte.
+            Si tu as recu le lien partenaire de notre equipe, tu peux creer et activer ton compte depuis l'entree
+            dediee. Sinon, contacte-nous pour verifier ton acces au programme.
           </p>
           <div className="partnerPortal__contactBox">
             <div>
@@ -343,15 +343,15 @@ export default function PartnerPortalPage() {
               <strong>{PARTNER_CONTACT_EMAIL}</strong>
             </div>
             <div>
-              <span>Etat actuel</span>
-              <strong>En attente de creation ou d'activation</strong>
+              <span>Acces actuel</span>
+              <strong>Aucun compte partenaire</strong>
             </div>
           </div>
           <div className="partnerPortal__heroActions">
             <Link className="btn btn--primary" to="/devenir-partenaire">
               Devenir partenaire
             </Link>
-            <a className="btn" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Activation%20espace%20partenaire`}>
+            <a className="btn" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Programme%20partenaires`}>
               Contacter l'equipe
             </a>
           </div>
