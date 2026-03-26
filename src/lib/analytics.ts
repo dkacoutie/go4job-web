@@ -17,6 +17,8 @@ type PendingGaEvent = {
 };
 
 type AnalyticsWindow = Window & {
+  dataLayer: unknown[][];
+  gtag?: Gtag;
   __jrGaInitialized?: boolean;
   __jrPendingGaEvents?: PendingGaEvent[];
 };
