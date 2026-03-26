@@ -6,8 +6,9 @@ type Social = {
   icon: "linkedin" | "facebook" | "instagram" | "tiktok";
 };
 
+type SiteFooterVariant = "app" | "public";
+
 function SocialIcon({ name }: { name: Social["icon"] }) {
-  // SVG simples (monochromes) -> la couleur est geree par CSS via currentColor
   switch (name) {
     case "linkedin":
       return (
@@ -38,10 +39,10 @@ function SocialIcon({ name }: { name: Social["icon"] }) {
   }
 }
 
-export default function SiteFooter() {
+export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVariant }) {
   const year = new Date().getFullYear();
+  const isPublic = variant === "public";
 
-  // Remplace ces URLs par les tiens quand tu les auras (pour l'instant, placeholders)
   const socials: Social[] = [
     { label: "LinkedIn", href: "https://www.linkedin.com", icon: "linkedin" },
     { label: "Facebook", href: "https://www.facebook.com", icon: "facebook" },
@@ -53,14 +54,14 @@ export default function SiteFooter() {
     <footer className="site-footer" aria-label="Pied de page">
       <div className="app-container">
         <div className="site-footer__grid">
-          {/* Brand */}
           <section className="site-footer__brand" aria-label="Go4Job">
             <div className="site-footer__logoText">Go4Job</div>
             <p className="site-footer__desc">
-              JobRadar â€” alertes et suivi de candidatures, pensÃ©s pour les talents d'Afrique. Simple, rapide, et fiable.
+              JobRadar - alertes et suivi de candidatures pour les chercheurs d’emploi.
+              Simple, rapide, et fiable.
             </p>
 
-            <div className="site-footer__socialIcons" aria-label="RÃ©seaux sociaux">
+            <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">
               {socials.map((s) => (
                 <a
                   key={s.label}
@@ -77,61 +78,106 @@ export default function SiteFooter() {
             </div>
           </section>
 
-          {/* Fonctionnalites */}
-          <nav className="site-footer__col" aria-label="Fonctionnalites">
-            <div className="site-footer__title">Fonctionnalites</div>
-            <ul className="site-footer__list">
-              <li>
-                <Link className="site-footer__link" to="/jobradar/feed">
-                  Mes Offres (JobRadar)
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/jobradar/alerts">
-                  Mes alertes
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/jobradar/applications">
-                  Mes candidatures
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/me/cv">
-                  Mon CV
-                </Link>
-              </li>
-            </ul>
-          </nav>
+          {isPublic ? (
+            <>
+              <nav className="site-footer__col" aria-label="Découvrir">
+                <div className="site-footer__title">Découvrir</div>
+                <ul className="site-footer__list">
+                  <li>
+                    <Link className="site-footer__link" to="/landing">
+                      Accueil
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/pricing">
+                      Tarifs
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/contact">
+                      Contact
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/auth">
+                      Connexion
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
 
-          {/* Liens rapides */}
-          <nav className="site-footer__col" aria-label="Liens rapides">
-            <div className="site-footer__title">Liens rapides</div>
-            <ul className="site-footer__list">
-              <li>
-                <Link className="site-footer__link" to="/">
-                  Dashboard
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/jobradar/feed">
-                  JobRadar
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/jobradar/profile">
-                  Mon profil
-                </Link>
-              </li>
-              <li>
-                <Link className="site-footer__link" to="/contact">
-                  Support / Contact
-                </Link>
-              </li>
-            </ul>
-          </nav>
+              <nav className="site-footer__col" aria-label="Ressources">
+                <div className="site-footer__title">Ressources</div>
+                <ul className="site-footer__list">
+                  <li>
+                    <Link className="site-footer__link" to="/contact">
+                      Support / Contact
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/pricing">
+                      Voir les pass
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
+            </>
+          ) : (
+            <>
+              <nav className="site-footer__col" aria-label="Fonctionnalites">
+                <div className="site-footer__title">Fonctionnalites</div>
+                <ul className="site-footer__list">
+                  <li>
+                    <Link className="site-footer__link" to="/jobradar/feed">
+                      Mes Offres (JobRadar)
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/jobradar/alerts">
+                      Mes alertes
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/jobradar/applications">
+                      Mes candidatures
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/me/cv">
+                      Mon CV
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
 
-          {/* Legal */}
+              <nav className="site-footer__col" aria-label="Liens rapides">
+                <div className="site-footer__title">Liens rapides</div>
+                <ul className="site-footer__list">
+                  <li>
+                    <Link className="site-footer__link" to="/">
+                      Dashboard
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/jobradar/feed">
+                      JobRadar
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/jobradar/profile">
+                      Mon profil
+                    </Link>
+                  </li>
+                  <li>
+                    <Link className="site-footer__link" to="/contact">
+                      Support / Contact
+                    </Link>
+                  </li>
+                </ul>
+              </nav>
+            </>
+          )}
+
           <nav className="site-footer__col" aria-label="Legal">
             <div className="site-footer__title">Legal</div>
             <ul className="site-footer__list">
@@ -142,7 +188,7 @@ export default function SiteFooter() {
               </li>
               <li>
                 <Link className="site-footer__link" to="/privacy">
-                  Politique de confidentialitÃ©
+                  Politique de confidentialité
                 </Link>
               </li>
               <li>
@@ -150,18 +196,27 @@ export default function SiteFooter() {
                   Contact
                 </Link>
               </li>
+              {isPublic && (
+                <li>
+                  <Link className="site-footer__link" to="/auth">
+                    Connexion
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
         </div>
 
         <div className="site-footer__bottom" aria-label="Informations legales">
-          <div className="site-footer__copy">Â© {year} Go4Job. Tous droits rÃ©servÃ©s.</div>
+          <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
 
           <div className="site-footer__copy">
             Contact: <strong>contact@go4jobapp.com</strong>
           </div>
 
-          <div className="site-footer__note">Plateforme de recherche d'emploi assistÃ©e par l'IA.</div>
+          <div className="site-footer__note">
+            Plateforme de recherche d'emploi assistée par l'IA.
+          </div>
         </div>
       </div>
     </footer>
