@@ -1,12 +1,26 @@
 const DEFAULT_META_PIXEL_ID = "1476894420492038";
 const META_PIXEL_SCRIPT_ID = "meta-pixel";
 
+type MetaPixelMethod = "init" | "track" | "trackCustom";
 type MetaPixelTrackMethod = "track" | "trackCustom";
 type MetaPixelParams = Record<string, unknown>;
-type MetaPixelCall = Parameters<NonNullable<Window["fbq"]>>;
-type LocalFbq = NonNullable<Window["fbq"]>;
-type PendingMetaEvent = NonNullable<Window["__jrPendingMetaEvents"]>[number];
+type MetaPixelCall = [MetaPixelMethod, string, MetaPixelParams?];
+type LocalFbq = {
+  (...args: MetaPixelCall): void;
+  callMethod?: (...args: MetaPixelCall) => void;
+  queue?: unknown[][];
+  push?: LocalFbq;
+  loaded?: boolean;
+  version?: string;
+};
+type PendingMetaEvent = {
+  method: MetaPixelTrackMethod;
+  eventName: string;
+  eventParams?: MetaPixelParams;
+};
 type MetaPixelWindow = Window & {
+  fbq?: LocalFbq;
+  _fbq?: LocalFbq;
   __jrMetaPixelInitialized?: boolean;
   __jrPendingMetaEvents?: PendingMetaEvent[];
   __jrLastMetaPageView?: string;
