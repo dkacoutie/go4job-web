@@ -18,6 +18,54 @@ const PARTNER_APPLICATION_DRAFT_KEY = "go4job_partner_application_draft_v1";
 const PARTNER_TERMS_VERSION = "partner_terms_v1_2026_03_26";
 const PARTNER_SUPPORT_EMAIL = "contact@go4jobapp.com";
 
+const PARTNER_AUDIENCE = [
+  {
+    title: "Profils a forte credibilite",
+    body: "Consultants, coachs, formateurs, recruteurs, createurs ou medias capables de recommander JobRadar a une audience qualifiee.",
+  },
+  {
+    title: "Communautes et reseaux utiles",
+    body: "Structures d'accompagnement, reseaux professionnels, associations, cabinets ou partenaires terrain avec une vraie proximite avec les candidats.",
+  },
+  {
+    title: "Partenaires selectionnes",
+    body: "Le programme n'est pas ouvert en inscription publique. L'entree se fait uniquement via un lien d'invitation partage par l'equipe Go4Job.",
+  },
+];
+
+const PARTNER_VALUE_PROPS = [
+  {
+    title: "Une offre simple a recommander",
+    body: "Vous orientez vos contacts vers JobRadar avec un lien personnel ou un code dedie, sans avoir a gerer un tunnel commercial complexe.",
+  },
+  {
+    title: "Une commission claire",
+    body: "La commission porte sur le premier abonnement paye du client recommande. Les renouvellements ne sont pas commissionnes.",
+  },
+  {
+    title: "Un suivi visible",
+    body: "Votre espace partenaire centralise votre code, votre lien, vos ventes attribuees, vos commissions et le suivi des paiements.",
+  },
+];
+
+const PARTNER_RECOMMENDATION_STEPS = [
+  {
+    step: "1",
+    title: "Vous partagez votre lien partenaire",
+    body: "Le lien ou le code attribue identifie la recommandation lorsque votre audience decouvre JobRadar.",
+  },
+  {
+    step: "2",
+    title: "Le client souscrit a JobRadar",
+    body: "L'attribution est prise en compte quand le client recommande paie son premier abonnement eligible.",
+  },
+  {
+    step: "3",
+    title: "La vente remonte dans votre espace",
+    body: "Vous retrouvez ensuite les conversions et les commissions dans votre dashboard partenaire, avec un traitement de paiement encore manuel pour cette phase MVP.",
+  },
+];
+
 const INITIAL_FORM: PartnerApplicationFormState = {
   displayName: "",
   contactName: "",
@@ -27,11 +75,11 @@ const INITIAL_FORM: PartnerApplicationFormState = {
 };
 
 const PARTNER_CONDITIONS = [
-  "Ce lien est reserve aux profils a qui l'equipe Go4Job choisit d'ouvrir l'entree partenaire.",
-  "Une fois le formulaire valide et les conditions acceptees, le compte partenaire est cree directement en statut active.",
-  "Le code partenaire et le lien de recommandation sont personnels, non cessibles et ne doivent pas etre utilises de maniere trompeuse.",
-  "Seules les ventes eligibles validees selon les regles du programme peuvent ouvrir droit a commission.",
-  "Go4Job peut mettre un compte en pause ou le desactiver en cas d'abus, de fraude ou de non-respect des conditions.",
+  "Ce lien d'activation est reserve aux profils invites par l'equipe Go4Job dans le cadre du programme partenaires JobRadar.",
+  "Une fois ce formulaire valide et les conditions acceptees, le compte partenaire est cree directement en statut active.",
+  "Le lien de recommandation et le code partenaire sont personnels. Ils doivent etre utilises de bonne foi, sans promesse trompeuse ni usurpation.",
+  "La commission s'applique uniquement au premier abonnement paye par un client attribue a votre recommandation et valide selon les regles du programme.",
+  "Go4Job peut suspendre ou desactiver un compte partenaire en cas d'abus, de fraude ou de non-respect des conditions.",
 ];
 
 function readDraft(): PartnerApplicationFormState | null {
@@ -69,7 +117,7 @@ function mapPartnerApplicationError(message: string) {
   const lower = (message || "").toLowerCase();
 
   if (lower.includes("not_authenticated")) {
-    return "Connecte-toi d'abord pour finaliser la creation de ton compte partenaire.";
+    return "Connectez-vous d'abord pour finaliser la creation de votre compte partenaire.";
   }
   if (lower.includes("display_name_required")) {
     return "Le nom du partenaire est requis.";
@@ -95,11 +143,18 @@ function statusBadgeClass(status: PartnerAccountRow["status"]) {
   return "badge badge--red";
 }
 
+function partnerStatusLabel(status: PartnerAccountRow["status"]) {
+  if (status === "active") return "Actif";
+  if (status === "pending") return "En attente";
+  if (status === "paused") return "En pause";
+  return "Desactive";
+}
+
 function partnerStatusCopy(partner: PartnerAccountRow) {
   if (partner.status === "active") {
     return {
-      title: "Ton compte partenaire est deja actif",
-      body: "Tu peux acceder directement a ton espace partenaire pour retrouver ton code et suivre ton activite.",
+      title: "Votre acces partenaire est deja actif",
+      body: "Votre espace partenaire est pret. Vous pouvez y retrouver votre code, votre lien de recommandation et le suivi de votre activite.",
       cta: "Ouvrir mon espace partenaire",
       supportOnly: false,
     };
@@ -107,8 +162,8 @@ function partnerStatusCopy(partner: PartnerAccountRow) {
 
   if (partner.status === "paused") {
     return {
-      title: "Ton compte partenaire est actuellement en pause",
-      body: "Le compte existe bien et reste rattache a ton profil, mais l'acces est suspendu tant qu'il n'est pas reouvert par l'equipe.",
+      title: "Votre compte partenaire est actuellement en pause",
+      body: "Le compte existe bien et reste rattache a votre profil, mais l'acces est suspendu tant qu'il n'est pas reouvert par l'equipe.",
       cta: "Voir mon espace partenaire",
       supportOnly: false,
     };
@@ -116,8 +171,8 @@ function partnerStatusCopy(partner: PartnerAccountRow) {
 
   if (partner.status === "inactive") {
     return {
-      title: "Ton compte partenaire est desactive",
-      body: "Le compte est bien rattache a ton profil, mais il est desactive. Contacte l'equipe si une reactivation doit etre etudiee.",
+      title: "Votre compte partenaire est desactive",
+      body: "Le compte est bien rattache a votre profil, mais il est desactive. Contactez l'equipe si une reactivation doit etre etudiee.",
       cta: "Voir mon espace partenaire",
       supportOnly: false,
     };
@@ -125,7 +180,7 @@ function partnerStatusCopy(partner: PartnerAccountRow) {
 
   return {
     title: "Compte partenaire existant",
-    body: "Un ancien compte partenaire est deja rattache a ton profil. Contacte l'equipe si tu veux le remettre a niveau dans le cadre actuel du programme.",
+    body: "Un ancien compte partenaire est deja rattache a votre profil. Contactez l'equipe si vous souhaitez le remettre a niveau dans le cadre actuel du programme.",
     cta: "Contacter l'equipe",
     supportOnly: true,
   };
@@ -180,7 +235,7 @@ export default function BecomePartnerPage() {
         }));
 
         if (restoredDraft && !partnerRow) {
-          setInfoMsg("Ton brouillon a ete restaure. Tu peux maintenant activer ton compte partenaire.");
+          setInfoMsg("Votre brouillon a ete restaure. Vous pouvez maintenant finaliser votre activation partenaire.");
         }
       } catch (err) {
         if (cancelled) return;
@@ -224,7 +279,7 @@ export default function BecomePartnerPage() {
     setErrorMsg(null);
 
     if (!form.acceptedTerms) {
-      setErrorMsg("Tu dois accepter les conditions partenaires avant de finaliser l'activation.");
+      setErrorMsg("Vous devez accepter les conditions partenaires avant de finaliser l'activation.");
       return;
     }
 
@@ -234,7 +289,7 @@ export default function BecomePartnerPage() {
     }
 
     if (!emailIsValid) {
-      setErrorMsg("Renseigne une adresse email valide.");
+      setErrorMsg("Renseignez une adresse email valide.");
       return;
     }
 
@@ -256,14 +311,20 @@ export default function BecomePartnerPage() {
         termsVersion: PARTNER_TERMS_VERSION,
       });
 
-      setPartner(createdPartner);
       clearDraft();
       setRestoredDraft(false);
       setInfoMsg(null);
       pushToast({
         kind: "success",
-        title: "Compte partenaire active",
-        message: "Ton acces partenaire est maintenant disponible.",
+        title: "Acces partenaire active",
+        message: "Votre espace partenaire est pret.",
+      });
+      navigate("/me/partner", {
+        replace: true,
+        state: {
+          partnerOnboarding: "activated",
+          activatedDisplayName: createdPartner.display_name,
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Impossible d'activer le compte partenaire.";
@@ -292,35 +353,121 @@ export default function BecomePartnerPage() {
         <div className="partnerApply__heroBody">
           <div className="chips">
             <span className="chip">Programme partenaires</span>
-            <span className="chip">Option B</span>
+            <span className="chip">Sur invitation</span>
+            <span className="chip">Premier abonnement paye</span>
           </div>
-          <h1>Devenir partenaire</h1>
+          <h1>Programme partenaires JobRadar</h1>
           <p className="subtitle">
-            Ce lien permet aux profils invites par notre equipe de creer directement leur compte partenaire. Apres
-            acceptation des conditions et connexion, le compte est cree en <strong>active</strong> et l'acces a l'espace
-            partenaire est immediat.
+            Un parcours d'entree concu pour les profils capables de recommander JobRadar a une audience qualifiee.
+            Ce lien permet uniquement aux partenaires invites par notre equipe d'activer leur acces, d'obtenir leur
+            lien de recommandation et de suivre leurs performances dans un espace dedie.
           </p>
+          <div className="partnerApply__heroActions">
+            {!partner ? (
+              <>
+                <a className="btn btn--primary" href="#partner-activation-form">
+                  Activer mon invitation
+                </a>
+                <a className="btn" href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>
+                  Contacter l'equipe
+                </a>
+              </>
+            ) : (
+              <>
+                <Link className="btn btn--primary" to="/me/partner">
+                  Ouvrir mon espace partenaire
+                </Link>
+                <a className="btn" href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>
+                  Contacter l'equipe
+                </a>
+              </>
+            )}
+          </div>
           <div className="partnerApply__heroMeta">
             <div>
-              <span>Statut cree</span>
-              <strong>active</strong>
+              <span>Mode d'entree</span>
+              <strong>Invitation envoyee par notre equipe</strong>
             </div>
             <div>
-              <span>Acces</span>
-              <strong>Immediat</strong>
+              <span>Commission</span>
+              <strong>Premier abonnement paye du client</strong>
             </div>
             <div>
-              <span>Support</span>
-              <strong>{PARTNER_SUPPORT_EMAIL}</strong>
+              <span>Activation</span>
+              <strong>Compte actif et acces immediat</strong>
             </div>
           </div>
         </div>
       </section>
 
+      <section className="partnerApply__invitation card">
+        <div>
+          <span className="badge badge--blue">Acces reserve</span>
+          <h2>Ce programme n'est pas ouvert en inscription publique</h2>
+        </div>
+        <p>
+          Cette page sert a finaliser une invitation deja envoyee par l'equipe Go4Job. Si vous n'avez pas recu ce lien
+          dans le cadre d'un echange avec nous, l'entree au programme doit d'abord etre validee par notre equipe.
+        </p>
+        <a className="btn" href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>
+          Demander une verification
+        </a>
+      </section>
+
+      <section className="partnerApply__highlights">
+        <article className="card partnerApply__highlightCard">
+          <div className="card__titleRow">
+            <h2>A qui s'adresse le programme</h2>
+            <span className="badge badge--blue">Selection</span>
+          </div>
+          <div className="partnerApply__bulletList">
+            {PARTNER_AUDIENCE.map((item) => (
+              <div key={item.title} className="partnerApply__bulletItem">
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="card partnerApply__highlightCard">
+          <div className="card__titleRow">
+            <h2>Ce que gagne le partenaire</h2>
+            <span className="badge badge--green">Business</span>
+          </div>
+          <div className="partnerApply__bulletList">
+            {PARTNER_VALUE_PROPS.map((item) => (
+              <div key={item.title} className="partnerApply__bulletItem">
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="card partnerApply__highlightCard">
+          <div className="card__titleRow">
+            <h2>Comment fonctionne la recommandation</h2>
+            <span className="badge badge--yellow">MVP clair</span>
+          </div>
+          <div className="partnerApply__journey">
+            {PARTNER_RECOMMENDATION_STEPS.map((item) => (
+              <div key={item.step} className="partnerApply__journeyStep">
+                <span>{item.step}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
       {!session && (
         <div className="partnerApply__notice partnerApply__notice--info">
-          Tu peux remplir le formulaire des maintenant. La connexion ou la creation de compte te sera demandee juste
-          avant l'activation finale.
+          Vous pouvez preparer le formulaire des maintenant. La connexion ou la creation de compte vous sera demandee
+          juste avant l'activation finale.
         </div>
       )}
 
@@ -329,7 +476,7 @@ export default function BecomePartnerPage() {
 
       {partner && existingPartnerCopy ? (
         <section className="partnerApply__state card">
-          <span className={statusBadgeClass(partner.status)}>{partner.status}</span>
+          <span className={statusBadgeClass(partner.status)}>{partnerStatusLabel(partner.status)}</span>
           <h2>{existingPartnerCopy.title}</h2>
           <p className="subtitle">{existingPartnerCopy.body}</p>
 
@@ -343,7 +490,7 @@ export default function BecomePartnerPage() {
               <strong>{partner.contact_email ?? session?.user?.email ?? "-"}</strong>
             </div>
             <div>
-              <span>Code partenaire</span>
+              <span>Code de recommandation</span>
               <strong className="mono">{partner.referral_code}</strong>
             </div>
           </div>
@@ -365,39 +512,39 @@ export default function BecomePartnerPage() {
         </section>
       ) : (
         <div className="partnerApply__grid">
-          <section className="card partnerApply__formCard">
+          <section className="card partnerApply__formCard" id="partner-activation-form">
             <div className="card__titleRow">
-              <h2>Formulaire d'activation</h2>
-              <span className="badge badge--blue">Public</span>
+              <h2>Activer mon acces partenaire</h2>
+              <span className="badge badge--blue">Lien prive</span>
             </div>
 
             <p className="partnerApply__intro">
-              Renseigne les informations de base du compte partenaire. Si tu n'es pas encore connecte, ton brouillon
-              sera conserve avant le passage par l'authentification.
+              Ce formulaire finalise une invitation deja accordee par notre equipe. Si vous n'etes pas encore
+              connecte, votre brouillon sera conserve avant le passage par l'authentification.
             </p>
 
             <form className="partnerApply__form" onSubmit={handleSubmit}>
               <label className="partnerApply__label">
-                Nom du partenaire *
+                Nom du partenaire ou de la structure *
                 <input
                   className="partnerApply__input"
                   type="text"
                   value={form.displayName}
                   onChange={handleFieldChange("displayName")}
-                  placeholder="Ex. Marie Kone ou Studio Growth CI"
+                  placeholder="Ex. Marie Kone, Cabinet Horizon RH ou Studio Growth CI"
                   autoComplete="organization"
                   required
                 />
               </label>
 
               <label className="partnerApply__label">
-                Nom du contact
+                Nom du contact referent
                 <input
                   className="partnerApply__input"
                   type="text"
                   value={form.contactName}
                   onChange={handleFieldChange("contactName")}
-                  placeholder="Nom de la personne referente"
+                  placeholder="Nom de la personne qui portera la relation partenaire"
                   autoComplete="name"
                 />
               </label>
@@ -416,12 +563,12 @@ export default function BecomePartnerPage() {
               </label>
 
               <label className="partnerApply__label">
-                Comment comptes-tu recommander JobRadar ?
+                Comment allez-vous recommander JobRadar ?
                 <textarea
                   className="partnerApply__input partnerApply__textarea"
                   value={form.applicationMessage}
                   onChange={handleFieldChange("applicationMessage")}
-                  placeholder="Decris brievement ton audience, tes canaux ou ton mode de recommandation."
+                  placeholder="Decrivez brievement votre audience, vos canaux, votre positionnement et la facon dont vous comptez recommander JobRadar."
                   rows={6}
                 />
               </label>
@@ -430,12 +577,16 @@ export default function BecomePartnerPage() {
                 <input type="checkbox" checked={form.acceptedTerms} onChange={handleFieldChange("acceptedTerms")} />
                 <span>
                   J'ai lu et j'accepte les conditions partenaires ci-contre ainsi que les{" "}
-                  <Link to="/terms">conditions d'utilisation</Link>. Cette acceptation est obligatoire pour creer le
-                  compte partenaire.
+                  <Link to="/terms">conditions d'utilisation</Link>. Cette validation est obligatoire pour activer
+                  l'acces partenaire.
                 </span>
               </label>
 
-              <button className="partnerApply__submit" type="submit" disabled={submitting || (session ? !canFinalize : false)}>
+              <button
+                className="partnerApply__submit"
+                type="submit"
+                disabled={submitting || (session ? !canFinalize : false)}
+              >
                 {submitting ? "Activation en cours..." : session ? "Activer mon compte partenaire" : "Continuer pour me connecter"}
               </button>
             </form>
@@ -444,12 +595,12 @@ export default function BecomePartnerPage() {
           <aside className="partnerApply__side">
             <section className="card partnerApply__contractCard">
               <div className="card__titleRow">
-                <h2>Contrat / conditions partenaires</h2>
+                <h2>Conditions d'entree au programme</h2>
                 <span className="badge badge--yellow">Acceptation requise</span>
               </div>
 
               <p className="partnerApply__contractLead">
-                Ce bloc formalise les regles de base du programme partenaires avant creation immediate du compte.
+                Ces points encadrent l'activation de votre acces et clarifient les regles MVP du programme partenaires.
               </p>
 
               <div className="partnerApply__contractMeta">
@@ -459,7 +610,7 @@ export default function BecomePartnerPage() {
                 </div>
                 <div>
                   <span>Effet</span>
-                  <strong>Creation immediate</strong>
+                  <strong>Activation immediate si validation</strong>
                 </div>
               </div>
 
@@ -471,11 +622,12 @@ export default function BecomePartnerPage() {
             </section>
 
             <section className="card partnerApply__nextSteps">
-              <h3>Ce qui se passe ensuite</h3>
+              <h3>Apres activation</h3>
               <ul>
-                <li>Le compte partenaire est cree directement en statut active.</li>
+                <li>Le compte partenaire est cree directement en statut actif.</li>
                 <li>Il est rattache au compte utilisateur connecte au moment de la finalisation.</li>
-                <li>L'espace partenaire devient accessible immediatement.</li>
+                <li>Vous arrivez ensuite dans votre espace partenaire pour recuperer votre lien et votre code.</li>
+                <li>Les conversions et commissions y seront visibles des les premieres ventes attribuees.</li>
               </ul>
             </section>
           </aside>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "./components/ToastCenter";
 import { formatAmount } from "./lib/pricingHelpers";
 import { fetchPartnerPortalSnapshot, type PartnerDashboardSummaryRow } from "./lib/partnerPortalApi";
@@ -23,6 +23,11 @@ type ActivityItem = {
 
 const PARTNER_REFERRAL_BASE_URL = "https://jobradar.go4jobapp.com/?ref=";
 const PARTNER_CONTACT_EMAIL = "contact@go4jobapp.com";
+
+type PartnerPortalLocationState = {
+  partnerOnboarding?: "activated";
+  activatedDisplayName?: string;
+};
 
 function normalizeCurrencyTotals(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {} as Record<string, number>;
@@ -61,6 +66,13 @@ function statusBadgeClass(status: string) {
   if (status === "paused" || status === "cancelled") return "badge badge--gray";
   if (status === "voided" || status === "failed" || status === "inactive") return "badge badge--red";
   return "badge badge--blue";
+}
+
+function partnerAccountStatusLabel(status: PartnerAccountRow["status"]) {
+  if (status === "active") return "Actif";
+  if (status === "pending") return "En attente";
+  if (status === "paused") return "En pause";
+  return "Desactive";
 }
 
 function activationMessageForStatus(status: PartnerAccountRow["status"]) {
@@ -127,6 +139,7 @@ async function copyText(text: string) {
 }
 
 export default function PartnerPortalPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { session, loading } = useSession();
   const { pushToast } = useToast();
@@ -138,12 +151,21 @@ export default function PartnerPortalPage() {
   const [conversions, setConversions] = useState<PartnerConversionRow[]>([]);
   const [commissions, setCommissions] = useState<PartnerCommissionRow[]>([]);
   const [payouts, setPayouts] = useState<PartnerPayoutRow[]>([]);
+  const [activationWelcomeName, setActivationWelcomeName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !session) {
       navigate("/auth", { replace: true, state: { from: "/me/partner" } });
     }
   }, [loading, navigate, session]);
+
+  useEffect(() => {
+    const state = (location.state ?? null) as PartnerPortalLocationState | null;
+    if (state?.partnerOnboarding !== "activated") return;
+
+    setActivationWelcomeName(state.activatedDisplayName?.trim() || null);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
 
   const loadData = useCallback(async () => {
     if (!session?.user?.id) {
@@ -366,7 +388,7 @@ export default function PartnerPortalPage() {
     return (
       <div className="partnerPortal">
         <section className="partnerPortal__state card">
-          <span className={statusBadgeClass(effectivePartner.status)}>{effectivePartner.status}</span>
+          <span className={statusBadgeClass(effectivePartner.status)}>{partnerAccountStatusLabel(effectivePartner.status)}</span>
           <h1>{activationMessage.title}</h1>
           <p className="subtitle">{activationMessage.body}</p>
 
@@ -400,6 +422,28 @@ export default function PartnerPortalPage() {
 
   return (
     <div className="partnerPortal">
+      {activationWelcomeName && (
+        <section className="partnerPortal__welcome card">
+          <div>
+            <span className="badge badge--green">Compte actif</span>
+            <h2>{activationWelcomeName ? `Bienvenue ${activationWelcomeName}` : "Bienvenue dans ton espace partenaire"}</h2>
+            <p>
+              Ton activation est finalisee. Commence par recuperer ton lien personnel et ton code de recommandation,
+              puis suis ici tes ventes attribuees et tes commissions.
+            </p>
+          </div>
+
+          <div className="partnerPortal__welcomeActions">
+            <button type="button" className="btn btn--primary" onClick={() => void copyReferralLink()}>
+              Copier mon lien partenaire
+            </button>
+            <button type="button" className="btn" onClick={() => void copyReferralCode()}>
+              Copier mon code
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="partnerPortal__hero">
         <div className="partnerPortal__heroContent">
           <div className="chips">
@@ -415,7 +459,9 @@ export default function PartnerPortalPage() {
                 compte partenaire et n'affiche que tes donnees.
               </p>
             </div>
-            <span className={statusBadgeClass(effectiveSummary.partner_status)}>{effectiveSummary.partner_status}</span>
+            <span className={statusBadgeClass(effectiveSummary.partner_status)}>
+              {partnerAccountStatusLabel(effectiveSummary.partner_status)}
+            </span>
           </div>
 
           <div className="partnerPortal__heroMeta">

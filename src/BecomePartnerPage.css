@@ -1,36 +1,121 @@
 .partnerApply {
   display: grid;
-  gap: 24px;
+  gap: 22px;
   padding: 28px 0 64px;
 }
 
 .partnerApply__hero {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(14, 116, 144, 0.16);
-  border-radius: 28px;
+  border: 1px solid rgba(15, 76, 129, 0.14);
+  border-radius: 32px;
   background:
-    radial-gradient(circle at top left, rgba(45, 212, 191, 0.22), transparent 38%),
-    linear-gradient(135deg, rgba(239, 249, 255, 0.96), rgba(250, 245, 255, 0.92));
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 34%),
+    radial-gradient(circle at right center, rgba(20, 184, 166, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(250, 248, 243, 0.98), rgba(239, 246, 255, 0.95) 58%, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 28px 72px rgba(15, 23, 42, 0.1);
 }
 
 .partnerApply__heroBody {
-  padding: 28px;
+  padding: 34px;
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 
 .partnerApply__hero h1 {
   margin: 0;
   font-size: clamp(2rem, 4vw, 3.3rem);
-  line-height: 1;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
+}
+
+.partnerApply__heroActions,
+.partnerApply__stateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .partnerApply__heroMeta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.partnerApply__invitation {
+  display: grid;
+  gap: 14px;
+  align-items: center;
+  padding: 22px 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(14, 116, 144, 0.12);
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.92), rgba(248, 250, 252, 0.95));
+}
+
+.partnerApply__invitation h2 {
+  margin: 10px 0 0;
+  font-size: clamp(1.3rem, 2vw, 1.8rem);
+}
+
+.partnerApply__invitation p {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.76);
+  line-height: 1.7;
+}
+
+.partnerApply__highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.partnerApply__highlightCard {
+  border-radius: 24px;
+}
+
+.partnerApply__bulletList,
+.partnerApply__journey {
+  display: grid;
+  gap: 14px;
+}
+
+.partnerApply__bulletItem,
+.partnerApply__journeyStep {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.025);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.partnerApply__bulletItem strong,
+.partnerApply__journeyStep strong {
+  font-size: 15px;
+}
+
+.partnerApply__bulletItem p,
+.partnerApply__journeyStep p {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.72);
+  line-height: 1.65;
+}
+
+.partnerApply__journeyStep {
+  grid-template-columns: auto 1fr;
+  align-items: flex-start;
+}
+
+.partnerApply__journeyStep > span {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 14px 28px rgba(15, 118, 110, 0.2);
 }
 
 .partnerApply__heroMeta div,
@@ -224,13 +309,11 @@
 }
 
 .partnerApply__stateActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
   margin-top: 20px;
 }
 
 @media (max-width: 960px) {
+  .partnerApply__highlights,
   .partnerApply__grid,
   .partnerApply__heroMeta,
   .partnerApply__summary {
@@ -243,11 +326,23 @@
     padding-top: 20px;
   }
 
+  .partnerApply__heroBody {
+    padding: 22px;
+  }
+
+  .partnerApply__invitation {
+    padding: 18px;
+  }
+
   .partnerApply__heroBody,
   .partnerApply__formCard,
   .partnerApply__contractCard,
   .partnerApply__nextSteps,
   .partnerApply__state {
     padding: 18px;
+  }
+
+  .partnerApply__journeyStep {
+    grid-template-columns: 1fr;
   }
 }
