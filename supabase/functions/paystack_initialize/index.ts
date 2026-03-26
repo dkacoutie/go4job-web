@@ -5,6 +5,9 @@ type InitBody = {
   plan_code?: string | null;
   currency?: string | null;
   payment_method_type?: string | null;
+  partner_referral_code?: string | null;
+  partner_referral_captured_at?: string | null;
+  partner_referral_source_path?: string | null;
 };
 
 const corsHeaders = {
@@ -37,6 +40,16 @@ function normalizeBaseUrl(value: string) {
   const trimmed = clean(value);
   if (!trimmed) return "";
   return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+function normalizePartnerReferralCode(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+
+  const normalized = raw.replace(/[^A-Za-z0-9]+/g, "").toUpperCase().trim();
+  if (!normalized) return null;
+  if (normalized.length < 4 || normalized.length > 32) return null;
+
+  return normalized;
 }
 
 function buildReference(planCode: string) {
@@ -83,6 +96,9 @@ Deno.serve(async (req) => {
   const planCode = clean(body.plan_code);
   const currency = clean(body.currency || currencyDefault).toUpperCase();
   const paymentMethod = clean(body.payment_method_type || "any");
+  const partnerReferralCode = normalizePartnerReferralCode(body.partner_referral_code);
+  const partnerReferralCapturedAt = clean(body.partner_referral_captured_at) || null;
+  const partnerReferralSourcePath = clean(body.partner_referral_source_path) || null;
 
   if (!planCode) return json(400, { ok: false, error: "missing_plan_code" });
 
@@ -196,6 +212,16 @@ Deno.serve(async (req) => {
     console.warn("paystack_initialize: missing PAYSTACK_WEBHOOK_URL");
   }
 
+  const partnerReferral =
+    partnerReferralCode
+      ? {
+          code: partnerReferralCode,
+          captured_at: partnerReferralCapturedAt,
+          source_path: partnerReferralSourcePath,
+          source: "frontend_capture",
+        }
+      : null;
+
   const basePayload = {
     plan_code: plan.code,
     plan_name: plan.name,
@@ -205,6 +231,7 @@ Deno.serve(async (req) => {
     callback_url: callbackUrl,
     webhook_url: webhookUrl || null,
     test_mode: isTestMode,
+    partner_referral: partnerReferral,
   };
 
   const { data: payment, error: payErr } = await admin
@@ -242,6 +269,8 @@ Deno.serve(async (req) => {
       plan_name: plan.name,
       price_id: price.id,
       source: "jobradar",
+      partner_referral_code: partnerReferralCode,
+      partner_referral_source_path: partnerReferralSourcePath,
     },
   };
 
@@ -290,6 +319,7 @@ Deno.serve(async (req) => {
           authorization_url: paystackData?.authorization_url || null,
           access_code: paystackData?.access_code || null,
           reference: paystackData?.reference || reference,
+          metadata: initPayload.metadata,
         },
       },
       updated_at: new Date().toISOString(),
