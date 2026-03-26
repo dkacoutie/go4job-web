@@ -70,6 +70,7 @@ type PartnerDetailActivityItem = {
 };
 
 const PARTNER_STATUSES: PartnerAccountStatus[] = ["pending", "active", "paused", "inactive"];
+const PARTNER_PROGRAM_ENTRY_URL = "https://jobradar.go4jobapp.com/devenir-partenaire";
 const PARTNER_REFERRAL_BASE_URL = "https://jobradar.go4jobapp.com/?ref=";
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Vue d'ensemble" },
@@ -827,6 +828,23 @@ export default function AdminPartnersPage() {
     }
   };
 
+  const handleCopyProgramEntryLink = async () => {
+    try {
+      await copyText(PARTNER_PROGRAM_ENTRY_URL);
+      pushToast({
+        kind: "success",
+        title: "Lien d'entree copie",
+        message: "Le lien officiel pour rejoindre le programme est pret a etre envoye.",
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Copie impossible",
+        message: "Le navigateur a bloque la copie du lien d'entree.",
+      });
+    }
+  };
+
   const handleCopyPartnerLink = async () => {
     if (!selectedPartnerReferralLink) return;
 
@@ -834,8 +852,8 @@ export default function AdminPartnersPage() {
       await copyText(selectedPartnerReferralLink);
       pushToast({
         kind: "success",
-        title: "Lien partenaire copie",
-        message: "Le lien partenaire est pret a etre partage.",
+        title: "Lien personnel copie",
+        message: "Le lien personnel du partenaire est pret a etre partage.",
       });
     } catch {
       pushToast({
@@ -1062,7 +1080,8 @@ export default function AdminPartnersPage() {
           <h1>Admin partenaires JobRadar</h1>
           <p className="subtitle">
             Une console unique pour piloter les partenaires, suivre les performances, traiter les commissions et gerer
-            les paiements sans quitter l'environnement JobRadar.
+            les paiements sans quitter l'environnement JobRadar. Le lien /devenir-partenaire sert a faire rejoindre le
+            programme, puis chaque partenaire utilise ensuite son propre lien personnel en ?ref=CODE.
           </p>
         </div>
 
@@ -1647,11 +1666,14 @@ export default function AdminPartnersPage() {
             <div className="adminPartners__detailGrid">
               <section className="card adminPartners__detailHero">
                 <div className="adminPartners__detailActions">
+                  <button type="button" className="btn" onClick={() => void handleCopyProgramEntryLink()}>
+                    Copier le lien d'entree
+                  </button>
                   <button type="button" className="btn" onClick={() => void handleCopyPartnerCode()}>
                     Copier le code
                   </button>
                   <button type="button" className="btn" onClick={() => void handleCopyPartnerLink()}>
-                    Copier le lien
+                    Copier le lien personnel
                   </button>
                   <button
                     type="button"
@@ -1692,7 +1714,11 @@ export default function AdminPartnersPage() {
                     <strong className="mono">{selectedPartnerSummary.referral_code}</strong>
                   </div>
                   <div className="adminPartners__detailPill">
-                    <span>Lien partenaire</span>
+                    <span>Lien d'entree programme</span>
+                    <strong className="mono">{PARTNER_PROGRAM_ENTRY_URL}</strong>
+                  </div>
+                  <div className="adminPartners__detailPill">
+                    <span>Lien personnel partenaire</span>
                     <strong className="mono">{selectedPartnerReferralLink || "-"}</strong>
                   </div>
                   <div className="adminPartners__detailPill">

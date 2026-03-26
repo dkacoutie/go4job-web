@@ -438,8 +438,8 @@ export default function PartnerPortalPage() {
               <span className="badge badge--green">Compte partenaire pret</span>
               <h2>{activationWelcomeName ? `Bienvenue ${activationWelcomeName}` : "Bienvenue dans ton espace partenaire"}</h2>
               <p>
-                Ton compte partenaire est actif. Tu peux maintenant partager ton lien personnel, utiliser ton code
-                partenaire et suivre tes performances depuis cet espace.
+                Ton compte partenaire est actif. Le lien a partager avec ton audience est ton lien personnel ci-dessous.
+                La page /devenir-partenaire sert uniquement a rejoindre le programme.
               </p>
             </div>
 
@@ -523,11 +523,11 @@ export default function PartnerPortalPage() {
         <div className="partnerPortal__shareCard">
           <div className="partnerPortal__shareHeader">
             <h2>Ton lien personnel</h2>
-            <p>Utilise ce lien pour partager JobRadar avec ton code partenaire integre.</p>
+            <p>Partage ce lien avec ton audience. C'est lui qui porte ton code partenaire pour le tracking.</p>
           </div>
 
           <div className="partnerPortal__shareBox">
-            <span>Lien public recommande</span>
+            <span>Lien personnel a partager</span>
             <strong className="mono">{referralLink}</strong>
           </div>
 
@@ -541,7 +541,8 @@ export default function PartnerPortalPage() {
           </div>
 
           <div className="partnerPortal__shareNote">
-            Lien affiche pour cette etape: <strong>{PARTNER_REFERRAL_BASE_URL}CODE_PARTENAIRE</strong>
+            Le lien /devenir-partenaire sert uniquement a rejoindre le programme partenaires. Ton lien personnel type
+            a partager est : <strong>{PARTNER_REFERRAL_BASE_URL}CODE_PARTENAIRE</strong>
           </div>
         </div>
       </section>

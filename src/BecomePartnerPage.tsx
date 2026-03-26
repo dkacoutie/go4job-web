@@ -25,7 +25,7 @@ const PARTNER_SUPPORT_EMAIL = "contact@go4jobapp.com";
 const PARTNER_BENEFITS = [
   {
     title: "Un lien et un code personnels",
-    body: "Vous recommandez JobRadar avec un acces dedie, simple a partager.",
+    body: "Apres activation, vous recevez votre lien personnel et votre code partenaire a partager.",
   },
   {
     title: "Une commission claire",
@@ -46,8 +46,8 @@ const INITIAL_FORM: PartnerApplicationFormState = {
 };
 
 const PARTNER_ESSENTIAL_TERMS = [
-  "Le programme est reserve aux profils invites par notre equipe.",
-  "Votre lien et votre code partenaire sont personnels.",
+  "Cette page /devenir-partenaire sert uniquement a rejoindre le programme.",
+  "Votre lien personnel et votre code partenaire sont fournis apres activation.",
   "La commission porte sur le premier abonnement paye du client.",
 ];
 
@@ -334,8 +334,8 @@ export default function BecomePartnerPage() {
           </div>
           <h1>Rejoignez le programme partenaires JobRadar</h1>
           <p className="subtitle">
-            Une entree simple pour les profils deja invites par notre equipe. Activez votre acces, recuperez votre
-            lien personnel et commencez a recommander JobRadar avec un cadre clair.
+            Le lien /devenir-partenaire sert a rejoindre le programme. Une fois votre acces active, votre espace
+            partenaire vous donne votre lien personnel a partager et votre code partenaire.
           </p>
           <div className="partnerApply__heroActions">
             {!partner ? (
@@ -423,11 +423,12 @@ export default function BecomePartnerPage() {
             <section className="card partnerApply__formCard" id="partner-activation-form">
               <div className="card__titleRow">
                 <h2>Devenir partenaire</h2>
-                <span className="badge badge--blue">Invitation validee</span>
+                <span className="badge badge--blue">Lien d'entree officiel</span>
               </div>
 
               <p className="partnerApply__intro">
-                Finalisez votre invitation pour recevoir votre lien et votre code personnels. Si vous etes connecte,
+                Cette page vous permet uniquement de rejoindre le programme. Votre lien personnel de recommandation et
+                votre code partenaire seront ensuite disponibles dans votre espace partenaire. Si vous etes connecte,
                 vos informations connues sont pre-remplies. Sinon, les exemples affiches servent uniquement de repere.
               </p>
 
