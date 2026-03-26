@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "./components/ToastCenter";
 import { useSession } from "./lib/useSession";
 import {
   fetchOwnPartnerAccount,
   fetchOwnPartnerProfile,
   submitPartnerApplication,
-  validatePartnerInvitation,
-  type PartnerInvitationContext,
 } from "./lib/partnerApplicationApi";
 import type { PartnerAccountRow } from "./lib/adminPartnersApi";
 import "./BecomePartnerPage.css";
@@ -104,45 +102,11 @@ function mapPartnerApplicationError(message: string) {
   if (lower.includes("authenticated_email_required")) {
     return "Un email de compte est requis pour creer le compte partenaire.";
   }
-  if (lower.includes("invitation_email_mismatch")) {
-    return "Connectez-vous avec l'adresse email invitee ou contactez notre equipe pour faire corriger l'invitation.";
-  }
-  if (lower.includes("invitation_expired")) {
-    return "Cette invitation a expire. Contactez notre equipe pour recevoir un nouveau lien.";
-  }
-  if (lower.includes("invitation_used")) {
-    return "Cette invitation a deja ete utilisee. Si votre compte est deja actif, ouvrez directement votre espace partenaire.";
-  }
-  if (lower.includes("invitation_revoked")) {
-    return "Cette invitation n'est plus disponible. Contactez notre equipe si vous devez recevoir un nouveau lien.";
-  }
-  if (lower.includes("invitation_not_found") || lower.includes("invitation_token_required")) {
-    return "Cette invitation n'est pas valide.";
-  }
   if (lower.includes("duplicate key") && lower.includes("contact_email")) {
     return "Cette adresse email est deja utilisee par un autre compte partenaire.";
   }
 
   return "Impossible d'activer le compte partenaire pour le moment.";
-}
-
-function mapInvitationAccessError(message: string) {
-  const lower = (message || "").toLowerCase();
-
-  if (lower.includes("invitation_expired")) {
-    return "Cette invitation a expire. Contactez notre equipe pour recevoir un nouveau lien.";
-  }
-  if (lower.includes("invitation_used")) {
-    return "Cette invitation a deja ete utilisee. Si votre compte partenaire est deja actif, ouvrez directement votre espace partenaire.";
-  }
-  if (lower.includes("invitation_revoked")) {
-    return "Cette invitation n'est plus disponible. Contactez notre equipe pour verifier votre acces.";
-  }
-  if (lower.includes("invitation_not_found") || lower.includes("invitation_token_required")) {
-    return "Cette page est reservee aux partenaires invites par notre equipe. Le lien d'invitation est manquant, invalide ou incomplet.";
-  }
-
-  return "Cette invitation n'est pas disponible pour le moment. Contactez notre equipe si besoin.";
 }
 
 function isValidEmail(value: string) {
@@ -200,15 +164,12 @@ function partnerStatusCopy(partner: PartnerAccountRow) {
 }
 
 export default function BecomePartnerPage() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { session, loading } = useSession();
   const { pushToast } = useToast();
-  const invitationToken = useMemo(() => new URLSearchParams(location.search).get("invite")?.trim() || "", [location.search]);
 
   const [form, setForm] = useState<PartnerApplicationFormState>(() => readDraft() ?? INITIAL_FORM);
   const [partner, setPartner] = useState<PartnerAccountRow | null>(null);
-  const [invitation, setInvitation] = useState<PartnerInvitationContext | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -216,57 +177,11 @@ export default function BecomePartnerPage() {
   const [restoredDraft, setRestoredDraft] = useState(() => Boolean(readDraft()));
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadInvitation = async () => {
-      setPageLoading(true);
-      setErrorMsg(null);
-      setInvitation(null);
-      setPartner(null);
-
-      if (!invitationToken) {
-        setErrorMsg(mapInvitationAccessError("invitation_token_required"));
-        setPageLoading(false);
-        return;
-      }
-
-      try {
-        const invitationData = await validatePartnerInvitation(invitationToken);
-        if (cancelled) return;
-
-        setInvitation(invitationData);
-        setForm((prev) => ({
-          ...prev,
-          displayName: prev.displayName.trim() || invitationData.display_name?.trim() || "",
-          contactName: prev.contactName.trim() || invitationData.contact_name?.trim() || "",
-          contactEmail: prev.contactEmail.trim() || invitationData.contact_email?.trim() || "",
-        }));
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : "Impossible de verifier l'invitation partenaire.";
-        setErrorMsg(mapInvitationAccessError(message));
-      } finally {
-        if (!cancelled) {
-          setPageLoading(false);
-        }
-      }
-    };
-
-    void loadInvitation();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [invitationToken]);
-
-  useEffect(() => {
-    if (invitation) {
-      writeDraft(form);
-    }
+    writeDraft(form);
   }, [form]);
 
   useEffect(() => {
-    if (!invitation || loading) return;
+    if (loading) return;
 
     if (!session?.user?.id) {
       setPartner(null);
@@ -291,9 +206,9 @@ export default function BecomePartnerPage() {
         setPartner(partnerRow);
         setForm((prev) => ({
           ...prev,
-          displayName: prev.displayName.trim() || profile?.full_name?.trim() || invitation.display_name?.trim() || "",
-          contactName: prev.contactName.trim() || profile?.full_name?.trim() || invitation.contact_name?.trim() || "",
-          contactEmail: prev.contactEmail.trim() || session.user.email || invitation.contact_email?.trim() || "",
+          displayName: prev.displayName.trim() || profile?.full_name?.trim() || "",
+          contactName: prev.contactName.trim() || profile?.full_name?.trim() || "",
+          contactEmail: prev.contactEmail.trim() || session.user.email || "",
         }));
 
         if (restoredDraft && !partnerRow) {
@@ -315,7 +230,7 @@ export default function BecomePartnerPage() {
     return () => {
       cancelled = true;
     };
-  }, [invitation, loading, restoredDraft, session?.user?.email, session?.user?.id]);
+  }, [loading, restoredDraft, session?.user?.email, session?.user?.id]);
 
   const emailIsValid = useMemo(() => isValidEmail(form.contactEmail), [form.contactEmail]);
   const canFinalize = useMemo(() => {
@@ -358,7 +273,7 @@ export default function BecomePartnerPage() {
     if (!session) {
       writeDraft(form);
       setRestoredDraft(true);
-      navigate("/auth", { state: { from: `${location.pathname}${location.search}` } });
+      navigate("/auth", { state: { from: "/devenir-partenaire" } });
       return;
     }
 
@@ -366,7 +281,6 @@ export default function BecomePartnerPage() {
 
     try {
       const createdPartner = await submitPartnerApplication({
-        invitationToken,
         displayName: form.displayName.trim(),
         contactName: form.contactName.trim() || null,
         contactEmail: form.contactEmail.trim(),
@@ -403,32 +317,6 @@ export default function BecomePartnerPage() {
         <section className="partnerApply__state card">
           <h1>Devenir partenaire</h1>
           <p className="subtitle">Chargement du parcours partenaire...</p>
-        </section>
-      </div>
-    );
-  }
-
-  if (!invitation) {
-    return (
-      <div className="partnerApply">
-        <section className="partnerApply__state card">
-          <span className="badge badge--red">Invitation invalide</span>
-          <h1>Acces partenaire non disponible</h1>
-          <p className="subtitle">{errorMsg ?? "Cette page est reservee aux partenaires invites par notre equipe."}</p>
-          <div className="partnerApply__stateActions">
-            {session ? (
-              <Link className="btn btn--primary" to="/me/partner">
-                Ouvrir mon espace partenaire
-              </Link>
-            ) : (
-              <a className="btn btn--primary" href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Invitation%20partenaire`}>
-                Contacter l'equipe
-              </a>
-            )}
-            <Link className="btn" to="/landing">
-              Retour a l'accueil
-            </Link>
-          </div>
         </section>
       </div>
     );

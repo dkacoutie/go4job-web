@@ -365,8 +365,8 @@ export default function PartnerPortalPage() {
           <span className="badge badge--blue">Programme partenaires</span>
           <h1>Aucun compte partenaire rattache a ce profil</h1>
           <p className="subtitle">
-            Si tu as recu le lien partenaire de notre equipe, tu peux creer et activer ton compte depuis l'entree
-            dediee. Sinon, contacte-nous pour verifier ton acces au programme.
+            Cet espace est reserve aux partenaires. Si tu as recu le lien direct vers le programme partenaires,
+            finalise ton adhesion depuis cette page puis reviens ici. Sinon, contacte-nous pour verifier ta situation.
           </p>
           <div className="partnerPortal__contactBox">
             <div>
@@ -379,12 +379,12 @@ export default function PartnerPortalPage() {
             </div>
           </div>
           <div className="partnerPortal__heroActions">
-            <Link className="btn btn--primary" to="/devenir-partenaire">
-              Devenir partenaire
-            </Link>
             <a className="btn" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Programme%20partenaires`}>
               Contacter l'equipe
             </a>
+            <Link className="btn btn--primary" to="/">
+              Retour au dashboard
+            </Link>
           </div>
         </section>
       </div>

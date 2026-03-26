@@ -6,7 +6,6 @@ import {
   attachCommissionsToPayout,
   createPartnerPayout,
   fetchAdminPartnerSnapshot,
-  generatePartnerInvitation,
   markPartnerPayoutPaid,
   type AdminPartnerSummaryRow,
   type CurrencyTotals,
@@ -86,7 +85,7 @@ const EMPTY_PARTNER_FORM: PartnerFormState = {
   contactName: "",
   contactEmail: "",
   userId: "",
-  status: "pending",
+  status: "active",
   referralCode: "",
   notes: "",
 };
@@ -242,7 +241,6 @@ export default function AdminPartnersPage() {
   const [partnerFormOpen, setPartnerFormOpen] = useState(false);
   const [partnerForm, setPartnerForm] = useState<PartnerFormState>({ ...EMPTY_PARTNER_FORM });
   const [isSavingPartner, setIsSavingPartner] = useState(false);
-  const [isGeneratingInvitation, setIsGeneratingInvitation] = useState(false);
   const [statusUpdatingPartnerId, setStatusUpdatingPartnerId] = useState<string | null>(null);
   const [partnerDetailId, setPartnerDetailId] = useState<string | null>(null);
 
@@ -845,30 +843,6 @@ export default function AdminPartnersPage() {
         title: "Copie impossible",
         message: "Le navigateur a bloque la copie du lien.",
       });
-    }
-  };
-
-  const handleGenerateInvitationLink = async () => {
-    if (!selectedPartnerSummary) return;
-
-    setIsGeneratingInvitation(true);
-
-    try {
-      const result = await generatePartnerInvitation(selectedPartnerSummary.partner_id);
-      await copyText(result.invitation_url);
-      pushToast({
-        kind: "success",
-        title: "Lien d'invitation copie",
-        message: `Invitation prete a etre envoyee. Expiration ${formatDateTime(result.expires_at)}.`,
-      });
-    } catch (err: any) {
-      pushToast({
-        kind: "error",
-        title: "Invitation non generee",
-        message: err?.message ?? "Impossible de generer le lien d'invitation.",
-      });
-    } finally {
-      setIsGeneratingInvitation(false);
     }
   };
 
@@ -1681,14 +1655,6 @@ export default function AdminPartnersPage() {
                   </button>
                   <button
                     type="button"
-                    className="btn"
-                    disabled={isGeneratingInvitation || selectedPartnerSummary.partner_status !== "pending"}
-                    onClick={() => void handleGenerateInvitationLink()}
-                  >
-                    {isGeneratingInvitation ? "Generation..." : "Generer le lien d'invitation"}
-                  </button>
-                  <button
-                    type="button"
                     className="btn btn--primary"
                     disabled={statusUpdatingPartnerId === selectedPartnerSummary.partner_id || selectedPartnerSummary.partner_status === "active"}
                     onClick={() => void handlePartnerStatusChange(selectedPartnerSummary.partner_id, "active")}
@@ -1728,10 +1694,6 @@ export default function AdminPartnersPage() {
                   <div className="adminPartners__detailPill">
                     <span>Lien partenaire</span>
                     <strong className="mono">{selectedPartnerReferralLink || "-"}</strong>
-                  </div>
-                  <div className="adminPartners__detailPill">
-                    <span>Invitation</span>
-                    <strong>{selectedPartnerSummary.partner_status === "pending" ? "Generee a la demande depuis cette fiche" : "Non requise pour ce statut"}</strong>
                   </div>
                   <div className="adminPartners__detailPill">
                     <span>Derniere vente</span>
@@ -1872,10 +1834,7 @@ export default function AdminPartnersPage() {
             <div className="card__titleRow">
               <div>
                 <h2>{partnerForm.partnerId ? "Modifier le partenaire" : "Creer un partenaire"}</h2>
-                <div className="muted">
-                  Le code partenaire peut etre laisse vide pour generation automatique. Utiliser le statut pending pour
-                  preparer une invitation.
-                </div>
+                <div className="muted">Le code partenaire peut etre laisse vide pour generation automatique.</div>
               </div>
               <button type="button" className="btn" onClick={closePartnerForm} disabled={isSavingPartner}>
                 Fermer

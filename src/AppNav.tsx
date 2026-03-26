@@ -14,6 +14,7 @@ export default function AppNav() {
   const { session, loading } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [hasPartnerAccount, setHasPartnerAccount] = useState(false);
 
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -57,13 +58,14 @@ export default function AppNav() {
   );
 
   const accountItems = useMemo(
-    () => [
-      { label: "Mon CV", path: "/me/cv" },
-      { label: "Mon profil", path: "/jobradar/profile" },
-      { label: "Espace partenaire", path: "/me/partner" },
-      { label: "Mon abonnement", path: "/me/subscription" },
-    ],
-    []
+    () =>
+      [
+        { label: "Mon CV", path: "/me/cv" },
+        { label: "Mon profil", path: "/jobradar/profile" },
+        ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
+        { label: "Mon abonnement", path: "/me/subscription" },
+      ] as Array<{ label: string; path: string }>,
+    [hasPartnerAccount]
   );
 
   const adminItems = useMemo(
@@ -108,19 +110,22 @@ export default function AppNav() {
 
     (async () => {
       if (!session?.user?.id) {
-        if (!cancelled) setIsAdmin(false);
+        if (!cancelled) {
+          setIsAdmin(false);
+          setHasPartnerAccount(false);
+        }
         return;
       }
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+      const [profileRes, partnerRes] = await Promise.all([
+        supabase.from("profiles").select("is_admin").eq("user_id", session.user.id).maybeSingle(),
+        supabase.from("partner_accounts").select("id").eq("user_id", session.user.id).maybeSingle(),
+      ]);
 
-      if (!cancelled) {
-        setIsAdmin(!error && !!data?.is_admin);
-      }
+      if (cancelled) return;
+
+      setIsAdmin(!profileRes.error && !!profileRes.data?.is_admin);
+      setHasPartnerAccount(!partnerRes.error && !!partnerRes.data?.id);
     })();
 
     return () => {

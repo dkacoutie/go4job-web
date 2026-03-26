@@ -3,7 +3,6 @@ import go4jobLogo from "../assets/go4job-logo.png";
 import "./PublicHeader.css";
 
 const PUBLIC_NAV_ITEMS = [
-  { label: "Devenir partenaire", to: "/devenir-partenaire" },
   { label: "Tarifs", to: "/pricing" },
   { label: "Contact", to: "/contact" },
 ] as const;
