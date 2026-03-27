@@ -234,7 +234,7 @@ export default function AppNav() {
       {session && (
         <nav className="appnav__links" aria-label="Navigation">
           <button type="button" className={"appnav__btn " + (isActive("/") ? "is-active" : "")} onClick={() => onNavigate("/")}>
-            Dashboard
+            Tableau de bord
           </button>
 
           {isAdmin && (
@@ -365,7 +365,7 @@ export default function AppNav() {
               className={"appnav__mobileItem " + (isActive("/") ? "is-active" : "")}
               onClick={() => onNavigate("/")}
             >
-              Dashboard
+              Tableau de bord
             </button>
           </div>
 
