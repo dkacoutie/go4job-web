@@ -418,13 +418,13 @@ export default function PricingPlansBlock({
               </div>
             </div>
             <div className="pricing-payments__logos">
-              <div className="pricing-payments__logoCard">
-                <img
-                  className="pricing-payments__logo pricing-payments__logo--cards"
-                  src="/logo visa mastercard.png"
-                  alt="Visa et Mastercard"
-                  loading="lazy"
-                />
+                <div className="pricing-payments__logoCard">
+                  <img
+                    className="pricing-payments__logo pricing-payments__logo--cards"
+                    src="/logo-visa-mastercard.png"
+                    alt="Visa et Mastercard"
+                    loading="lazy"
+                  />
               </div>
               <div className="pricing-payments__logoCard">
                 <img

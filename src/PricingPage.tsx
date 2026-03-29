@@ -496,7 +496,7 @@ export default function PricingPage() {
                 <div className="pricing-payments__logoCard">
                   <img
                     className="pricing-payments__logo pricing-payments__logo--cards"
-                    src="/logo visa mastercard.png"
+                    src="/logo-visa-mastercard.png"
                     alt="Visa et Mastercard"
                     loading="lazy"
                   />
