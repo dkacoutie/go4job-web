@@ -175,8 +175,8 @@
 
 .partnerApply__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.28fr) minmax(280px, 0.72fr);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.34fr) minmax(260px, 0.66fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -293,16 +293,12 @@
 
 .partnerApply__side {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-content: start;
 }
 
 .partnerApply__compactCard {
-  padding: 18px 18px 16px;
-}
-
-.partnerApply__faqCard {
-  padding: 18px;
+  padding: 18px 18px 17px;
 }
 
 .partnerApply__compactFacts {
@@ -330,80 +326,6 @@
   color: rgba(15, 23, 42, 0.62);
   line-height: 1.55;
   font-size: 13px;
-}
-
-.partnerApply__faqList {
-  display: grid;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.partnerApply__faqItem {
-  display: grid;
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.96));
-  border: 1px solid rgba(226, 232, 240, 0.95);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.025);
-}
-
-.partnerApply__faqItem.is-open {
-  border-color: rgba(15, 118, 110, 0.24);
-  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
-}
-
-.partnerApply__faqTrigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 15px;
-  border: 0;
-  border-radius: 16px;
-  background: transparent;
-  color: #0f172a;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.45;
-  text-align: left;
-  cursor: pointer;
-}
-
-.partnerApply__faqTrigger:hover {
-  background: rgba(248, 250, 252, 0.74);
-}
-
-.partnerApply__faqTrigger:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
-}
-
-.partnerApply__faqChevron {
-  flex: 0 0 auto;
-  color: rgba(15, 23, 42, 0.5);
-  font-size: 12px;
-  transform: rotate(0deg);
-  transition: transform 0.16s ease, color 0.16s ease;
-}
-
-.partnerApply__faqItem.is-open .partnerApply__faqChevron {
-  color: #0f766e;
-  transform: rotate(180deg);
-}
-
-.partnerApply__faqPanel {
-  display: grid;
-  gap: 8px;
-  padding: 0 15px 14px;
-}
-
-.partnerApply__faqPanel p {
-  margin: 0;
-  color: rgba(15, 23, 42, 0.72);
-  line-height: 1.58;
-  font-size: 14px;
 }
 
 .partnerApply__summary {
@@ -443,7 +365,6 @@
 
   .partnerApply__formCard,
   .partnerApply__compactCard,
-  .partnerApply__faqCard,
   .partnerApply__benefitCard,
   .partnerApply__state {
     padding: 18px;
