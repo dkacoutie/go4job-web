@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { clearPartnerReferral, readPartnerReferral } from "./lib/partnerReferral";
 import { supabase } from "./lib/supabaseClient";
@@ -77,11 +77,36 @@ function formatPassStatus(status?: string | null) {
   }
 }
 
+function PricingPostCheckoutActions() {
+  const navigate = useNavigate();
+  const onboarding = useJobRadarOnboarding();
+  const primaryTo = onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile");
+  const primaryLabel = onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon onboarding";
+
+  return (
+    <div className="pricing-success-actions" aria-label="Suite après achat">
+      <button
+        type="button"
+        className="pricing-success-actions__primary"
+        onClick={() => navigate(primaryTo)}
+      >
+        {primaryLabel}
+      </button>
+      <button
+        type="button"
+        className="pricing-success-actions__secondary"
+        onClick={() => navigate("/me/subscription")}
+      >
+        {"Voir mon accès"}
+      </button>
+    </div>
+  );
+}
+
 export default function PricingPage() {
   const navigate = useNavigate();
   const { session } = useSession();
   const { refreshPass } = usePass();
-  const onboarding = useJobRadarOnboarding();
   const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
   const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobile-money-operateurs.png`;
 
@@ -101,12 +126,12 @@ export default function PricingPage() {
   const [showPostCheckout, setShowPostCheckout] = useState(false);
   const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
   const [isTestPass, setIsTestPass] = useState(false);
+  const [accountLoading, setAccountLoading] = useState(false);
   const lastVerifiedRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
-  const loadData = async () => {
+  const loadPricingData = useCallback(async () => {
     setLoading(true);
-    setErrorMsg(null);
 
     try {
       const [settingsRes, plansRes] = await Promise.all([
@@ -127,60 +152,79 @@ export default function PricingPage() {
 
       setSettings((sData as BillingSettings) ?? null);
       setPlans((pData as BillingPlan[]) ?? []);
-
-      if (session?.user) {
-        const nowIso = new Date().toISOString();
-        const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-
-        const [passRes, subRes, recentTestRes] = await Promise.all([
-          supabase
-            .from("current_user_pass")
-            .select("id, plan_code, plan_name, status, ends_at, days_remaining")
-            .maybeSingle(),
-          supabase
-            .from("billing_subscriptions")
-            .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
-            .eq("user_id", session.user.id)
-            .eq("status", "active")
-            .gt("ends_at", nowIso)
-            .maybeSingle(),
-          supabase
-            .from("billing_payments")
-            .select("id, updated_at")
-            .eq("user_id", session.user.id)
-            .eq("provider_code", "paystack")
-            .eq("status", "paid_test")
-            .gte("updated_at", recentCutoff)
-            .order("updated_at", { ascending: false })
-            .maybeSingle(),
-        ]);
-
-        setCurrentPass((passRes.data as CurrentPass) ?? null);
-
-        const subData = subRes.data;
-        const testFlag =
-          (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
-            ?.source_payment?.status === "paid_test" ||
-          Boolean(
-            (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
-              ?.provider_payload?.test_mode
-          );
-
-        setIsTestPass(Boolean(subData?.id) && testFlag);
-        setHasRecentTestPayment(Boolean(recentTestRes.data?.id));
-      } else {
-        setCurrentPass(null);
-        setHasRecentTestPayment(false);
-        setIsTestPass(false);
-      }
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const loadAccountData = useCallback(async () => {
+    if (!session?.user) {
+      setCurrentPass(null);
+      setHasRecentTestPayment(false);
+      setIsTestPass(false);
+      setAccountLoading(false);
+      return;
+    }
+
+    setAccountLoading(true);
+
+    try {
+      const nowIso = new Date().toISOString();
+      const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+      const [passRes, subRes, recentTestRes] = await Promise.all([
+        supabase
+          .from("current_user_pass")
+          .select("id, plan_code, plan_name, status, ends_at, days_remaining")
+          .maybeSingle(),
+        supabase
+          .from("billing_subscriptions")
+          .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
+          .eq("user_id", session.user.id)
+          .eq("status", "active")
+          .gt("ends_at", nowIso)
+          .maybeSingle(),
+        supabase
+          .from("billing_payments")
+          .select("id, updated_at")
+          .eq("user_id", session.user.id)
+          .eq("provider_code", "paystack")
+          .eq("status", "paid_test")
+          .gte("updated_at", recentCutoff)
+          .order("updated_at", { ascending: false })
+          .maybeSingle(),
+      ]);
+
+      if (passRes.error) setErrorMsg((prev) => prev ?? passRes.error?.message ?? null);
+      if (subRes.error) setErrorMsg((prev) => prev ?? subRes.error?.message ?? null);
+      if (recentTestRes.error) setErrorMsg((prev) => prev ?? recentTestRes.error?.message ?? null);
+
+      setCurrentPass((passRes.data as CurrentPass) ?? null);
+
+      const subData = subRes.data;
+      const testFlag =
+        (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
+          ?.source_payment?.status === "paid_test" ||
+        Boolean(
+          (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
+            ?.provider_payload?.test_mode
+        );
+
+      setIsTestPass(Boolean(subData?.id) && testFlag);
+      setHasRecentTestPayment(Boolean(recentTestRes.data?.id));
+    } finally {
+      setAccountLoading(false);
+    }
+  }, [session?.user]);
 
   useEffect(() => {
-    loadData();
-  }, [session?.user?.id]);
+    setErrorMsg(null);
+    void loadPricingData();
+  }, [loadPricingData]);
+
+  useEffect(() => {
+    void loadAccountData();
+  }, [loadAccountData]);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -220,7 +264,7 @@ export default function PricingPage() {
         );
         setShowPostCheckout(true);
         clearPartnerReferral();
-        await loadData();
+        await loadAccountData();
         await refreshPass();
       } else {
         setErrorMsg("Paiement non confirm\u00e9. Aucun d\u00e9bit effectu\u00e9.");
@@ -231,7 +275,7 @@ export default function PricingPage() {
     };
 
     runVerify();
-  }, [session?.user?.id, refreshPass]);
+  }, [session?.user?.id, loadAccountData, refreshPass]);
 
   const paymentsEnabled = settings?.payments_enabled !== false;
   const maintenanceMessage =
@@ -241,8 +285,7 @@ export default function PricingPage() {
     isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
   const hasActivePass = Boolean(currentPass && currentPass.status === "active");
   const isBusy = isCheckingOut || isVerifying;
-  const postCheckoutPrimaryTo = onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile");
-  const postCheckoutPrimaryLabel = onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon onboarding";
+  const isAccountPending = Boolean(session?.user) && accountLoading;
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
@@ -357,24 +400,7 @@ export default function PricingPage() {
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
-        {showPostCheckout && (
-          <div className="pricing-success-actions" aria-label="Suite après achat">
-            <button
-              type="button"
-              className="pricing-success-actions__primary"
-              onClick={() => navigate(postCheckoutPrimaryTo)}
-            >
-              {postCheckoutPrimaryLabel}
-            </button>
-            <button
-              type="button"
-              className="pricing-success-actions__secondary"
-              onClick={() => navigate("/me/subscription")}
-            >
-              {"Voir mon acc\u00e8s"}
-            </button>
-          </div>
-        )}
+        {showPostCheckout && <PricingPostCheckoutActions />}
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
@@ -428,6 +454,7 @@ export default function PricingPage() {
                   paymentsEnabled &&
                   planActive &&
                   priceActive &&
+                  !isAccountPending &&
                   !hasActivePass &&
                   !hasRecentTestPayment &&
                   paystackEnabled;
@@ -488,7 +515,11 @@ export default function PricingPage() {
                       disabled={!canBuy || busyCode === plan.code || isBusy}
                       onClick={() => onBuy(plan, price)}
                     >
-                      {busyCode === plan.code || isBusy ? "Traitement en cours..." : marketing.ctaLabel}
+                      {isAccountPending
+                        ? "Vérification..."
+                        : busyCode === plan.code || isBusy
+                          ? "Traitement en cours..."
+                          : marketing.ctaLabel}
                     </button>
 
                     <div className="pricing-card__footnote">{marketing.launchNote}</div>
@@ -561,8 +592,12 @@ export default function PricingPage() {
 
           {session?.user && !currentPass && (
             <div className="pass-empty">
-              <p>Aucun pass actif</p>
-              <span>{"Choisis le pass qui te convient pour activer ton acc\u00e8s complet \u00e0 JobRadar."}</span>
+              <p>{accountLoading ? "Chargement de ton accès..." : "Aucun pass actif"}</p>
+              <span>
+                {accountLoading
+                  ? "On vérifie ton statut d'accès en arrière-plan."
+                  : "Choisis le pass qui te convient pour activer ton accès complet à JobRadar."}
+              </span>
             </div>
           )}
 
