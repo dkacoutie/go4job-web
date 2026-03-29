@@ -68,6 +68,8 @@ export default function PricingPlansBlock({
   const { session } = useSession();
   const { refreshPass, hasActivePass } = usePass();
   const onboarding = useJobRadarOnboarding();
+  const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
+  const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobile-money-operateurs.png`;
 
   const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const paystackEnabled = Boolean(paystackPublicKey);
@@ -421,7 +423,7 @@ export default function PricingPlansBlock({
                 <div className="pricing-payments__logoCard">
                   <img
                     className="pricing-payments__logo pricing-payments__logo--cards"
-                    src="/logo-visa-mastercard.png"
+                    src={cardsLogoSrc}
                     alt="Visa et Mastercard"
                     loading="lazy"
                   />
@@ -429,7 +431,7 @@ export default function PricingPlansBlock({
               <div className="pricing-payments__logoCard">
                 <img
                   className="pricing-payments__logo pricing-payments__logo--mobile"
-                  src="/mobileMoney-operateurs.png"
+                  src={mobileMoneyLogoSrc}
                   alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
                   loading="lazy"
                 />

@@ -83,7 +83,7 @@ export default function PricingPage() {
   const { refreshPass } = usePass();
   const onboarding = useJobRadarOnboarding();
   const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
-  const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobileMoney-operateurs.png`;
+  const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobile-money-operateurs.png`;
 
   const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const paystackEnabled = Boolean(paystackPublicKey);
