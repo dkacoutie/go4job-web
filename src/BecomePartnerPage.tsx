@@ -176,6 +176,7 @@ export default function BecomePartnerPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [restoredDraft, setRestoredDraft] = useState(() => Boolean(readDraft()));
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
   useEffect(() => {
     writeDraft(form);
@@ -537,14 +538,41 @@ export default function BecomePartnerPage() {
               </div>
 
               <div className="partnerApply__faqList">
-                {PARTNER_PROGRAM_FAQ.map((item) => (
-                  <article key={item.question} className="partnerApply__faqItem">
-                    <h3>{item.question}</h3>
-                    {item.answers.map((answer) => (
-                      <p key={answer}>{answer}</p>
-                    ))}
-                  </article>
-                ))}
+                {PARTNER_PROGRAM_FAQ.map((item, index) => {
+                  const isOpen = openFaqIndex === index;
+                  const panelId = `partner-faq-panel-${index}`;
+                  const buttonId = `partner-faq-button-${index}`;
+
+                  return (
+                    <article key={item.question} className={`partnerApply__faqItem${isOpen ? " is-open" : ""}`}>
+                      <button
+                        id={buttonId}
+                        type="button"
+                        className="partnerApply__faqTrigger"
+                        aria-expanded={isOpen}
+                        aria-controls={panelId}
+                        onClick={() => setOpenFaqIndex((prev) => (prev === index ? null : index))}
+                      >
+                        <span>{item.question}</span>
+                        <span className="partnerApply__faqChevron" aria-hidden="true">
+                          v
+                        </span>
+                      </button>
+
+                      <div
+                        id={panelId}
+                        className="partnerApply__faqPanel"
+                        role="region"
+                        aria-labelledby={buttonId}
+                        hidden={!isOpen}
+                      >
+                        {item.answers.map((answer) => (
+                          <p key={answer}>{answer}</p>
+                        ))}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             </section>
 
