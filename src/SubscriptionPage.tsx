@@ -1,6 +1,7 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
+import { formatAmount } from "./lib/pricingHelpers";
 import { useSession } from "./lib/useSession";
 import PricingPlansBlock from "./components/PricingPlansBlock";
 import "./SubscriptionPage.css";
@@ -27,23 +28,8 @@ type PaymentRow = {
   plan?: { name?: string | null } | null;
 };
 
-function formatAmount(amountMinor: number, currency: string) {
-  const frac = currency === "XOF" ? 0 : 2;
-  const amount = frac === 0 ? amountMinor : amountMinor / 100;
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency,
-      minimumFractionDigits: frac,
-      maximumFractionDigits: frac,
-    }).format(amount);
-  } catch {
-    return `${amount} ${currency}`;
-  }
-}
-
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "--";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
   return d.toLocaleDateString("fr-FR");
@@ -54,9 +40,9 @@ function formatPassStatus(status?: string | null) {
     case "active":
       return { label: "Actif", tone: "active" };
     case "expired":
-      return { label: "Expiré", tone: "expired" };
+      return { label: "Expire", tone: "expired" };
     case "cancelled":
-      return { label: "Annulé", tone: "expired" };
+      return { label: "Annule", tone: "expired" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
@@ -65,15 +51,15 @@ function formatPassStatus(status?: string | null) {
 function formatPaymentStatus(status?: string | null) {
   switch (status) {
     case "paid":
-      return { label: "Payé", tone: "success" };
+      return { label: "Paye", tone: "success" };
     case "paid_test":
-      return { label: "Payé (test)", tone: "success" };
+      return { label: "Paye (test)", tone: "success" };
     case "pending":
       return { label: "En attente", tone: "pending" };
     case "failed":
-      return { label: "Échoué", tone: "danger" };
+      return { label: "Echoue", tone: "danger" };
     case "cancelled":
-      return { label: "Annulé", tone: "danger" };
+      return { label: "Annule", tone: "danger" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
@@ -124,8 +110,12 @@ export default function SubscriptionPage() {
       .gt("ends_at", nowIso)
       .maybeSingle();
     const testFlag =
-      (subData as any)?.source_payment?.status === "paid_test" ||
-      Boolean((subData as any)?.source_payment?.provider_payload?.test_mode);
+      (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
+        ?.source_payment?.status === "paid_test" ||
+      Boolean(
+        (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
+          ?.provider_payload?.test_mode
+      );
     setIsTestPass(Boolean(subData?.id) && testFlag);
 
     const { data: paymentsData, error: paymentsErr } = await supabase
@@ -136,14 +126,16 @@ export default function SubscriptionPage() {
       .order("created_at", { ascending: false })
       .limit(6);
 
-    if (paymentsErr) setErrorMsg((m) => m ?? paymentsErr.message);
+    if (paymentsErr) setErrorMsg((prev) => prev ?? paymentsErr.message);
     setPayments((paymentsData as PaymentRow[]) ?? []);
 
     setPageLoading(false);
   };
 
   useEffect(() => {
-    if (!loading) loadData();
+    if (!loading) {
+      loadData();
+    }
   }, [loading, session?.user?.id]);
 
   const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
@@ -155,7 +147,7 @@ export default function SubscriptionPage() {
     () =>
       hasActivePass
         ? { label: "Voir mes offres", to: "/jobradar/feed" }
-        : { label: "Voir les pass", to: "/pricing" },
+        : { label: "Choisir un pass", to: "/pricing" },
     [hasActivePass]
   );
 
@@ -164,8 +156,8 @@ export default function SubscriptionPage() {
       <header className="subscription-hero">
         <div className="subscription-hero__inner">
           <div className="subscription-hero__kicker">JOBRADAR</div>
-          <h1>Mon abonnement</h1>
-          <p>Retrouve ton pass actif, les dates clés et tes paiements récents.</p>
+          <h1>Mon acces JobRadar</h1>
+          <p>Retrouve ton acces actif, les dates utiles et tes paiements recents au meme endroit.</p>
           <button
             type="button"
             className="btn btnPrimary subscription-hero__cta"
@@ -182,8 +174,10 @@ export default function SubscriptionPage() {
         <section className="subscription-card">
           <div className="subscription-card__head">
             <div>
-              <h2>Mon pass actuel</h2>
-              <p className="subscription-card__sub">Accès JobRadar en cours ou dernier pass actif.</p>
+              <h2>Mon acces actuel</h2>
+              <p className="subscription-card__sub">
+                Etat de ton acces complet et prochaine echeance importante.
+              </p>
             </div>
             {passStatus && (
               <span className={`subscription-pill subscription-pill--${passStatus.tone}`}>
@@ -193,18 +187,15 @@ export default function SubscriptionPage() {
           </div>
 
           {pageLoading ? (
-            <div className="subscription-loading">Chargement…</div>
+            <div className="subscription-loading">Chargement...</div>
           ) : !currentPass ? (
             <div className="subscription-empty">
               <div className="subscription-empty__title">Aucun pass actif</div>
               <div className="subscription-empty__text">
-                Choisis un pass pour activer l'accès complet à JobRadar.
+                Choisis le pass qui te convient pour activer ton acces complet a JobRadar.
               </div>
               <div className="subscription-plans">
-                <PricingPlansBlock
-                  title="Choisis ton pass"
-                  subtitle="Les trois durées donnent accès à JobRadar. Sélectionne celle qui te convient."
-                />
+                <PricingPlansBlock />
               </div>
             </div>
           ) : (
@@ -235,20 +226,20 @@ export default function SubscriptionPage() {
         <section className="subscription-card">
           <div className="subscription-card__head">
             <div>
-              <h2>Mes paiements récents</h2>
+              <h2>Mes paiements recents</h2>
               <p className="subscription-card__sub">
-                Historique simplifié des derniers paiements et activations.
+                Historique simplifie des derniers paiements et activations.
               </p>
             </div>
           </div>
 
           {pageLoading ? (
-            <div className="subscription-loading">Chargement…</div>
+            <div className="subscription-loading">Chargement...</div>
           ) : payments.length === 0 ? (
             <div className="subscription-empty">
-              <div className="subscription-empty__title">Aucun paiement enregistré</div>
+              <div className="subscription-empty__title">Aucun paiement enregistre</div>
               <div className="subscription-empty__text">
-                Tes futurs paiements apparaîtront ici dès qu'un pass sera activé.
+                Tes futurs paiements apparaitront ici des qu'un pass sera active.
               </div>
             </div>
           ) : (
@@ -258,7 +249,7 @@ export default function SubscriptionPage() {
                 <span>Pass</span>
                 <span>Montant</span>
                 <span>Statut</span>
-                <span>Référence</span>
+                <span>Reference</span>
               </div>
 
               {payments.map((payment) => {
@@ -271,9 +262,7 @@ export default function SubscriptionPage() {
                   <div className="subscription-payments__row" key={payment.id}>
                     <div className="subscription-payments__cell">
                       <span className="subscription-payments__label">Date</span>
-                      <span className="subscription-payments__value">
-                        {formatDate(paymentDate)}
-                      </span>
+                      <span className="subscription-payments__value">{formatDate(paymentDate)}</span>
                     </div>
                     <div className="subscription-payments__cell">
                       <span className="subscription-payments__label">Pass</span>
@@ -295,7 +284,7 @@ export default function SubscriptionPage() {
                       </span>
                     </div>
                     <div className="subscription-payments__cell">
-                      <span className="subscription-payments__label">Référence</span>
+                      <span className="subscription-payments__label">Reference</span>
                       <span className="subscription-payments__value subscription-payments__ref">
                         {paymentRef}
                       </span>
@@ -310,9 +299,3 @@ export default function SubscriptionPage() {
     </div>
   );
 }
-
-
-
-
-
-

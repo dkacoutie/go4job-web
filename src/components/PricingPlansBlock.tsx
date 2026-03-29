@@ -9,9 +9,13 @@ import { useJobRadarOnboarding } from "../lib/useJobRadarOnboarding";
 import { usePass } from "../lib/usePass";
 import {
   FEATURED_PLAN_CODE,
+  PRICING_ACCESS_MESSAGE,
   PRICING_BILLING_MESSAGE,
   PRICING_CONVERSION_MESSAGE,
   PRICING_INDICATIVE_MESSAGE,
+  PRICING_PRICE_NOTE,
+  PRICING_SECTION_SUBTITLE,
+  PRICING_SECTION_TITLE,
   formatPlanDisplayPrices,
   getPlanMarketing,
 } from "../lib/pricingHelpers";
@@ -52,8 +56,8 @@ type PricingPlansBlockProps = {
 };
 
 export default function PricingPlansBlock({
-  title = "Offre de lancement JobRadar",
-  subtitle = "Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar.",
+  title = PRICING_SECTION_TITLE,
+  subtitle = PRICING_SECTION_SUBTITLE,
   showActions = true,
   postCheckoutPrimaryTo,
   postCheckoutSecondaryTo = "/me/subscription",
@@ -368,9 +372,7 @@ export default function PricingPlansBlock({
                   <div className="pricing-card__meta">{marketing.durationLabel}</div>
                   <div className="pricing-card__title">{marketing.title}</div>
                   <div className="pricing-card__benefit">{marketing.description}</div>
-                  <div className="pricing-card__access">
-                    {"Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie."}
-                  </div>
+                  <div className="pricing-card__access">{PRICING_ACCESS_MESSAGE}</div>
 
                   <div className="pricing-card__priceWrap">
                     <div className="pricing-card__price">{displayPrices?.xofLabel ?? "--"}</div>
@@ -379,7 +381,7 @@ export default function PricingPlansBlock({
                         {displayPrices.combinedLabel}
                       </div>
                     )}
-                    <div className="pricing-card__priceNote">Tarif de lancement</div>
+                    <div className="pricing-card__priceNote">{PRICING_PRICE_NOTE}</div>
                   </div>
 
                   <div className="pricing-card__details">
@@ -412,7 +414,7 @@ export default function PricingPlansBlock({
             <div className="pricing-payments__head">
               <div className="pricing-payments__title">{"Moyens de paiement accept\u00e9s"}</div>
               <div className="pricing-payments__sub">
-                Payez facilement avec les moyens disponibles via notre passerelle de paiement.
+                Paiement s\u00e9curis\u00e9 par carte bancaire et Mobile Money via notre passerelle.
               </div>
             </div>
             <div className="pricing-payments__logos">

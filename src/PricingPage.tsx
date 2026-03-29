@@ -9,10 +9,17 @@ import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { usePass } from "./lib/usePass";
 import {
   FEATURED_PLAN_CODE,
-  LAUNCH_REASSURANCE_POINTS,
+  PRICING_ACCESS_MESSAGE,
   PRICING_BILLING_MESSAGE,
   PRICING_CONVERSION_MESSAGE,
   PRICING_INDICATIVE_MESSAGE,
+  PRICING_MODEL_TEXT,
+  PRICING_MODEL_TITLE,
+  PRICING_PRICE_NOTE,
+  PRICING_REASSURANCE_POINTS,
+  PRICING_SECTION_EYEBROW,
+  PRICING_SECTION_SUBTITLE,
+  PRICING_SECTION_TITLE,
   formatPlanDisplayPrices,
   getPlanMarketing,
 } from "./lib/pricingHelpers";
@@ -313,11 +320,11 @@ export default function PricingPage() {
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
           <div className="pricing-hero__brand">GO4JOB - JOBRADAR</div>
-          <div className="pricing-hero__eyebrow">{"Offre r\u00e9serv\u00e9e aux premiers utilisateurs"}</div>
-          <h1>Offre de lancement JobRadar</h1>
-          <p>{"Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar."}</p>
+          <div className="pricing-hero__eyebrow">{PRICING_SECTION_EYEBROW}</div>
+          <h1>{PRICING_SECTION_TITLE}</h1>
+          <p>{PRICING_SECTION_SUBTITLE}</p>
           <div className="pricing-hero__signals" aria-label="Points de reassurance">
-            {LAUNCH_REASSURANCE_POINTS.map((item) => (
+            {PRICING_REASSURANCE_POINTS.map((item) => (
               <span key={item} className="pricing-hero__signal">
                 {item}
               </span>
@@ -365,11 +372,9 @@ export default function PricingPage() {
           </div>
         )}
 
-        <section className="pricing-model" aria-label="Offre de lancement">
-          <div className="pricing-model__title">Offre de lancement JobRadar</div>
-          <p className="pricing-model__text">
-            {"Profitez d'un tarif pr\u00e9f\u00e9rentiel r\u00e9serv\u00e9 aux premiers utilisateurs et activez votre acc\u00e8s complet \u00e0 JobRadar."}
-          </p>
+        <section className="pricing-model" aria-label="Tarification JobRadar">
+          <div className="pricing-model__title">{PRICING_MODEL_TITLE}</div>
+          <p className="pricing-model__text">{PRICING_MODEL_TEXT}</p>
         </section>
 
         <section className="pricing-transparency" aria-label="Transparence tarifaire">
@@ -380,9 +385,9 @@ export default function PricingPage() {
 
         <section className="pricing-help" aria-label="Besoin d'aide avant achat">
           <div className="pricing-help__content">
-            <p className="pricing-help__title">Une question avant d’activer votre accès ?</p>
+            <p className="pricing-help__title">Une question avant d’activer ton accès ?</p>
             <p className="pricing-help__text">
-              Nous pouvons vous répondre sur l’abonnement, le paiement ou l’accès avant votre achat.
+              On peut te répondre sur l'abonnement, le paiement ou l'accès avant ton achat.
             </p>
           </div>
           <button
@@ -442,9 +447,7 @@ export default function PricingPage() {
                     <div className="pricing-card__meta">{marketing.durationLabel}</div>
                     <div className="pricing-card__title">{marketing.title}</div>
                     <div className="pricing-card__benefit">{marketing.description}</div>
-                    <div className="pricing-card__access">
-                      {"Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie."}
-                    </div>
+                    <div className="pricing-card__access">{PRICING_ACCESS_MESSAGE}</div>
 
                     <div className="pricing-card__priceWrap">
                       <div className="pricing-card__price">{displayPrices?.xofLabel ?? "--"}</div>
@@ -453,7 +456,7 @@ export default function PricingPage() {
                           {displayPrices.combinedLabel}
                         </div>
                       )}
-                      <div className="pricing-card__priceNote">Tarif de lancement</div>
+                      <div className="pricing-card__priceNote">{PRICING_PRICE_NOTE}</div>
                     </div>
 
                     <div className="pricing-card__details">
@@ -486,7 +489,7 @@ export default function PricingPage() {
               <div className="pricing-payments__head">
                 <div className="pricing-payments__title">{"Moyens de paiement accept\u00e9s"}</div>
                 <div className="pricing-payments__sub">
-                  Payez facilement avec les moyens disponibles via notre passerelle de paiement.
+                  Paiement s\u00e9curis\u00e9 par carte bancaire et Mobile Money via notre passerelle.
                 </div>
               </div>
               <div className="pricing-payments__logos">
@@ -526,7 +529,7 @@ export default function PricingPage() {
 
           {!session?.user && (
             <div className="pass-empty">
-              <p>Connecte-toi pour activer une offre de lancement en quelques instants.</p>
+              <p>Connecte-toi pour activer un pass JobRadar en quelques instants.</p>
               <span>Ton parcours de paiement restera identique après connexion.</span>
               <button
                 type="button"
@@ -541,7 +544,7 @@ export default function PricingPage() {
           {session?.user && !currentPass && (
             <div className="pass-empty">
               <p>Aucun pass actif</p>
-              <span>{"Choisis une offre de lancement pour activer ton acc\u00e8s complet \u00e0 JobRadar."}</span>
+              <span>{"Choisis le pass qui te convient pour activer ton acc\u00e8s complet \u00e0 JobRadar."}</span>
             </div>
           )}
 

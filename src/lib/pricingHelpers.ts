@@ -23,16 +23,26 @@ export type PlanDisplayPrices = {
 export const FEATURED_PLAN_CODE = "pass_30d";
 export const EUR_XOF = 655.957;
 export const USD_XOF = 570.94;
-export const PRICING_BILLING_MESSAGE = "Facturation en FCFA (XOF).";
+export const PRICING_SECTION_EYEBROW = "Plans JobRadar";
+export const PRICING_SECTION_TITLE = "Choisis le pass qui correspond à ton rythme";
+export const PRICING_SECTION_SUBTITLE =
+  "Active ton accès complet à JobRadar avec une tarification claire et un paiement sécurisé.";
+export const PRICING_ACCESS_MESSAGE =
+  "Accès complet à JobRadar pendant toute la durée choisie.";
+export const PRICING_PRICE_NOTE = "Paiement unique, sans renouvellement automatique";
+export const PRICING_MODEL_TITLE = "Une tarification claire, pensée pour durer";
+export const PRICING_MODEL_TEXT =
+  "Choisis la durée qui correspond à ton rythme : l’accès est complet dès l’activation, avec paiement sécurisé et sans renouvellement automatique.";
+export const PRICING_BILLING_MESSAGE = "Montants facturés en FCFA (XOF).";
 export const PRICING_INDICATIVE_MESSAGE =
-  "Les montants en \u20ac et $ sont donn\u00e9s \u00e0 titre indicatif selon le taux de change.";
+  "Les équivalents en € et $ sont affichés à titre indicatif selon le taux de change.";
 export const PRICING_CONVERSION_MESSAGE =
-  "La conversion finale est appliqu\u00e9e automatiquement par votre banque ou votre moyen de paiement, si n\u00e9cessaire.";
+  "La conversion finale est appliquée automatiquement par votre banque ou votre moyen de paiement, si nécessaire.";
 
-export const LAUNCH_REASSURANCE_POINTS = [
-  "Paiement simple par Mobile Money",
-  "Acc\u00e8s imm\u00e9diat apr\u00e8s paiement",
-  "Tarif de lancement susceptible d'\u00e9voluer",
+export const PRICING_REASSURANCE_POINTS = [
+  "Paiement sécurisé par carte et Mobile Money",
+  "Accès activé dès confirmation du paiement",
+  "Tarification claire, sans renouvellement automatique",
 ];
 
 export const ACCEPTED_PAYMENT_METHODS: PaymentMethodBadge[] = [
@@ -48,28 +58,28 @@ export const PLAN_MARKETING: Record<string, PlanMarketing> = {
   pass_7d: {
     title: "Pass D\u00e9couverte",
     durationLabel: "7 jours",
-    description: "Id\u00e9al pour d\u00e9couvrir JobRadar rapidement.",
+    description: "Idéal pour découvrir JobRadar et lancer une recherche ciblée sur une semaine.",
     badge: "Disponible",
     badgeTone: "available",
-    launchNote: "Un format simple pour tester le service sans engagement long.",
+    launchNote: "Une formule souple pour tester la plateforme avec un accès complet pendant 7 jours.",
     ctaLabel: "Activer mon pass",
   },
   pass_30d: {
     title: "Pass Mensuel",
     durationLabel: "30 jours",
-    description: "Le plus \u00e9quilibr\u00e9 pour une recherche active.",
-    badge: "Le plus choisi",
+    description: "Le bon équilibre pour suivre les offres et candidater avec régularité.",
+    badge: "Recommandé",
     badgeTone: "featured",
-    launchNote: "La meilleure option pour garder un vrai rythme et avancer avec r\u00e9gularit\u00e9.",
+    launchNote: "Le format le plus équilibré pour garder un vrai rythme sur un mois complet.",
     ctaLabel: "Activer mon pass",
   },
   pass_90d: {
     title: "Pass Avantage",
     durationLabel: "90 jours",
-    description: "Le meilleur format pour maximiser tes opportunit\u00e9s.",
+    description: "La solution la plus avantageuse pour installer une recherche durable.",
     badge: "Disponible",
     badgeTone: "available",
-    launchNote: "Une option confortable pour rester constant sur une recherche plus longue.",
+    launchNote: "Idéal pour rester constant, affiner ton ciblage et multiplier les opportunités.",
     ctaLabel: "Activer mon pass",
   },
 };
@@ -83,10 +93,10 @@ export function getPlanMarketing(
     PLAN_MARKETING[planCode] ?? {
       title: fallbackName,
       durationLabel: `${durationDays} jours`,
-      description: "Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie.",
+      description: PRICING_ACCESS_MESSAGE,
       badge: "Disponible",
       badgeTone: "available",
-      launchNote: "Tarif de lancement.",
+      launchNote: PRICING_ACCESS_MESSAGE,
       ctaLabel: "Activer mon pass",
     }
   );
