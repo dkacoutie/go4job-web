@@ -82,6 +82,8 @@ export default function PricingPage() {
   const { session } = useSession();
   const { refreshPass } = usePass();
   const onboarding = useJobRadarOnboarding();
+  const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
+  const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobileMoney-operateurs.png`;
 
   const paystackPublicKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY ?? "").trim();
   const paystackEnabled = Boolean(paystackPublicKey);
@@ -106,64 +108,74 @@ export default function PricingPage() {
     setLoading(true);
     setErrorMsg(null);
 
-    const { data: sData, error: sErr } = await supabase
-      .from("billing_settings")
-      .select("payments_enabled, maintenance_message")
-      .maybeSingle();
-    if (sErr) setErrorMsg(sErr.message);
-    setSettings((sData as BillingSettings) ?? null);
+    try {
+      const [settingsRes, plansRes] = await Promise.all([
+        supabase.from("billing_settings").select("payments_enabled, maintenance_message").maybeSingle(),
+        supabase
+          .from("billing_plans")
+          .select(
+            "id, code, name, duration_days, is_active, sort_order, billing_plan_prices(id, currency, amount_minor, country_group, payment_method_type, is_active)"
+          )
+          .order("sort_order", { ascending: true }),
+      ]);
 
-    const { data: pData, error: pErr } = await supabase
-      .from("billing_plans")
-      .select(
-        "id, code, name, duration_days, is_active, sort_order, billing_plan_prices(id, currency, amount_minor, country_group, payment_method_type, is_active)"
-      )
-      .order("sort_order", { ascending: true });
-    if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
-    setPlans((pData as BillingPlan[]) ?? []);
+      const { data: sData, error: sErr } = settingsRes;
+      const { data: pData, error: pErr } = plansRes;
 
-    if (session?.user) {
-      const { data: passData } = await supabase
-        .from("current_user_pass")
-        .select("id, plan_code, plan_name, status, ends_at, days_remaining")
-        .maybeSingle();
-      setCurrentPass((passData as CurrentPass) ?? null);
+      if (sErr) setErrorMsg(sErr.message);
+      if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
 
-      const nowIso = new Date().toISOString();
-      const { data: subData } = await supabase
-        .from("billing_subscriptions")
-        .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
-        .eq("user_id", session.user.id)
-        .eq("status", "active")
-        .gt("ends_at", nowIso)
-        .maybeSingle();
-      const testFlag =
-        (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
-          ?.source_payment?.status === "paid_test" ||
-        Boolean(
-          (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
-            ?.provider_payload?.test_mode
-        );
-      setIsTestPass(Boolean(subData?.id) && testFlag);
+      setSettings((sData as BillingSettings) ?? null);
+      setPlans((pData as BillingPlan[]) ?? []);
 
-      const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-      const { data: recentTestPayment } = await supabase
-        .from("billing_payments")
-        .select("id, updated_at")
-        .eq("user_id", session.user.id)
-        .eq("provider_code", "paystack")
-        .eq("status", "paid_test")
-        .gte("updated_at", recentCutoff)
-        .order("updated_at", { ascending: false })
-        .maybeSingle();
-      setHasRecentTestPayment(Boolean(recentTestPayment?.id));
-    } else {
-      setCurrentPass(null);
-      setHasRecentTestPayment(false);
-      setIsTestPass(false);
+      if (session?.user) {
+        const nowIso = new Date().toISOString();
+        const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+        const [passRes, subRes, recentTestRes] = await Promise.all([
+          supabase
+            .from("current_user_pass")
+            .select("id, plan_code, plan_name, status, ends_at, days_remaining")
+            .maybeSingle(),
+          supabase
+            .from("billing_subscriptions")
+            .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
+            .eq("user_id", session.user.id)
+            .eq("status", "active")
+            .gt("ends_at", nowIso)
+            .maybeSingle(),
+          supabase
+            .from("billing_payments")
+            .select("id, updated_at")
+            .eq("user_id", session.user.id)
+            .eq("provider_code", "paystack")
+            .eq("status", "paid_test")
+            .gte("updated_at", recentCutoff)
+            .order("updated_at", { ascending: false })
+            .maybeSingle(),
+        ]);
+
+        setCurrentPass((passRes.data as CurrentPass) ?? null);
+
+        const subData = subRes.data;
+        const testFlag =
+          (subData as { source_payment?: { status?: string; provider_payload?: { test_mode?: boolean } } })
+            ?.source_payment?.status === "paid_test" ||
+          Boolean(
+            (subData as { source_payment?: { provider_payload?: { test_mode?: boolean } } })?.source_payment
+              ?.provider_payload?.test_mode
+          );
+
+        setIsTestPass(Boolean(subData?.id) && testFlag);
+        setHasRecentTestPayment(Boolean(recentTestRes.data?.id));
+      } else {
+        setCurrentPass(null);
+        setHasRecentTestPayment(false);
+        setIsTestPass(false);
+      }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -496,17 +508,23 @@ export default function PricingPage() {
                 <div className="pricing-payments__logoCard">
                   <img
                     className="pricing-payments__logo pricing-payments__logo--cards"
-                    src="/logo-visa-mastercard.png"
+                    src={cardsLogoSrc}
                     alt="Visa et Mastercard"
+                    width="188"
+                    height="36"
                     loading="lazy"
+                    decoding="async"
                   />
                 </div>
                 <div className="pricing-payments__logoCard">
                   <img
                     className="pricing-payments__logo pricing-payments__logo--mobile"
-                    src="/mobileMoney-operateurs.png"
+                    src={mobileMoneyLogoSrc}
                     alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
+                    width="250"
+                    height="52"
                     loading="lazy"
+                    decoding="async"
                   />
                 </div>
               </div>
