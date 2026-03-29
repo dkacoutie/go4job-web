@@ -540,10 +540,9 @@ export default function BecomePartnerPage() {
                   ))}
                 </div>
 
-                <p className="partnerApply__footnote partnerApply__footnote--help">
-                  Une question plus specifique ?{" "}
-                  <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
-                </p>
+                <a className="partnerApply__helpCta" href="#partner-faq-complete">
+                  Voir toutes les réponses
+                </a>
               </section>
             </aside>
           </div>
@@ -555,6 +554,39 @@ export default function BecomePartnerPage() {
                 <p>{item.body}</p>
               </article>
             ))}
+          </section>
+
+          <section
+            className="card partnerApply__faqSection"
+            id="partner-faq-complete"
+            aria-label="FAQ complete partenaires"
+          >
+            <div className="card__titleRow partnerApply__sectionHeader">
+              <div>
+                <h2>FAQ complete</h2>
+                <div className="partnerApply__faqLead">
+                  Les reponses utiles si vous voulez verifier le fonctionnement du programme avant de finaliser.
+                </div>
+              </div>
+            </div>
+
+            <div className="partnerApply__faqGrid">
+              {PARTNER_PROGRAM_FAQ.map((item) => (
+                <article key={item.question} className="partnerApply__faqEntry">
+                  <h3>{item.question}</h3>
+                  <div className="partnerApply__faqAnswers">
+                    {item.answers.map((answer) => (
+                      <p key={answer}>{answer}</p>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <p className="partnerApply__footnote partnerApply__footnote--faq">
+              Une question plus specifique ?{" "}
+              <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
+            </p>
           </section>
         </div>
       )}

@@ -356,6 +356,33 @@
   margin-top: 16px;
 }
 
+.partnerApply__helpCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  margin-top: 16px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  background: rgba(255, 255, 255, 0.82);
+  color: #0f766e;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.partnerApply__helpCta:hover {
+  background: rgba(240, 253, 250, 0.96);
+  border-color: rgba(15, 118, 110, 0.24);
+  transform: translateY(-1px);
+}
+
+.partnerApply__helpCta:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+}
+
 .partnerApply__helpList {
   display: grid;
   gap: 0;
@@ -387,6 +414,58 @@
   line-height: 1.6;
 }
 
+.partnerApply__faqSection {
+  padding: 24px 24px 22px;
+}
+
+.partnerApply__faqLead {
+  margin-top: 8px;
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 66ch;
+}
+
+.partnerApply__faqGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding-top: 18px;
+}
+
+.partnerApply__faqEntry {
+  display: grid;
+  gap: 10px;
+  padding: 16px 16px 15px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(226, 232, 240, 0.92);
+}
+
+.partnerApply__faqEntry h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.42;
+}
+
+.partnerApply__faqAnswers {
+  display: grid;
+  gap: 8px;
+}
+
+.partnerApply__faqAnswers p {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 14px;
+  line-height: 1.62;
+}
+
+.partnerApply__footnote--faq {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(226, 232, 240, 0.82);
+}
+
 .partnerApply__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -400,6 +479,7 @@
 
 @media (max-width: 960px) {
   .partnerApply__benefits--footer,
+  .partnerApply__faqGrid,
   .partnerApply__grid,
   .partnerApply__compactFacts,
   .partnerApply__summary {
@@ -429,6 +509,7 @@
   .partnerApply__formCard,
   .partnerApply__compactCard,
   .partnerApply__helpCard,
+  .partnerApply__faqSection,
   .partnerApply__benefitCard,
   .partnerApply__state {
     padding: 20px;
