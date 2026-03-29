@@ -21,6 +21,11 @@ import {
   voidPartnerCommission,
 } from "./lib/adminPartnersApi";
 import { fetchIsAdminUser, fetchIsSuperAdmin } from "./lib/adminAccess";
+import {
+  PARTNER_PROGRAM_ENTRY_URL,
+  PARTNER_PROGRAM_MESSAGES,
+  renderPartnerProgramMessage,
+} from "./lib/partnerProgramContent";
 import "./AdminPartnersPage.css";
 
 type AdminTab = "overview" | "partners" | "conversions" | "commissions" | "payouts";
@@ -77,8 +82,17 @@ type AdminManagementFormState = {
   email: string;
 };
 
+type PartnerMessageDraftKey = "outreach" | "followUpInvitation";
+
+type PartnerMessageDraft = {
+  key: PartnerMessageDraftKey;
+  label: string;
+  preview: string;
+  subject?: string;
+  body: string;
+};
+
 const PARTNER_STATUSES: PartnerAccountStatus[] = ["pending", "active", "paused", "inactive"];
-const PARTNER_PROGRAM_ENTRY_URL = "https://jobradar.go4jobapp.com/devenir-partenaire";
 const PARTNER_REFERRAL_BASE_URL = "https://jobradar.go4jobapp.com/?ref=";
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Vue d'ensemble" },
@@ -184,6 +198,17 @@ function formatDateTime(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function pickPartnerMessageName(partner: PartnerAccountRow | null, summary: AdminPartnerSummaryRow | null) {
+  return partner?.contact_name?.trim() || summary?.display_name?.trim() || partner?.display_name?.trim() || "partenaire";
+}
+
+function buildPartnerMessageBody(draft: { subject?: string; paragraphs: string[] }) {
+  const lines = draft.paragraphs.map((paragraph) => paragraph.trim()).filter(Boolean);
+  const body = lines.join("\n\n");
+  if (!draft.subject) return body;
+  return `Objet : ${draft.subject}\n\n${body}`;
 }
 
 function statusBadgeClass(status: string) {
@@ -714,6 +739,31 @@ export default function AdminPartnersPage() {
     if (!code) return "";
     return `${PARTNER_REFERRAL_BASE_URL}${encodeURIComponent(code)}`;
   }, [selectedPartnerAccount?.referral_code, selectedPartnerSummary?.referral_code]);
+  const selectedPartnerMessageName = useMemo(
+    () => pickPartnerMessageName(selectedPartnerAccount, selectedPartnerSummary),
+    [selectedPartnerAccount, selectedPartnerSummary]
+  );
+  const selectedPartnerMessageDrafts = useMemo<PartnerMessageDraft[]>(() => {
+    if (!selectedPartnerSummary || !selectedPartnerAccount) return [];
+
+    const values = {
+      partner_name: selectedPartnerMessageName,
+      partner_email: selectedPartnerAccount.contact_email ?? "",
+      program_entry_url: PARTNER_PROGRAM_ENTRY_URL,
+      partner_referral_url: selectedPartnerReferralLink,
+    };
+
+    return (["outreach", "followUpInvitation"] as const).map((key) => {
+      const template = renderPartnerProgramMessage(PARTNER_PROGRAM_MESSAGES[key], values);
+      return {
+        key,
+        label: template.label,
+        preview: template.preview,
+        subject: template.subject,
+        body: buildPartnerMessageBody(template),
+      };
+    });
+  }, [selectedPartnerAccount, selectedPartnerMessageName, selectedPartnerReferralLink, selectedPartnerSummary]);
   const selectedPartnerActivity = useMemo<PartnerDetailActivityItem[]>(() => {
     if (!partnerDetailId) return [];
 
@@ -935,6 +985,23 @@ export default function AdminPartnersPage() {
         kind: "error",
         title: "Copie impossible",
         message: "Le navigateur a bloque la copie du lien.",
+      });
+    }
+  };
+
+  const handleCopyPartnerMessage = async (draft: PartnerMessageDraft) => {
+    try {
+      await copyText(draft.body);
+      pushToast({
+        kind: "success",
+        title: "Message copie",
+        message: `${draft.label} pret a etre colle.`,
+      });
+    } catch {
+      pushToast({
+        kind: "error",
+        title: "Copie impossible",
+        message: "Le navigateur a bloque la copie du message.",
       });
     }
   };
@@ -1963,6 +2030,62 @@ export default function AdminPartnersPage() {
                     ))}
                   </div>
                 )}
+              </section>
+
+              <section className="card adminPartners__detailMessages">
+                <div className="card__titleRow">
+                  <div>
+                    <h3>Messages prets a copier</h3>
+                    <div className="muted">
+                      Variables injectees depuis la fiche partenaire pour gagner du temps dans la prospection.
+                    </div>
+                  </div>
+                  <span className="badge badge--blue">{selectedPartnerMessageDrafts.length}</span>
+                </div>
+
+                <div className="adminPartners__messageContext">
+                  <div className="adminPartners__messageContextItem">
+                    <span>Nom injecte</span>
+                    <strong>{selectedPartnerMessageName}</strong>
+                  </div>
+                  <div className="adminPartners__messageContextItem">
+                    <span>Email</span>
+                    <strong>{selectedPartnerAccount.contact_email ?? "-"}</strong>
+                  </div>
+                  <div className="adminPartners__messageContextItem">
+                    <span>Lien programme</span>
+                    <strong className="mono">{PARTNER_PROGRAM_ENTRY_URL}</strong>
+                  </div>
+                  <div className="adminPartners__messageContextItem">
+                    <span>Lien personnel</span>
+                    <strong className="mono">{selectedPartnerReferralLink || "-"}</strong>
+                  </div>
+                </div>
+
+                <div className="adminPartners__messageGrid">
+                  {selectedPartnerMessageDrafts.map((draft) => (
+                    <article key={draft.key} className="adminPartners__messageCard">
+                      <div className="adminPartners__messageHead">
+                        <div>
+                          <h4>{draft.label}</h4>
+                          <p>{draft.preview}</p>
+                        </div>
+                        <button type="button" className="btn btn--primary" onClick={() => void handleCopyPartnerMessage(draft)}>
+                          Copier
+                        </button>
+                      </div>
+
+                      {draft.subject ? (
+                        <div className="adminPartners__messageMeta">
+                          <span>Objet</span>
+                          <strong>{draft.subject}</strong>
+                        </div>
+                      ) : null}
+
+                      <pre className="adminPartners__messageBody">{draft.body}</pre>
+                    </article>
+                  ))}
+                </div>
               </section>
 
               <section className="card">

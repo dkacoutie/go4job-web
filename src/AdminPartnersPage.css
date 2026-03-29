@@ -299,6 +299,10 @@
   min-width: 0;
 }
 
+.adminPartners__detailMessages {
+  grid-column: 1 / -1;
+}
+
 .adminPartners__detailActions {
   display: flex;
   flex-wrap: wrap;
@@ -373,6 +377,90 @@
 .adminPartners__detailListItem span {
   color: rgba(0, 0, 0, 0.62);
   font-size: 13px;
+}
+
+.adminPartners__messageContext {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.adminPartners__messageContextItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.adminPartners__messageContextItem span,
+.adminPartners__messageMeta span {
+  color: rgba(0, 0, 0, 0.56);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.adminPartners__messageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.adminPartners__messageCard {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 12px 26px rgba(10, 18, 31, 0.05);
+}
+
+.adminPartners__messageHead {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.adminPartners__messageHead h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.adminPartners__messageHead p {
+  margin: 6px 0 0;
+  color: rgba(0, 0, 0, 0.64);
+  line-height: 1.55;
+}
+
+.adminPartners__messageMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(13, 95, 158, 0.05);
+  border: 1px solid rgba(13, 95, 158, 0.12);
+}
+
+.adminPartners__messageBody {
+  margin: 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.8);
+  font: inherit;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .adminPartners__form {
@@ -551,7 +639,9 @@
   }
 
   .adminPartners__detailMetaGrid,
-  .adminPartners__detailStats {
+  .adminPartners__detailStats,
+  .adminPartners__messageContext,
+  .adminPartners__messageGrid {
     grid-template-columns: 1fr;
   }
 }

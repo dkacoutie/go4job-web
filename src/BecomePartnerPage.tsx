@@ -8,6 +8,7 @@ import {
   submitPartnerApplication,
 } from "./lib/partnerApplicationApi";
 import type { PartnerAccountRow } from "./lib/adminPartnersApi";
+import { PARTNER_PROGRAM_FAQ } from "./lib/partnerProgramContent";
 import "./BecomePartnerPage.css";
 
 type PartnerApplicationFormState = {
@@ -328,25 +329,30 @@ export default function BecomePartnerPage() {
     <div className="partnerApply">
       <section className="partnerApply__hero">
         <div className="partnerApply__heroBody">
-          <div className="chips">
-            <span className="chip">Sur invitation</span>
-            <span className="chip">Premier abonnement paye</span>
-          </div>
-          <h1>Rejoignez le programme partenaires JobRadar</h1>
-          <p className="subtitle">
-            Le lien /devenir-partenaire sert a rejoindre le programme. Une fois votre acces active, votre espace
-            partenaire vous donne votre lien personnel a partager et votre code partenaire.
-          </p>
-          <div className="partnerApply__heroActions">
-            {!partner ? (
-              <a className="btn btn--primary partnerApply__heroCta" href="#partner-activation-form">
-                Rejoindre le programme
-              </a>
-            ) : (
-              <Link className="btn btn--primary partnerApply__heroCta" to="/me/partner">
-                Acceder a mon espace partenaire
-              </Link>
-            )}
+          <div className="partnerApply__heroLead">
+            <div className="chips partnerApply__heroChips">
+              <span className="chip">Sur invitation</span>
+              <span className="chip">Premier abonnement paye</span>
+            </div>
+            <h1 className="partnerApply__heroTitle">
+              <span>Rejoignez le programme</span>
+              <span>partenaires JobRadar</span>
+            </h1>
+            <p className="subtitle">
+              Le lien /devenir-partenaire sert a rejoindre le programme. Une fois votre acces active, votre espace
+              partenaire vous donne votre lien personnel a partager et votre code partenaire.
+            </p>
+            <div className="partnerApply__heroActions">
+              {!partner ? (
+                <a className="btn btn--primary partnerApply__heroCta" href="#partner-activation-form">
+                  Rejoindre le programme
+                </a>
+              ) : (
+                <Link className="btn btn--primary partnerApply__heroCta" to="/me/partner">
+                  Acceder a mon espace partenaire
+                </Link>
+              )}
+            </div>
           </div>
           <div className="partnerApply__heroMeta">
             <div>
@@ -409,133 +415,149 @@ export default function BecomePartnerPage() {
           </div>
         </section>
       ) : (
-        <>
-          <section className="partnerApply__benefits">
-            {PARTNER_BENEFITS.map((item) => (
-              <article key={item.title} className="card partnerApply__benefitCard">
-                <strong>{item.title}</strong>
-                <p>{item.body}</p>
-              </article>
-            ))}
+        <div className="partnerApply__grid">
+          <section className="card partnerApply__formCard" id="partner-activation-form">
+            <div className="card__titleRow">
+              <h2>Devenir partenaire</h2>
+              <span className="badge badge--blue">Lien d'entree officiel</span>
+            </div>
+
+            <p className="partnerApply__intro">
+              Cette page vous permet uniquement de rejoindre le programme. Votre lien personnel de recommandation et
+              votre code partenaire seront ensuite disponibles dans votre espace partenaire. Si vous etes connecte,
+              vos informations connues sont pre-remplies. Sinon, les exemples affiches servent uniquement de repere.
+            </p>
+
+            <form className="partnerApply__form" onSubmit={handleSubmit}>
+              <label className="partnerApply__label">
+                Nom du partenaire ou de la structure *
+                <input
+                  className="partnerApply__input"
+                  type="text"
+                  value={form.displayName}
+                  onChange={handleFieldChange("displayName")}
+                  placeholder={PARTNER_FORM_PLACEHOLDERS.displayName}
+                  autoComplete="organization"
+                  required
+                />
+              </label>
+
+              <label className="partnerApply__label">
+                Nom du contact referent
+                <input
+                  className="partnerApply__input"
+                  type="text"
+                  value={form.contactName}
+                  onChange={handleFieldChange("contactName")}
+                  placeholder={PARTNER_FORM_PLACEHOLDERS.contactName}
+                  autoComplete="name"
+                />
+              </label>
+
+              <label className="partnerApply__label">
+                Email de contact *
+                <input
+                  className={`partnerApply__input${form.contactEmail && !emailIsValid ? " is-error" : ""}`}
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={handleFieldChange("contactEmail")}
+                  placeholder={PARTNER_FORM_PLACEHOLDERS.contactEmail}
+                  autoComplete="email"
+                  required
+                />
+              </label>
+
+              <label className="partnerApply__label">
+                Comment allez-vous recommander JobRadar ?
+                <textarea
+                  className="partnerApply__input partnerApply__textarea"
+                  value={form.applicationMessage}
+                  onChange={handleFieldChange("applicationMessage")}
+                  placeholder={PARTNER_FORM_PLACEHOLDERS.applicationMessage}
+                  rows={4}
+                />
+              </label>
+
+              <label className="partnerApply__checkbox">
+                <input type="checkbox" checked={form.acceptedTerms} onChange={handleFieldChange("acceptedTerms")} />
+                <span>
+                  J'ai lu et j'accepte les conditions partenaires ci-contre ainsi que les{" "}
+                  <Link to="/terms">conditions d'utilisation</Link>.
+                </span>
+              </label>
+
+              <button
+                className="partnerApply__submit"
+                type="submit"
+                disabled={submitting || (session ? !canFinalize : false)}
+              >
+                {submitting
+                  ? "Activation en cours..."
+                  : session
+                    ? "Rejoindre le programme partenaire"
+                    : "Me connecter pour rejoindre le programme"}
+              </button>
+            </form>
           </section>
 
-          <div className="partnerApply__grid">
-            <section className="card partnerApply__formCard" id="partner-activation-form">
+          <aside className="partnerApply__side">
+            <section className="card partnerApply__compactCard">
               <div className="card__titleRow">
-                <h2>Devenir partenaire</h2>
-                <span className="badge badge--blue">Lien d'entree officiel</span>
+                <h2>En bref</h2>
+                <span className="badge badge--yellow">Essentiel</span>
               </div>
 
-              <p className="partnerApply__intro">
-                Cette page vous permet uniquement de rejoindre le programme. Votre lien personnel de recommandation et
-                votre code partenaire seront ensuite disponibles dans votre espace partenaire. Si vous etes connecte,
-                vos informations connues sont pre-remplies. Sinon, les exemples affiches servent uniquement de repere.
+              <div className="partnerApply__compactFacts">
+                <div>
+                  <span>Statut cree</span>
+                  <strong>Actif</strong>
+                </div>
+                <div>
+                  <span>Espace partenaire</span>
+                  <strong>Disponible immediatement</strong>
+                </div>
+              </div>
+
+              <ul className="partnerApply__conditions">
+                {PARTNER_ESSENTIAL_TERMS.map((condition) => (
+                  <li key={condition}>{condition}</li>
+                ))}
+              </ul>
+
+              <p className="partnerApply__footnote">
+                Besoin d'un point rapide ?{" "}
+                <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
               </p>
-
-              <form className="partnerApply__form" onSubmit={handleSubmit}>
-                <label className="partnerApply__label">
-                  Nom du partenaire ou de la structure *
-                  <input
-                    className="partnerApply__input"
-                    type="text"
-                    value={form.displayName}
-                    onChange={handleFieldChange("displayName")}
-                    placeholder={PARTNER_FORM_PLACEHOLDERS.displayName}
-                    autoComplete="organization"
-                    required
-                  />
-                </label>
-
-                <label className="partnerApply__label">
-                  Nom du contact referent
-                  <input
-                    className="partnerApply__input"
-                    type="text"
-                    value={form.contactName}
-                    onChange={handleFieldChange("contactName")}
-                    placeholder={PARTNER_FORM_PLACEHOLDERS.contactName}
-                    autoComplete="name"
-                  />
-                </label>
-
-                <label className="partnerApply__label">
-                  Email de contact *
-                  <input
-                    className={`partnerApply__input${form.contactEmail && !emailIsValid ? " is-error" : ""}`}
-                    type="email"
-                    value={form.contactEmail}
-                    onChange={handleFieldChange("contactEmail")}
-                    placeholder={PARTNER_FORM_PLACEHOLDERS.contactEmail}
-                    autoComplete="email"
-                    required
-                  />
-                </label>
-
-                <label className="partnerApply__label">
-                  Comment allez-vous recommander JobRadar ?
-                  <textarea
-                    className="partnerApply__input partnerApply__textarea"
-                    value={form.applicationMessage}
-                    onChange={handleFieldChange("applicationMessage")}
-                    placeholder={PARTNER_FORM_PLACEHOLDERS.applicationMessage}
-                    rows={4}
-                  />
-                </label>
-
-                <label className="partnerApply__checkbox">
-                  <input type="checkbox" checked={form.acceptedTerms} onChange={handleFieldChange("acceptedTerms")} />
-                  <span>
-                    J'ai lu et j'accepte les conditions partenaires ci-contre ainsi que les{" "}
-                    <Link to="/terms">conditions d'utilisation</Link>.
-                  </span>
-                </label>
-
-                <button
-                  className="partnerApply__submit"
-                  type="submit"
-                  disabled={submitting || (session ? !canFinalize : false)}
-                >
-                  {submitting
-                    ? "Activation en cours..."
-                    : session
-                      ? "Rejoindre le programme partenaire"
-                      : "Me connecter pour rejoindre le programme"}
-                </button>
-              </form>
             </section>
 
-            <aside className="partnerApply__side">
-              <section className="card partnerApply__compactCard">
-                <div className="card__titleRow">
-                  <h2>En bref</h2>
-                  <span className="badge badge--yellow">Essentiel</span>
-                </div>
+            <section className="card partnerApply__faqCard" aria-label="Mini FAQ partenaires">
+              <div className="card__titleRow">
+                <h2>Mini FAQ</h2>
+                <span className="badge badge--blue">Clair et rapide</span>
+              </div>
 
-                <div className="partnerApply__compactFacts">
-                  <div>
-                    <span>Statut cree</span>
-                    <strong>Actif</strong>
-                  </div>
-                  <div>
-                    <span>Espace partenaire</span>
-                    <strong>Disponible immediatement</strong>
-                  </div>
-                </div>
+              <div className="partnerApply__faqList">
+                {PARTNER_PROGRAM_FAQ.map((item) => (
+                  <article key={item.question} className="partnerApply__faqItem">
+                    <h3>{item.question}</h3>
+                    {item.answers.map((answer) => (
+                      <p key={answer}>{answer}</p>
+                    ))}
+                  </article>
+                ))}
+              </div>
+            </section>
 
-                <ul className="partnerApply__conditions">
-                  {PARTNER_ESSENTIAL_TERMS.map((condition) => (
-                    <li key={condition}>{condition}</li>
-                  ))}
-                </ul>
-
-                <p className="partnerApply__footnote">
-                  Besoin d'un point rapide ?{" "}
-                  <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
-                </p>
-              </section>
-            </aside>
-          </div>
-        </>
+            <section className="partnerApply__benefits partnerApply__benefits--side" aria-label="Avantages partenaires">
+              {PARTNER_BENEFITS.map((item) => (
+                <article key={item.title} className="card partnerApply__benefitCard">
+                  <strong>{item.title}</strong>
+                  <p>{item.body}</p>
+                </article>
+              ))}
+            </section>
+          </aside>
+        </div>
       )}
     </div>
   );

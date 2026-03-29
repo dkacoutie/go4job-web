@@ -37,6 +37,17 @@
   line-height: 1.7;
 }
 
+.partnerPortal__welcomeMessage {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.partnerPortal__welcomeMessage p:first-child {
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.84);
+}
+
 .partnerPortal__welcomeFacts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -86,6 +97,30 @@
   margin: 0;
   padding-left: 18px;
   color: rgba(0, 0, 0, 0.72);
+}
+
+.partnerPortal__welcomeChecklist {
+  display: grid;
+  gap: 10px;
+}
+
+.partnerPortal__welcomeChecklistItem {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.partnerPortal__welcomeChecklistItem strong {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.partnerPortal__welcomeChecklistItem span {
+  color: rgba(0, 0, 0, 0.68);
+  line-height: 1.55;
 }
 
 .partnerPortal__welcomeActions {
@@ -332,14 +367,55 @@
   gap: 12px;
 }
 
-.partnerPortal__hint {
-  margin-top: 14px;
-  padding: 14px 16px;
-  border-radius: 16px;
+.partnerPortal__infoPopover {
+  position: relative;
+}
+
+.partnerPortal__infoTrigger {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(13, 95, 158, 0.18);
   background: rgba(13, 95, 158, 0.08);
-  border: 1px solid rgba(13, 95, 158, 0.12);
-  color: rgba(0, 0, 0, 0.72);
-  line-height: 1.65;
+  color: #0d5f9e;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.partnerPortal__infoTrigger:hover {
+  transform: translateY(-1px);
+  background: rgba(13, 95, 158, 0.12);
+  border-color: rgba(13, 95, 158, 0.24);
+}
+
+.partnerPortal__infoBubble {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(320px, calc(100vw - 48px));
+  padding: 14px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+  z-index: 5;
+}
+
+.partnerPortal__infoBubble p {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.78);
+  line-height: 1.6;
+}
+
+.partnerPortal__infoClose {
+  margin-top: 12px;
+  border: 0;
+  background: transparent;
+  color: #0d5f9e;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
 }
 
 @media (max-width: 1100px) {

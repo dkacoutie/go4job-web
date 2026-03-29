@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "./components/ToastCenter";
+import {
+  PARTNER_PROGRAM_ENTRY_URL,
+  PARTNER_PROGRAM_MESSAGES,
+  renderPartnerProgramMessage,
+} from "./lib/partnerProgramContent";
 import { formatAmount } from "./lib/pricingHelpers";
 import { fetchPartnerPortalSnapshot, type PartnerDashboardSummaryRow } from "./lib/partnerPortalApi";
 import { useSession } from "./lib/useSession";
@@ -58,6 +63,19 @@ function formatDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("fr-FR", { dateStyle: "medium" });
+}
+
+function pickWelcomePartnerName(
+  activationWelcomeName: string | null,
+  partner: PartnerAccountRow | null,
+  summary: PartnerDashboardSummaryRow | null
+) {
+  return (
+    activationWelcomeName?.trim() ||
+    partner?.display_name?.trim() ||
+    summary?.display_name?.trim() ||
+    "partenaire"
+  );
 }
 
 function statusBadgeClass(status: string) {
@@ -152,6 +170,8 @@ export default function PartnerPortalPage() {
   const [commissions, setCommissions] = useState<PartnerCommissionRow[]>([]);
   const [payouts, setPayouts] = useState<PartnerPayoutRow[]>([]);
   const [activationWelcomeName, setActivationWelcomeName] = useState<string | null>(null);
+  const [isCommissionInfoOpen, setIsCommissionInfoOpen] = useState(false);
+  const commissionInfoRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!loading && !session) {
@@ -201,6 +221,24 @@ export default function PartnerPortalPage() {
     }
   }, [loadData, loading, session?.user?.id]);
 
+  useEffect(() => {
+    if (!isCommissionInfoOpen) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!commissionInfoRef.current) return;
+      if (commissionInfoRef.current.contains(event.target as Node)) return;
+      setIsCommissionInfoOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [isCommissionInfoOpen]);
+
   const effectivePartner = partner;
   const effectiveSummary = useMemo(() => {
     if (!effectivePartner) return null;
@@ -212,14 +250,18 @@ export default function PartnerPortalPage() {
     if (!code) return "";
     return `${PARTNER_REFERRAL_BASE_URL}${encodeURIComponent(code)}`;
   }, [effectiveSummary?.referral_code]);
-
-  const welcomeChecklist = useMemo(
-    () => [
-      "Copie ton lien personnel pour commencer a recommander JobRadar.",
-      "Partage aussi ton code partenaire si tu communiques en direct avec ton audience.",
-      "Reviens ensuite ici pour suivre tes ventes attribuees et tes performances.",
-    ],
-    []
+  const welcomePartnerName = useMemo(
+    () => pickWelcomePartnerName(activationWelcomeName, effectivePartner, effectiveSummary),
+    [activationWelcomeName, effectivePartner, effectiveSummary]
+  );
+  const activationWelcomeMessage = useMemo(
+    () =>
+      renderPartnerProgramMessage(PARTNER_PROGRAM_MESSAGES.postSignup, {
+        partner_name: welcomePartnerName,
+        program_entry_url: PARTNER_PROGRAM_ENTRY_URL,
+        partner_referral_url: referralLink,
+      }),
+    [referralLink, welcomePartnerName]
   );
 
   const recentActivity = useMemo<ActivityItem[]>(() => {
@@ -436,11 +478,12 @@ export default function PartnerPortalPage() {
           <div className="partnerPortal__welcomeIntro">
             <div>
               <span className="badge badge--green">Compte partenaire pret</span>
-              <h2>{activationWelcomeName ? `Bienvenue ${activationWelcomeName}` : "Bienvenue dans ton espace partenaire"}</h2>
-              <p>
-                Ton compte partenaire est actif. Le lien a partager avec ton audience est ton lien personnel ci-dessous.
-                La page /devenir-partenaire sert uniquement a rejoindre le programme.
-              </p>
+              <h2>Bienvenue dans ton espace partenaire</h2>
+              <div className="partnerPortal__welcomeMessage">
+                {activationWelcomeMessage.paragraphs.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
             </div>
 
             <div className="partnerPortal__welcomeFacts">
@@ -461,12 +504,21 @@ export default function PartnerPortalPage() {
 
           <div className="partnerPortal__welcomeGuide">
             <div>
-              <h3>Que faire maintenant</h3>
-              <ul className="partnerPortal__welcomeList">
-                {welcomeChecklist.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
+              <h3>Actions recommandees</h3>
+              <div className="partnerPortal__welcomeChecklist">
+                <div className="partnerPortal__welcomeChecklistItem">
+                  <strong>1. Copie ton lien personnel</strong>
+                  <span>Utilise en priorite ce lien pour tes partages afin de garder un suivi propre des recommandations.</span>
+                </div>
+                <div className="partnerPortal__welcomeChecklistItem">
+                  <strong>2. Garde aussi ton code partenaire</strong>
+                  <span>Il peut t'aider dans les echanges directs ou quand tu accompagnes quelqu'un pas a pas.</span>
+                </div>
+                <div className="partnerPortal__welcomeChecklistItem">
+                  <strong>3. Reviens suivre tes performances</strong>
+                  <span>Tu retrouveras ici tes ventes attribuees, tes commissions et tes paiements au meme endroit.</span>
+                </div>
+              </div>
             </div>
 
             <div className="partnerPortal__welcomeActions">
@@ -610,7 +662,33 @@ export default function PartnerPortalPage() {
         <article className="card">
           <div className="card__titleRow">
             <h2>Lecture rapide</h2>
-            <span className="badge badge--gray">MVP</span>
+            <div className="partnerPortal__infoPopover" ref={commissionInfoRef}>
+              <button
+                type="button"
+                className="partnerPortal__infoTrigger"
+                aria-label="Voir la regle de commission"
+                aria-expanded={isCommissionInfoOpen}
+                onClick={() => setIsCommissionInfoOpen((prev) => !prev)}
+              >
+                !
+              </button>
+
+              {isCommissionInfoOpen && (
+                <div className="partnerPortal__infoBubble" role="dialog" aria-label="Regle de commission">
+                  <p>
+                    Les commissions portent sur le premier abonnement paye du client. Les renouvellements ne sont pas
+                    commissionnes.
+                  </p>
+                  <button
+                    type="button"
+                    className="partnerPortal__infoClose"
+                    onClick={() => setIsCommissionInfoOpen(false)}
+                  >
+                    Fermer
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="partnerPortal__summaryList">
@@ -632,10 +710,6 @@ export default function PartnerPortalPage() {
             </div>
           </div>
 
-          <div className="partnerPortal__hint">
-            Les commissions sont calculees sur le premier abonnement paye du client uniquement. Les renouvellements ne
-            sont pas commissionnes.
-          </div>
         </article>
       </section>
 
