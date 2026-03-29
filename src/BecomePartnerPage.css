@@ -95,10 +95,15 @@
   grid-template-columns: 1fr;
 }
 
+.partnerApply__benefits--footer {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 4px;
+}
+
 .partnerApply__benefitCard {
   display: grid;
   gap: 6px;
-  padding: 15px 16px;
+  padding: 14px 15px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(226, 232, 240, 0.95);
@@ -170,8 +175,8 @@
 
 .partnerApply__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.28fr) minmax(280px, 0.72fr);
+  gap: 22px;
   align-items: start;
 }
 
@@ -185,6 +190,18 @@
 
 .partnerApply__formCard {
   padding: 30px 30px 28px;
+}
+
+.partnerApply__formCard--primary {
+  border-color: rgba(15, 118, 110, 0.16);
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.08);
+}
+
+.partnerApply__formLead {
+  margin-top: 6px;
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .partnerApply__intro {
@@ -276,30 +293,32 @@
 
 .partnerApply__side {
   display: grid;
-  gap: 14px;
+  gap: 12px;
+  align-content: start;
 }
 
 .partnerApply__compactCard {
-  padding: 22px 22px 20px;
+  padding: 18px 18px 16px;
 }
 
 .partnerApply__faqCard {
-  padding: 22px;
+  padding: 18px;
 }
 
 .partnerApply__compactFacts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .partnerApply__conditions {
   display: grid;
-  gap: 8px;
-  margin: 16px 0 0;
+  gap: 6px;
+  margin: 14px 0 0;
   padding-left: 18px;
   color: rgba(15, 23, 42, 0.88);
+  font-size: 14px;
 }
 
 .partnerApply__state h2 {
@@ -307,29 +326,30 @@
 }
 
 .partnerApply__footnote {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   color: rgba(15, 23, 42, 0.62);
-  line-height: 1.6;
+  line-height: 1.55;
+  font-size: 13px;
 }
 
 .partnerApply__faqList {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .partnerApply__faqItem {
   display: grid;
-  border-radius: 18px;
+  border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.96));
   border: 1px solid rgba(226, 232, 240, 0.95);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.03);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.025);
 }
 
 .partnerApply__faqItem.is-open {
   border-color: rgba(15, 118, 110, 0.24);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
 }
 
 .partnerApply__faqTrigger {
@@ -338,13 +358,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px;
+  padding: 14px 15px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 16px;
   background: transparent;
   color: #0f172a;
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
   text-align: left;
@@ -363,7 +383,7 @@
 .partnerApply__faqChevron {
   flex: 0 0 auto;
   color: rgba(15, 23, 42, 0.5);
-  font-size: 15px;
+  font-size: 12px;
   transform: rotate(0deg);
   transition: transform 0.16s ease, color 0.16s ease;
 }
@@ -375,14 +395,15 @@
 
 .partnerApply__faqPanel {
   display: grid;
-  gap: 10px;
-  padding: 0 16px 16px;
+  gap: 8px;
+  padding: 0 15px 14px;
 }
 
 .partnerApply__faqPanel p {
   margin: 0;
   color: rgba(15, 23, 42, 0.72);
-  line-height: 1.62;
+  line-height: 1.58;
+  font-size: 14px;
 }
 
 .partnerApply__summary {
@@ -397,6 +418,7 @@
 }
 
 @media (max-width: 960px) {
+  .partnerApply__benefits--footer,
   .partnerApply__grid,
   .partnerApply__heroMeta,
   .partnerApply__compactFacts,
@@ -422,6 +444,7 @@
   .partnerApply__formCard,
   .partnerApply__compactCard,
   .partnerApply__faqCard,
+  .partnerApply__benefitCard,
   .partnerApply__state {
     padding: 18px;
   }

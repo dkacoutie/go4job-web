@@ -176,7 +176,7 @@ export default function BecomePartnerPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [restoredDraft, setRestoredDraft] = useState(() => Boolean(readDraft()));
-  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
   useEffect(() => {
     writeDraft(form);
@@ -416,10 +416,14 @@ export default function BecomePartnerPage() {
           </div>
         </section>
       ) : (
-        <div className="partnerApply__grid">
-          <section className="card partnerApply__formCard" id="partner-activation-form">
+        <>
+          <div className="partnerApply__grid">
+          <section className="card partnerApply__formCard partnerApply__formCard--primary" id="partner-activation-form">
             <div className="card__titleRow">
-              <h2>Devenir partenaire</h2>
+              <div>
+                <h2>Devenir partenaire</h2>
+                <div className="partnerApply__formLead">Le formulaire est l'etape principale. Le reste sert juste de repere rapide.</div>
+              </div>
               <span className="badge badge--blue">Lien d'entree officiel</span>
             </div>
 
@@ -534,7 +538,7 @@ export default function BecomePartnerPage() {
             <section className="card partnerApply__faqCard" aria-label="Mini FAQ partenaires">
               <div className="card__titleRow">
                 <h2>Mini FAQ</h2>
-                <span className="badge badge--blue">Clair et rapide</span>
+                <span className="badge badge--blue">Compacte</span>
               </div>
 
               <div className="partnerApply__faqList">
@@ -575,17 +579,18 @@ export default function BecomePartnerPage() {
                 })}
               </div>
             </section>
-
-            <section className="partnerApply__benefits partnerApply__benefits--side" aria-label="Avantages partenaires">
-              {PARTNER_BENEFITS.map((item) => (
-                <article key={item.title} className="card partnerApply__benefitCard">
-                  <strong>{item.title}</strong>
-                  <p>{item.body}</p>
-                </article>
-              ))}
-            </section>
           </aside>
         </div>
+
+          <section className="partnerApply__benefits partnerApply__benefits--footer" aria-label="Avantages partenaires">
+            {PARTNER_BENEFITS.map((item) => (
+              <article key={item.title} className="card partnerApply__benefitCard">
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </section>
+        </>
       )}
     </div>
   );
