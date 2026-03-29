@@ -27,19 +27,15 @@
 .partnerApply__heroBody {
   position: relative;
   z-index: 1;
-  padding: 36px 40px 30px;
+  padding: 32px 38px 28px;
   display: grid;
-  gap: 24px;
+  gap: 18px;
 }
 
 .partnerApply__heroLead {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   max-width: 760px;
-}
-
-.partnerApply__heroChips {
-  gap: 10px;
 }
 
 .partnerApply__heroTitle {
@@ -79,13 +75,6 @@
   justify-content: center;
 }
 
-.partnerApply__heroMeta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(180px, 1fr));
-  gap: 10px;
-  padding-top: 4px;
-}
-
 .partnerApply__benefits {
   display: grid;
   gap: 10px;
@@ -121,7 +110,6 @@
   line-height: 1.5;
 }
 
-.partnerApply__heroMeta div,
 .partnerApply__summary div,
 .partnerApply__compactFacts div {
   display: grid;
@@ -132,7 +120,6 @@
   border: 1px solid rgba(226, 232, 240, 0.9);
 }
 
-.partnerApply__heroMeta span,
 .partnerApply__summary span,
 .partnerApply__compactFacts span {
   font-size: 11px;
@@ -141,7 +128,6 @@
   color: rgba(15, 23, 42, 0.58);
 }
 
-.partnerApply__heroMeta strong,
 .partnerApply__summary strong,
 .partnerApply__compactFacts strong {
   font-size: 15px;
@@ -182,6 +168,7 @@
 
 .partnerApply__formCard,
 .partnerApply__compactCard,
+.partnerApply__helpCard,
 .partnerApply__state {
   border-radius: 24px;
   border: 1px solid rgba(226, 232, 240, 0.9);
@@ -301,6 +288,11 @@
   padding: 18px 18px 17px;
 }
 
+.partnerApply__helpCard {
+  padding: 17px 18px 16px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.96));
+}
+
 .partnerApply__compactFacts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -328,6 +320,38 @@
   font-size: 13px;
 }
 
+.partnerApply__footnote--help {
+  margin-top: 14px;
+}
+
+.partnerApply__helpList {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.partnerApply__helpItem {
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+}
+
+.partnerApply__helpItem strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.partnerApply__helpItem p {
+  margin: 0;
+  color: rgba(15, 23, 42, 0.7);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .partnerApply__summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -342,14 +366,13 @@
 @media (max-width: 960px) {
   .partnerApply__benefits--footer,
   .partnerApply__grid,
-  .partnerApply__heroMeta,
   .partnerApply__compactFacts,
   .partnerApply__summary {
     grid-template-columns: 1fr;
   }
 
   .partnerApply__heroBody {
-    padding: 30px 24px 24px;
+    padding: 28px 24px 24px;
   }
 }
 
@@ -359,12 +382,13 @@
   }
 
   .partnerApply__heroBody {
-    gap: 20px;
-    padding: 24px 20px 20px;
+    gap: 16px;
+    padding: 24px 20px 18px;
   }
 
   .partnerApply__formCard,
   .partnerApply__compactCard,
+  .partnerApply__helpCard,
   .partnerApply__benefitCard,
   .partnerApply__state {
     padding: 18px;

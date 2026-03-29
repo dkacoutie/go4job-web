@@ -8,6 +8,7 @@ import {
   submitPartnerApplication,
 } from "./lib/partnerApplicationApi";
 import type { PartnerAccountRow } from "./lib/adminPartnersApi";
+import { PARTNER_PROGRAM_FAQ } from "./lib/partnerProgramContent";
 import "./BecomePartnerPage.css";
 
 type PartnerApplicationFormState = {
@@ -50,6 +51,11 @@ const PARTNER_ESSENTIAL_TERMS = [
   "Votre lien personnel et votre code partenaire sont fournis apres activation.",
   "La commission porte sur le premier abonnement paye du client.",
 ];
+
+const PARTNER_HELP_ITEMS = PARTNER_PROGRAM_FAQ.slice(0, 3).map((item) => ({
+  question: item.question,
+  answer: item.answers[0],
+}));
 
 const PARTNER_FORM_PLACEHOLDERS = {
   displayName: "Awa Traore Media",
@@ -328,17 +334,13 @@ export default function BecomePartnerPage() {
       <section className="partnerApply__hero">
         <div className="partnerApply__heroBody">
           <div className="partnerApply__heroLead">
-            <div className="chips partnerApply__heroChips">
-              <span className="chip">Sur invitation</span>
-              <span className="chip">Premier abonnement paye</span>
-            </div>
             <h1 className="partnerApply__heroTitle">
               <span>Rejoignez le programme</span>
               <span>partenaires JobRadar</span>
             </h1>
             <p className="subtitle">
               Le lien /devenir-partenaire sert a rejoindre le programme. Une fois votre acces active, votre espace
-              partenaire vous donne votre lien personnel a partager et votre code partenaire.
+              partenaire vous permet de recuperer votre lien personnel a partager ainsi que votre code partenaire.
             </p>
             <div className="partnerApply__heroActions">
               {!partner ? (
@@ -350,20 +352,6 @@ export default function BecomePartnerPage() {
                   Acceder a mon espace partenaire
                 </Link>
               )}
-            </div>
-          </div>
-          <div className="partnerApply__heroMeta">
-            <div>
-              <span>Programme</span>
-              <strong>Acces sur invitation</strong>
-            </div>
-            <div>
-              <span>Commission</span>
-              <strong>Premier abonnement paye du client</strong>
-            </div>
-            <div>
-              <span>Acces</span>
-              <strong>Compte actif et espace immediat</strong>
             </div>
           </div>
         </div>
@@ -528,6 +516,27 @@ export default function BecomePartnerPage() {
 
               <p className="partnerApply__footnote">
                 Besoin d'un point rapide ?{" "}
+                <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
+              </p>
+            </section>
+
+            <section className="card partnerApply__helpCard" aria-label="Questions frequentes partenaires">
+              <div className="card__titleRow">
+                <h2>Questions frequentes</h2>
+                <span className="badge badge--blue">Aide</span>
+              </div>
+
+              <div className="partnerApply__helpList">
+                {PARTNER_HELP_ITEMS.map((item) => (
+                  <article key={item.question} className="partnerApply__helpItem">
+                    <strong>{item.question}</strong>
+                    <p>{item.answer}</p>
+                  </article>
+                ))}
+              </div>
+
+              <p className="partnerApply__footnote partnerApply__footnote--help">
+                Une question plus specifique ?{" "}
                 <a href={`mailto:${PARTNER_SUPPORT_EMAIL}?subject=Programme%20partenaires`}>Contacter l'equipe</a>
               </p>
             </section>
