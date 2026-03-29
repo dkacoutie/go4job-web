@@ -28,22 +28,22 @@
 .partnerApply__heroBody {
   position: relative;
   z-index: 1;
-  padding: 34px 40px 30px;
+  padding: 28px 34px 24px;
   display: grid;
-  gap: 20px;
+  gap: 14px;
 }
 
 .partnerApply__heroLead {
   display: grid;
-  gap: 16px;
-  max-width: 700px;
+  gap: 12px;
+  max-width: 640px;
 }
 
 .partnerApply__heroTitle {
   margin: 0;
-  max-width: 15ch;
-  font-size: clamp(2.9rem, 5vw, 4.75rem);
-  line-height: 1;
+  max-width: 13.6ch;
+  font-size: clamp(2.65rem, 4.4vw, 4.2rem);
+  line-height: 0.98;
   letter-spacing: -0.05em;
   text-wrap: balance;
 }
@@ -53,14 +53,14 @@
 }
 
 .partnerApply__heroTitle span + span {
-  margin-top: 0.14em;
+  margin-top: 0.1em;
 }
 
 .partnerApply__hero .subtitle {
-  max-width: 58ch;
+  max-width: 54ch;
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.68;
+  font-size: 0.98rem;
+  line-height: 1.6;
   color: rgba(15, 23, 42, 0.7);
 }
 
@@ -72,7 +72,7 @@
 }
 
 .partnerApply__heroCta {
-  min-width: min(100%, 280px);
+  min-width: min(100%, 264px);
   justify-content: center;
   box-shadow: 0 16px 34px rgba(15, 118, 110, 0.18);
 }
@@ -416,6 +416,7 @@
 
 .partnerApply__faqSection {
   padding: 24px 24px 22px;
+  scroll-margin-top: 24px;
 }
 
 .partnerApply__faqLead {
@@ -491,7 +492,7 @@
   }
 
   .partnerApply__heroBody {
-    padding: 30px 24px 26px;
+    padding: 26px 24px 22px;
   }
 }
 
@@ -502,8 +503,8 @@
   }
 
   .partnerApply__heroBody {
-    gap: 16px;
-    padding: 26px 20px 20px;
+    gap: 14px;
+    padding: 24px 20px 18px;
   }
 
   .partnerApply__formCard,
@@ -520,8 +521,8 @@
   }
 
   .partnerApply__heroTitle {
-    max-width: 12ch;
-    font-size: clamp(2.35rem, 11vw, 3.25rem);
-    line-height: 1.02;
+    max-width: 13.6ch;
+    font-size: clamp(1.95rem, 7.8vw, 2.65rem);
+    line-height: 0.98;
   }
 }
