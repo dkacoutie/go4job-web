@@ -138,7 +138,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
         <div className="desiredRoleGate__eyebrow">Configuration rapide</div>
         <h1 className="desiredRoleGate__title">Quel poste recherches-tu ?</h1>
         <p className="desiredRoleGate__body">
-          Une seule information nous manque pour t'ouvrir le produit avec un ciblage plus fiable.
+          Choisis ton poste, de belles opportunités t’attendent.
         </p>
 
         <form className="desiredRoleGate__form" onSubmit={handleSubmit}>
