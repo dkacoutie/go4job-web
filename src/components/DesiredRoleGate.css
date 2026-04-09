@@ -1,0 +1,133 @@
+.desiredRoleGate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(circle at top, rgba(188, 224, 255, 0.55), transparent 36%),
+    linear-gradient(180deg, #f5f8fc 0%, #edf2f8 100%);
+}
+
+.desiredRoleGate--loading {
+  background: #f5f8fc;
+}
+
+.desiredRoleGate__loader {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #17324d;
+}
+
+.desiredRoleGate__panel {
+  width: min(100%, 520px);
+  padding: 36px 32px;
+  border: 1px solid rgba(23, 50, 77, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 28px 80px rgba(23, 50, 77, 0.14);
+  backdrop-filter: blur(12px);
+}
+
+.desiredRoleGate__logo {
+  width: 108px;
+  height: auto;
+  display: block;
+  margin-bottom: 18px;
+}
+
+.desiredRoleGate__eyebrow {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2f6fb0;
+}
+
+.desiredRoleGate__title {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1.02;
+  color: #13263c;
+}
+
+.desiredRoleGate__body {
+  margin: 0 0 24px;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #49617a;
+}
+
+.desiredRoleGate__form {
+  display: grid;
+  gap: 16px;
+}
+
+.desiredRoleGate__field {
+  display: grid;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #17324d;
+}
+
+.desiredRoleGate__input {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid rgba(23, 50, 77, 0.14);
+  border-radius: 16px;
+  background: #fff;
+  font-size: 1rem;
+  color: #13263c;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.desiredRoleGate__input:focus {
+  outline: none;
+  border-color: #2f6fb0;
+  box-shadow: 0 0 0 4px rgba(47, 111, 176, 0.16);
+  transform: translateY(-1px);
+}
+
+.desiredRoleGate__error {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(201, 54, 54, 0.09);
+  color: #a12828;
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.desiredRoleGate__submit {
+  min-height: 56px;
+  border: none;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #17324d 0%, #2f6fb0 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: 0 18px 34px rgba(23, 50, 77, 0.18);
+}
+
+.desiredRoleGate__submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.desiredRoleGate__submit:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
+@media (max-width: 640px) {
+  .desiredRoleGate {
+    padding: 20px 14px;
+  }
+
+  .desiredRoleGate__panel {
+    padding: 28px 20px;
+    border-radius: 22px;
+  }
+}

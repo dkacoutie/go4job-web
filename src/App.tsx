@@ -10,6 +10,7 @@ import AppLayout from "./AppLayout";
 import PublicHeader from "./components/PublicHeader";
 import PartnerReferralNotice from "./components/PartnerReferralNotice";
 import SiteFooter from "./components/SiteFooter";
+import DesiredRoleGate from "./components/DesiredRoleGate";
 import "./App.css";
 import "./AppLayout.css";
 import { ToastProvider } from "./components/ToastCenter";
@@ -180,7 +181,9 @@ export default function App() {
               <Route
                 element={
                   <ProtectedRoute>
-                    <AppLayout />
+                    <DesiredRoleGate>
+                      <AppLayout />
+                    </DesiredRoleGate>
                   </ProtectedRoute>
                 }
               >
@@ -277,11 +280,9 @@ export default function App() {
                 <Route
                   path="/jobradar/feed"
                   element={
-                    <JobRadarOnboardingGate>
-                      <LazyRoute>
-                        <JobRadarFeedPage />
-                      </LazyRoute>
-                    </JobRadarOnboardingGate>
+                    <LazyRoute>
+                      <JobRadarFeedPage />
+                    </LazyRoute>
                   }
                 />
                 <Route
