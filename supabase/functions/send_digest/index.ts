@@ -1,4 +1,4 @@
-﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 type DigestBody = {
@@ -7,6 +7,7 @@ type DigestBody = {
   date_yyyy_mm_dd?: string | null;
   target_email?: string | null;
   target_user_id?: string | null;
+  variant?: "default" | "non_paying_desired_role" | null;
 };
 
 type AlertRow = {
@@ -443,6 +444,50 @@ function pickFirstName(profile: Record<string, unknown> | null, meta: Record<str
   return null;
 }
 
+function extractDesiredRole(profile: Record<string, unknown> | null): string | null {
+  const onboarding = profile?.["jobradar_onboarding"];
+  if (!onboarding || typeof onboarding !== "object" || Array.isArray(onboarding)) return null;
+  const onboardingProfile = (onboarding as Record<string, unknown>)["profile"];
+  if (!onboardingProfile || typeof onboardingProfile !== "object" || Array.isArray(onboardingProfile)) return null;
+  const desiredRole = clean(String((onboardingProfile as Record<string, unknown>)["desiredRole"] ?? ""));
+  return desiredRole ? collapseWhitespace(desiredRole) : null;
+}
+
+function desiredRoleForCopy(desiredRole: string | null): string | null {
+  if (!desiredRole) return null;
+  const normalized = collapseWhitespace(desiredRole).replace(/[.,;:!?]+$/g, "");
+  if (!normalized) return null;
+  return clampText(normalized, 48);
+}
+
+function buildDigestCopy(params: {
+  variant: "default" | "non_paying_desired_role";
+  desiredRole: string | null;
+  totalCount: number;
+}) {
+  const { variant, desiredRole, totalCount } = params;
+  const roleLabel = desiredRoleForCopy(desiredRole);
+  const fallback = {
+    subject: "JobRadar — Tes meilleures opportunités du jour",
+    preview: totalCount === 0
+      ? "Aucune offre aujourd'hui. Ajuste tes alertes pour demain."
+      : "Tes meilleures opportunités du jour, sélectionnées pour toi.",
+    introText: "Sélectionnées selon tes alertes et ton profil.",
+  };
+
+  if (variant !== "non_paying_desired_role" || !roleLabel) return fallback;
+
+  return {
+    subject: `JobRadar — Des opportunités ${roleLabel} pour toi`,
+    preview: totalCount === 0
+      ? `Pas encore d'offre ${roleLabel} aujourd'hui. On continue la veille pour toi.`
+      : `Des opportunités ${roleLabel} sélectionnées pour toi aujourd'hui.`,
+    introText: totalCount === 0
+      ? `Ta veille ${roleLabel} reste active pour les prochaines opportunités.`
+      : `Sélectionnées pour ton objectif ${roleLabel}.`,
+  };
+}
+
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, "&amp;")
@@ -693,6 +738,7 @@ function buildItems(list: JobRow[], reasonsByJobId?: Map<string, string[]>, badg
 function buildEmailHtml(params: {
   salutation: string;
   preview: string;
+  introText: string;
   topTitle: string;
   exploreTitle: string;
   exploreHelper: string;
@@ -702,7 +748,7 @@ function buildEmailHtml(params: {
   unsubscribeUrl: string;
   alertCount: number;
 }) {
-  const { preview, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount, salutation } = params;
+  const { preview, introText, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount, salutation } = params;
   const appUrl = appBaseUrl.replace(/\/$/, "");
   const radarUrl = `${appUrl}/jobradar`;
   const manageUrl = `${appUrl}/jobradar/alerts`;
@@ -797,7 +843,7 @@ function buildEmailHtml(params: {
             <td style="padding:22px 24px 10px 24px;">
               <div style="font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:${EMAIL_COLORS.muted};font-weight:800;">JOBRADAR</div>
               <div style="font-size:22px;font-weight:900;margin-top:6px;color:${EMAIL_COLORS.header};">Tes meilleures opportunit\u00E9s du jour</div>
-              <div style="font-size:13px;color:${EMAIL_COLORS.muted};margin-top:6px;">S\u00E9lectionn\u00E9es selon tes alertes et ton profil.</div>
+              <div style="font-size:13px;color:${EMAIL_COLORS.muted};margin-top:6px;">${escapeHtml(introText)}</div>
               <div style="margin-top:10px;font-size:13px;color:${EMAIL_COLORS.text};font-weight:700;">${escapeHtml(salutation)}</div>
             </td>
           </tr>
@@ -848,6 +894,7 @@ function buildEmailHtml(params: {
 
 function buildEmailText(params: {
   salutation: string;
+  introText: string;
   topTitle: string;
   exploreTitle: string;
   exploreHelper: string;
@@ -857,7 +904,7 @@ function buildEmailText(params: {
   unsubscribeUrl: string;
   alertCount: number;
 }) {
-  const { salutation, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount } = params;
+  const { salutation, introText, topTitle, exploreTitle, exploreHelper, top, explore, appBaseUrl, unsubscribeUrl, alertCount } = params;
   const appUrl = appBaseUrl.replace(/\/$/, "");
   const manageUrl = `${appUrl}/jobradar/alerts`;
   const radarUrl = `${appUrl}/jobradar`;
@@ -894,7 +941,7 @@ function buildEmailText(params: {
   return [
     "JobRadar",
     "Tes meilleures opportunites du jour",
-    "Selectionnees selon tes alertes et ton profil.",
+    introText,
     summaryLine,
     salutation,
     "",
@@ -933,7 +980,7 @@ async function sign(secret: string, message: string): Promise<string> {
 }
 
 async function logStatus(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   payload: {
     user_id?: string | null;
     to_email: string;
@@ -977,6 +1024,7 @@ serve(async (req) => {
   const dryRun = Boolean(body.dry_run);
   const targetEmail = clean(body.target_email);
   const targetUserId = clean(body.target_user_id);
+  const digestVariant = body.variant === "non_paying_desired_role" ? "non_paying_desired_role" : "default";
   const hasTarget = Boolean(targetEmail || targetUserId);
   const digestDate = body.date_yyyy_mm_dd && /^\d{4}-\d{2}-\d{2}$/.test(body.date_yyyy_mm_dd)
     ? body.date_yyyy_mm_dd
@@ -1074,47 +1122,89 @@ serve(async (req) => {
     return json(404, { ok: false, error: "target_user_not_found" });
   }
 
-  const stats = { digest_date: digestDate, users_targeted: users.length, emails_planned: 0, sent: 0, failed: 0, skipped: 0 };
+  const activePaidUserIds = new Set<string>();
+  if (digestVariant === "non_paying_desired_role") {
+    const nowIso = new Date().toISOString();
+    const { data: activeSubscriptions, error: activeSubscriptionsError } = await supabase
+      .from("billing_subscriptions")
+      .select("user_id")
+      .eq("status", "active")
+      .gt("ends_at", nowIso);
+
+    if (activeSubscriptionsError) {
+      return json(500, {
+        ok: false,
+        error: "subscriptions_fetch_failed",
+        message: activeSubscriptionsError.message,
+      });
+    }
+
+    for (const sub of activeSubscriptions ?? []) {
+      const userId = clean(String(sub.user_id ?? ""));
+      if (userId) activePaidUserIds.add(userId);
+    }
+  }
+
+  const notificationChannel = digestVariant === "non_paying_desired_role" ? "email_non_paying_digest" : "email";
+  const targetedUsers = digestVariant === "non_paying_desired_role"
+    ? users.filter((user) => !activePaidUserIds.has(user.id)).length
+    : users.length;
+  const stats = {
+    digest_date: digestDate,
+    variant: digestVariant,
+    users_targeted: targetedUsers,
+    emails_planned: 0,
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+  };
   let sample: Record<string, unknown> | null = null;
 
   for (const user of users) {
     const toEmail = user.email;
 
-    const { data: hasPass, error: passErr } = await supabase.rpc("has_active_pass", {
-      p_user_id: user.id,
-    });
-    if (passErr) {
-      stats.skipped += 1;
-      await logStatus(supabase, {
-        user_id: user?.id ?? null,
-        to_email: toEmail,
-        channel: "email",
-        digest_date: digestDate,
-        status: "skipped",
-        provider: "resend",
-        error: "pass_check_failed",
+    if (digestVariant === "non_paying_desired_role") {
+      if (activePaidUserIds.has(user.id)) {
+        stats.skipped += 1;
+        continue;
+      }
+    } else {
+      const { data: hasPass, error: passErr } = await supabase.rpc("has_active_pass", {
+        p_user_id: user.id,
       });
-      continue;
-    }
-    if (!hasPass) {
-      stats.skipped += 1;
-      await logStatus(supabase, {
-        user_id: user?.id ?? null,
-        to_email: toEmail,
-        channel: "email",
-        digest_date: digestDate,
-        status: "skipped",
-        provider: "resend",
-        error: "pass_required",
-      });
-      continue;
+      if (passErr) {
+        stats.skipped += 1;
+        await logStatus(supabase, {
+          user_id: user?.id ?? null,
+          to_email: toEmail,
+          channel: notificationChannel,
+          digest_date: digestDate,
+          status: "skipped",
+          provider: "resend",
+          error: "pass_check_failed",
+        });
+        continue;
+      }
+      if (!hasPass) {
+        stats.skipped += 1;
+        await logStatus(supabase, {
+          user_id: user?.id ?? null,
+          to_email: toEmail,
+          channel: notificationChannel,
+          digest_date: digestDate,
+          status: "skipped",
+          provider: "resend",
+          error: "pass_required",
+        });
+        continue;
+      }
     }
 
     const { data: logExists } = await supabase
       .from("notification_logs")
       .select("id, status")
       .eq("to_email", toEmail)
-      .eq("channel", "email")
+      .eq("channel", notificationChannel)
       .eq("digest_date", digestDate)
       .limit(1);
 
@@ -1124,14 +1214,23 @@ serve(async (req) => {
     }
 
     let profile: Record<string, unknown> | null = null;
-    const prof1 = await supabase.from("profiles").select("first_name, display_name, full_name").eq("id", user.id).maybeSingle();
+    const prof1 = await supabase
+      .from("profiles")
+      .select("first_name, display_name, full_name, jobradar_onboarding")
+      .eq("id", user.id)
+      .maybeSingle();
     if (prof1?.data) profile = prof1.data as Record<string, unknown>;
     if (!profile) {
-      const prof2 = await supabase.from("profiles").select("first_name, display_name, full_name").eq("user_id", user.id).maybeSingle();
+      const prof2 = await supabase
+        .from("profiles")
+        .select("first_name, display_name, full_name, jobradar_onboarding")
+        .eq("user_id", user.id)
+        .maybeSingle();
       if (prof2?.data) profile = prof2.data as Record<string, unknown>;
     }
 
     const firstName = pickFirstName(profile, user.user_metadata ?? {});
+    const desiredRole = extractDesiredRole(profile);
     const salutation = firstName ? `Bonjour ${firstName},` : "Bonjour,";
 
     const { data: prefs } = await supabase
@@ -1143,7 +1242,7 @@ serve(async (req) => {
       await logStatus(supabase, {
         user_id: user?.id ?? null,
         to_email: toEmail,
-        channel: "email",
+        channel: notificationChannel,
         digest_date: digestDate,
         status: "skipped",
         provider: "resend",
@@ -1441,19 +1540,17 @@ serve(async (req) => {
 
     stats.emails_planned += 1;
 
-    const subject = "JobRadar \u2014 Tes meilleures opportunit\u00E9s du jour";
     const topCount = selectedTop.length;
     const exploreCount = selectedExplore.length;
     const totalCount = topCount + exploreCount;
-    const preview = totalCount === 0
-      ? "Aucune offre aujourd'hui. Ajuste tes alertes pour demain."
-      : "Tes meilleures opportunit\u00E9s du jour, s\u00E9lectionn\u00E9es pour toi.";
+    const copy = buildDigestCopy({ variant: digestVariant, desiredRole, totalCount });
     const unsubToken = await sign(cronSecret, `unsubscribe:${user.id}`);
     const unsubscribeUrl = `${functionsBase}/unsubscribe?uid=${encodeURIComponent(user.id)}&t=${encodeURIComponent(unsubToken)}`;
 
     const html = buildEmailHtml({
       salutation,
-      preview,
+      preview: copy.preview,
+      introText: copy.introText,
       topTitle: "Top matchs",
       exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
       exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
@@ -1465,6 +1562,7 @@ serve(async (req) => {
     });
     const text = buildEmailText({
       salutation,
+      introText: copy.introText,
       topTitle: "Top matchs",
       exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
       exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
@@ -1497,7 +1595,7 @@ serve(async (req) => {
         from: resendFrom,
         to: toEmail,
         reply_to: resendReplyTo || undefined,
-        subject,
+        subject: copy.subject,
         html,
         text,
         headers: {
@@ -1514,7 +1612,7 @@ serve(async (req) => {
       await logStatus(supabase, {
         user_id: user?.id ?? null,
         to_email: toEmail,
-        channel: "email",
+        channel: notificationChannel,
         digest_date: digestDate,
         status: "failed",
         provider: "resend",
@@ -1527,7 +1625,7 @@ serve(async (req) => {
     await logStatus(supabase, {
       user_id: user?.id ?? null,
       to_email: toEmail,
-      channel: "email",
+      channel: notificationChannel,
       digest_date: digestDate,
       status: "sent",
       provider: "resend",
