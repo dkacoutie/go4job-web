@@ -147,6 +147,7 @@ async function fetchPreviewCandidates() {
     .select(selectFields)
     .eq("is_active", true)
     .eq("is_expired", false)
+    .in("job_status", ["active", "stale"])
     .or("quality_status.eq.ok,quality_status.is.null")
     .order("published_at", { ascending: false, nullsFirst: false })
     .order("scraped_at", { ascending: false, nullsFirst: false })
@@ -163,6 +164,7 @@ async function fetchPreviewCandidates() {
     .select(selectFields)
     .eq("is_active", true)
     .eq("is_expired", false)
+    .in("job_status", ["active", "stale"])
     .order("published_at", { ascending: false, nullsFirst: false })
     .order("scraped_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false, nullsFirst: false })
@@ -1084,21 +1086,11 @@ export default function JobRadarOnboardingPage() {
         <div className="jrOnbState">Préparation de tes premières offres...</div>
       ) : !previewLoading && previewError ? (
         <div className="jrOnbValuePanel jrOnbValuePanel--soft">
-          <h2>L'apercu n'a pas pu etre charge.</h2>
+          <h2>L'aperçu n'a pas pu être chargé.</h2>
           <p>{previewError}</p>
           <div className="jrOnbActions">
             <button className="btn btnGhost" type="button" onClick={() => setPreviewReloadKey((prev) => prev + 1)}>
-              Reessayer
-            </button>
-          </div>
-        </div>
-      ) : false ? (
-        <div className="jrOnbValuePanel jrOnbValuePanel--soft">
-          <h2>L'aperÃ§u n'a pas pu Ãªtre chargÃ©.</h2>
-          <p>{previewError}</p>
-          <div className="jrOnbActions">
-            <button className="btn btnGhost" type="button" onClick={() => setPreviewReloadKey((prev) => prev + 1)}>
-              RÃ©essayer
+              Réessayer
             </button>
           </div>
         </div>
@@ -1110,12 +1102,12 @@ export default function JobRadarOnboardingPage() {
             cta={
               previewMode === "match"
                 ? {
-                    label: previewAdvisor.ctaLabel ?? "Debloquer toutes les offres",
+                    label: previewAdvisor.ctaLabel ?? "Débloquer toutes les offres",
                     onClick: () => void savePreviewSeen(),
                   }
                 : onboarding.hasCv
                 ? {
-                    label: previewAdvisor.ctaLabel ?? "Ajuster mes preferences",
+                    label: previewAdvisor.ctaLabel ?? "Ajuster mes préférences",
                     onClick: () => setSearchParams({ step: "preferences" }),
                   }
                 : {
@@ -1175,8 +1167,8 @@ export default function JobRadarOnboardingPage() {
               <p>{previewContent.emptyBody}</p>
               <div className="jrOnbValuePanel__chips">
                 <span>Offres actives uniquement</span>
-                <span>Offres mieux adaptees a ton profil et a tes preferences</span>
-                <span>Alertes prÃªtes dÃ¨s activation</span>
+                <span>Offres mieux adaptées à ton profil et à tes préférences</span>
+                <span>Alertes prêtes dès activation</span>
               </div>
             </div>
           )}

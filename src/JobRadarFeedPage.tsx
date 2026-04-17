@@ -2,6 +2,19 @@
 import { useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
 import {
+  buildJobRadarShadowUi,
+  getJobRadarShadowPillLabel,
+  getJobRadarShadowSubline,
+  type JobRadarShadowInvokeResponse,
+  type JobRadarShadowMeta,
+} from "./lib/jobradarShadowFeed";
+import {
+  adaptJobRadarShadowResponse,
+  compareShadowAndLocalBuckets,
+  type ShadowFeedComparison,
+  type ShadowFeedUiState,
+} from "./lib/jobradarShadowAdapter";
+import {
   buildGeoPreferences,
   buildJobHay,
   computeJobMatchScore,
@@ -14,6 +27,8 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import JobRadarAdvisor from "./components/JobRadarAdvisor";
+import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { useToast } from "./components/ToastCenter";
 import "./JobRadarFeedPage.css";
 
@@ -54,6 +69,7 @@ type JobRow = {
   location?: string | null;
   country?: string | null;
   remote_type?: string | null;
+  job_family?: string | null;
 
   sort_at?: string | null;
   published_at?: string | null;
@@ -373,9 +389,9 @@ function cleanCvLabel(label: string) {
 function labelRemoteType(raw?: string | null) {
   const rt = (raw ?? "").toLowerCase();
   if (!rt) return null;
-  if (rt.includes("remote")) return "remote";
-  if (rt.includes("hybrid") || rt.includes("hybride")) return "hybride";
-  if (rt.includes("site") || rt.includes("office") || rt.includes("présentiel") || rt.includes("presentiel")) return "sur site";
+  if (rt.includes("remote")) return "Télétravail";
+  if (rt.includes("hybrid") || rt.includes("hybride")) return "Hybride";
+  if (rt.includes("site") || rt.includes("office") || rt.includes("présentiel") || rt.includes("presentiel")) return "Sur site";
   return rt.trim();
 }
 
@@ -435,6 +451,11 @@ function buildWhyReasons(params: {
   if (reasons.length < 2 && params.expOk) {
     const func = collapseSpaces(params.job.title ?? "");
     add(fitReason("Missions cohérentes avec ton expérience", func || null));
+  }
+
+  const roleFamily = params.why.details?.breakdown?.role_family;
+  if (reasons.length < 2 && roleFamily?.relation === "match") {
+    add("Même famille métier que ta cible");
   }
 
   const domain = params.why.details?.breakdown?.domain;
@@ -592,7 +613,15 @@ export default function JobRadarFeedPage() {
   const userId = session?.user?.id ?? null;
 
   const FEED_PREVIEW_LIMIT = 4;
-  const FEED_GATE_MESSAGE = "Active ton accès JobRadar pour voir toutes tes offres recommandées.";
+  const FEED_GATE_MESSAGE = "Débloque l’accès complet aux offres pour voir plus d’opportunités adaptées à ton profil.";
+  const OFFER_GATE_MESSAGE =
+    "Cette offre correspond à ton profil. Active ton pass pour voir le détail complet et débloquer toutes tes offres.";
+  const OFFER_GATE_BENEFITS = [
+    "Accès complet à toutes tes offres",
+    "Détail complet de chaque opportunité",
+    "Sauvegarde et suivi de tes candidatures",
+    "Alertes personnalisées",
+  ] as const;
   const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";
   const allowPremium = hasActivePass && !isLoadingPass;
   const isPreview = !allowPremium;
@@ -602,12 +631,15 @@ export default function JobRadarFeedPage() {
   const [cvSkills, setCvSkills] = useState<string[]>([]);
   const [cvExp, setCvExp] = useState<{ min: number | null; max: number | null } | null>(null);
   const [profileExp, setProfileExp] = useState<number | null>(null);
+  const [profileDesiredRole, setProfileDesiredRole] = useState("");
+  const [shadowFeed, setShadowFeed] = useState<ShadowFeedUiState | null>(null);
+  const [hasUserSelectedMode, setHasUserSelectedMode] = useState(false);
   const [busy, setBusy] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
 
-  const [matchMode, setMatchMode] = useState<"strict" | "large" | "jooble" | "adzuna">("strict");
+  const [matchMode, setMatchMode] = useState<"strict" | "large" | "jooble" | "adzuna">("large");
   const STRICT_MIN_PERCENT = Number(import.meta.env.VITE_TOPMATCH_MIN ?? 55);
   const TOP_MATCH_MIN = 70;
   const TOP_MATCH_DQ_MIN = 0.6;
@@ -629,6 +661,7 @@ export default function JobRadarFeedPage() {
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const feedBackendShadowFlag = (import.meta.env.VITE_JOBRADAR_FEED_BACKEND_SHADOW ?? "").trim() === "1";
 
   const JOOBLE_PAGE_SIZE = 20;
   const JOOBLE_AUTO_MIN = 6;
@@ -661,6 +694,7 @@ export default function JobRadarFeedPage() {
   const [adzunaAutoPages, setAdzunaAutoPages] = useState(0);
   const [externalImporting, setExternalImporting] = useState<Record<string, boolean>>({});
   const [externalImports, setExternalImports] = useState<Record<string, { status: string; jobId?: string }>>({});
+  const [offerUnlockModal, setOfferUnlockModal] = useState<{ title: string } | null>(null);
 
   function dedupeAdzuna(items: AdzunaResult[]) {
     const seen = new Set<string>();
@@ -705,9 +739,23 @@ export default function JobRadarFeedPage() {
     return data as CvSaveResponse;
   }
 
+  const fetchShadowFeed = useCallback(async () => {
+    const { data, error } = await supabase.functions.invoke<JobRadarShadowInvokeResponse>("jobradar_match_feed", {
+      body: {},
+    });
+
+    if (error) throw error;
+    return adaptJobRadarShadowResponse(data ?? {});
+  }, []);
+
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
   }, [loading, session, navigate]);
+
+  useEffect(() => {
+    setHasUserSelectedMode(false);
+    setShadowFeed(null);
+  }, [userId]);
 
   const KEYWORDS_MAX_UNIQ = 60;
   const KEYWORDS_CAP = 20;
@@ -759,6 +807,7 @@ export default function JobRadarFeedPage() {
         location,
         country,
         remote_type,
+        job_family,
         published_at,
         posted_at,
         scraped_at,
@@ -775,6 +824,7 @@ export default function JobRadarFeedPage() {
       )
       .eq("is_active", true)
       .eq("is_expired", false)
+      .in("job_status", ["active", "stale"])
       .or("quality_status.eq.ok,quality_status.is.null")
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("scraped_at", { ascending: false, nullsFirst: false })
@@ -785,6 +835,88 @@ export default function JobRadarFeedPage() {
     return (data ?? []) as JobRow[];
   }, []);
 
+  const fetchProfileContext = useCallback(async () => {
+    try {
+      const { data: pData, error: pErr } = await supabase
+        .from("profiles")
+        .select("experience_years, headline, jobradar_onboarding")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (pErr) return { experienceYears: null, desiredRole: "" };
+
+      const profile = (pData as {
+        experience_years?: unknown;
+        headline?: unknown;
+        jobradar_onboarding?: { profile?: { desiredRole?: unknown } | null } | null;
+      } | null) ?? null;
+
+      const desiredRole =
+        collapseSpaces(String(profile?.jobradar_onboarding?.profile?.desiredRole ?? "")) ||
+        collapseSpaces(String(profile?.headline ?? ""));
+
+      return {
+        experienceYears: toNumberOrNull(profile?.experience_years),
+        desiredRole,
+      };
+    } catch {
+      return { experienceYears: null, desiredRole: "" };
+    }
+  }, [userId]);
+
+  const fetchCvContext = useCallback(async () => {
+    try {
+      const res = await invokeCvSave("get_active");
+      if (res?.ok && res?.data) {
+        const cvData = res.data;
+        const cvJson = cvData?.cv_json ?? {};
+        const expMin = toNumberOrNull(cvJson?.experience_years_min);
+        const expMax = toNumberOrNull(cvJson?.experience_years_max);
+        return {
+          skills: Array.isArray(cvData?.skills) ? cvData.skills : [],
+          exp: expMin != null || expMax != null ? { min: expMin, max: expMax } : null,
+        };
+      }
+    } catch {
+      // ignore optional CV context failures
+    }
+
+    return { skills: [] as string[], exp: null as { min: number | null; max: number | null } | null };
+  }, []);
+
+  const loadUserJobState = useCallback(
+    async (targetUserId: string) => {
+      try {
+        const [{ data: appData, error: appErr }, { data: dData, error: dErr }] = await Promise.all([
+          supabase.from("applications").select("job_id, status").eq("user_id", targetUserId).limit(5000),
+          supabase
+            .from("job_feedback")
+            .select("job_id")
+            .eq("user_id", targetUserId)
+            .eq("action", "dismissed")
+            .limit(5000),
+        ]);
+
+        if (appErr) throw appErr;
+        if (dErr) throw dErr;
+
+        const map = new Map<string, ApplicationStatus>();
+        (appData ?? []).forEach((row: { job_id?: string; status?: ApplicationStatus }) => {
+          if (row?.job_id && row?.status) map.set(row.job_id, row.status);
+        });
+        setAppStatusByJobId(map);
+
+        const dismissedIds = (dData ?? [])
+          .map((x: { job_id?: string }) => x.job_id)
+          .filter((id): id is string => typeof id === "string" && id.length > 0);
+        setDismissedJobIds(new Set(dismissedIds));
+      } catch (e: unknown) {
+        setErrorMsg((prev) => prev ?? getErrorMessage(e) ?? "Erreur inconnue");
+      }
+    },
+    []
+  );
+
   const load = useCallback(async () => {
     if (!userId) return;
 
@@ -792,92 +924,40 @@ export default function JobRadarFeedPage() {
     setErrorMsg(null);
 
     try {
-      const { data: aData, error: aErr } = await supabase
-        .from("alerts")
-        .select("id, user_id, name, keywords, country, countries, frequency, channels, is_active, created_at")
-        .eq("user_id", userId)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+      const [{ data: aData, error: aErr }, cvContext, nextProfileContext, fetchedJobs] = await Promise.all([
+        supabase
+          .from("alerts")
+          .select("id, user_id, name, keywords, country, countries, frequency, channels, is_active, created_at")
+          .eq("user_id", userId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false }),
+        fetchCvContext(),
+        fetchProfileContext(),
+        fetchJobsRange(0, PAGE_SIZE - 1),
+      ]);
 
       if (aErr) throw aErr;
+
       setAlerts((aData ?? []) as AlertRow[]);
-
-      try {
-        const res = await invokeCvSave("get_active");
-        if (res?.ok && res?.data) {
-          const cvData = res.data;
-          setCvSkills(Array.isArray(cvData?.skills) ? cvData.skills : []);
-          const cvJson = cvData?.cv_json ?? {};
-          const expMin = toNumberOrNull(cvJson?.experience_years_min);
-          const expMax = toNumberOrNull(cvJson?.experience_years_max);
-          if (expMin != null || expMax != null) {
-            setCvExp({ min: expMin, max: expMax });
-          } else {
-            setCvExp(null);
-          }
-        } else {
-          setCvSkills([]);
-          setCvExp(null);
-        }
-      } catch {
-        setCvSkills([]);
-        setCvExp(null);
-      }
-
-      try {
-        const { data: pData, error: pErr } = await supabase
-          .from("profiles")
-          .select("experience_years")
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        if (pErr) {
-          setProfileExp(null);
-        } else {
-          setProfileExp(toNumberOrNull((pData as { experience_years?: unknown })?.experience_years));
-        }
-      } catch {
-        setProfileExp(null);
-      }
-
-      const fetchedJobs = await fetchJobsRange(0, PAGE_SIZE - 1);
+      setCvSkills(cvContext.skills);
+      setCvExp(cvContext.exp);
+      setProfileExp(nextProfileContext.experienceYears);
+      setProfileDesiredRole(nextProfileContext.desiredRole);
       setJobs(fetchedJobs);
-
       setPageFrom(fetchedJobs.length);
       setHasMore(fetchedJobs.length === PAGE_SIZE);
+      setBusy(false);
 
-      const { data: appData, error: appErr } = await supabase
-        .from("applications")
-        .select("job_id, status")
-        .eq("user_id", userId)
-        .limit(5000);
+      void fetchShadowFeed()
+        .then((nextShadowFeed) => setShadowFeed(nextShadowFeed))
+        .catch(() => setShadowFeed(null));
 
-      if (appErr) throw appErr;
-
-      const map = new Map<string, ApplicationStatus>();
-      (appData ?? []).forEach((row: { job_id?: string; status?: ApplicationStatus }) => {
-        if (row?.job_id && row?.status) map.set(row.job_id, row.status);
-      });
-      setAppStatusByJobId(map);
-
-      const { data: dData, error: dErr } = await supabase
-        .from("job_feedback")
-        .select("job_id")
-        .eq("user_id", userId)
-        .eq("action", "dismissed")
-        .limit(5000);
-
-      if (dErr) throw dErr;
-      const dismissedIds = (dData ?? [])
-        .map((x: { job_id?: string }) => x.job_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0);
-      setDismissedJobIds(new Set(dismissedIds));
+      void loadUserJobState(userId);
     } catch (e: unknown) {
       setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
-    } finally {
       setBusy(false);
     }
-  }, [fetchJobsRange, userId]);
+  }, [fetchCvContext, fetchJobsRange, fetchProfileContext, fetchShadowFeed, loadUserJobState, userId]);
 
   async function loadMore() {
     if (!userId) return;
@@ -1158,6 +1238,7 @@ export default function JobRadarFeedPage() {
           cvKeywords: kwCv,
           cvExp: effectiveExp,
           geoPrefs,
+          desiredRole: profileDesiredRole,
           hay,
           maxShown: 5,
           topMatchThreshold: STRICT_MIN_PERCENT,
@@ -1232,6 +1313,7 @@ export default function JobRadarFeedPage() {
     cvKeywords,
     cvExp,
     profileExp,
+    profileDesiredRole,
     q,
     geoPrefs,
     appStatusByJobId,
@@ -1242,12 +1324,57 @@ export default function JobRadarFeedPage() {
     MIN_FOR_YOU,
   ]);
 
-  const forYouRows = matches.forYouRows.filter((row) => {
+  const shadowMeta: JobRadarShadowMeta | null = shadowFeed?.meta ?? null;
+
+  const localFeedBuckets = useMemo(
+    () => ({
+      top_match: matches.topMatches,
+      for_you: matches.forYouRows,
+      explore: matches.exploreMatches,
+    }),
+    [matches.topMatches, matches.forYouRows, matches.exploreMatches]
+  );
+
+  const shadowComparison: ShadowFeedComparison | null = useMemo(() => {
+    if (!shadowFeed) return null;
+    return compareShadowAndLocalBuckets(localFeedBuckets, shadowFeed.buckets);
+  }, [localFeedBuckets, shadowFeed]);
+
+  useEffect(() => {
+    if (!import.meta.env?.DEV || !shadowComparison) return;
+    console.info("[JobRadar] shadow feed comparison", shadowComparison);
+  }, [shadowComparison]);
+
+  const normalizedDesiredRole = useMemo(() => keyify(profileDesiredRole), [profileDesiredRole]);
+  const hasValidShadowBuckets = Boolean(
+    shadowFeed?.buckets &&
+      Array.isArray(shadowFeed.buckets.top_match) &&
+      Array.isArray(shadowFeed.buckets.for_you) &&
+      Array.isArray(shadowFeed.buckets.explore)
+  );
+  const shouldUseShadowVisibleFeed =
+    feedBackendShadowFlag &&
+    shadowMeta?.profile_mode === "rich" &&
+    normalizedDesiredRole === "data analyst" &&
+    hasValidShadowBuckets;
+
+  const visibleFeedBuckets =
+    shouldUseShadowVisibleFeed && shadowFeed?.buckets
+      ? shadowFeed.buckets
+      : localFeedBuckets;
+
+  const forYouRows = visibleFeedBuckets.for_you.filter((row) => {
     if (!onlyVeryRelevant) return true;
     return row.p >= TOP_MATCH_MIN;
   });
 
-  const displayed = matchMode === "strict" ? forYouRows : matches.exploreMatches;
+  const topCount = visibleFeedBuckets.top_match.length;
+  const forYouCount = visibleFeedBuckets.for_you.length;
+  const exploreCount = visibleFeedBuckets.explore.length;
+  const shadowUi = useMemo(() => buildJobRadarShadowUi(shadowMeta, topCount), [shadowMeta, topCount]);
+  const joobleCount = joobleResults.length;
+  const adzunaCount = adzunaResults.length;
+  const displayed = matchMode === "strict" ? forYouRows : visibleFeedBuckets.explore;
   const joobleDisplayed = joobleResults;
   const displayedLimited = isPreview ? displayed.slice(0, FEED_PREVIEW_LIMIT) : displayed;
   const joobleLimited = isPreview ? joobleDisplayed.slice(0, FEED_PREVIEW_LIMIT) : joobleDisplayed;
@@ -1255,8 +1382,74 @@ export default function JobRadarFeedPage() {
   const showGateOnDisplayed = isPreview && displayed.length > FEED_PREVIEW_LIMIT;
   const showGateOnJooble = isPreview && joobleDisplayed.length > FEED_PREVIEW_LIMIT;
   const showGateOnAdzuna = isPreview && adzunaResults.length > FEED_PREVIEW_LIMIT;
+  const hasCvContext = cvKeywords.length > 0 || cvExp != null;
+  const feedAdvisorMode = useMemo(() => {
+    if (busy || matchMode !== "strict" || alerts.length === 0 || forYouCount === 0) return null;
+    const lowSignal = topCount === 0 || forYouCount <= 3;
+    if (!lowSignal) return null;
+    if (!hasCvContext) return "needs_cv" as const;
+    if (alerts.length < 2 || alertKeywords.length < 4) return "needs_alerts" as const;
+    return "needs_profile" as const;
+  }, [busy, matchMode, alerts.length, forYouCount, topCount, hasCvContext, alertKeywords.length]);
+  const feedAdvisor = useMemo(
+    () => (feedAdvisorMode ? getJobRadarAdvisorCopy({ key: "feed", mode: feedAdvisorMode }) : null),
+    [feedAdvisorMode]
+  );
+
+  useEffect(() => {
+    if (shadowUi.showStrictTab) return;
+    if (matchMode === "strict") setOnlyVeryRelevant(false);
+  }, [shadowUi.showStrictTab, matchMode]);
+
+  useEffect(() => {
+    if (shadowUi.showOnlyVeryRelevantToggle) return;
+    if (onlyVeryRelevant) setOnlyVeryRelevant(false);
+  }, [shadowUi.showOnlyVeryRelevantToggle, onlyVeryRelevant]);
+
+  useEffect(() => {
+    if (hasUserSelectedMode) return;
+    if (matchMode === "jooble" || matchMode === "adzuna") return;
+    const nextMode =
+      shadowUi.showStrictTab && shadowUi.preferredMode === "strict" && forYouCount > 0
+        ? "strict"
+        : "large";
+    setMatchMode((prev) => (prev === nextMode ? prev : nextMode));
+  }, [shadowUi.showStrictTab, shadowUi.preferredMode, hasUserSelectedMode, matchMode, forYouCount]);
+
+  const closeOfferUnlockModal = useCallback(() => {
+    setOfferUnlockModal(null);
+  }, []);
+
+  useEffect(() => {
+    if (!offerUnlockModal) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeOfferUnlockModal();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [offerUnlockModal, closeOfferUnlockModal]);
+
   const getExternalKey = (url: string) => canonicalizeUrl(url) || url;
-  const openJob = (jobId: string, payload?: Record<string, unknown>) => {
+  const launchPassActivation = useCallback(() => {
+    closeOfferUnlockModal();
+    navigate("/pricing");
+  }, [closeOfferUnlockModal, navigate]);
+
+  const openOfferUnlockGate = useCallback(
+    (title?: string | null, payload?: Record<string, unknown>) => {
+      if (isLoadingPass) return true;
+      if (allowPremium) return false;
+      if (payload) trackJobRadarEvent("offer_gate_open", payload);
+      setOfferUnlockModal({ title: title?.trim() || "Offre sans titre" });
+      return true;
+    },
+    [allowPremium, isLoadingPass]
+  );
+
+  const openJob = (jobId: string, jobTitle?: string | null, payload?: Record<string, unknown>) => {
+    if (openOfferUnlockGate(jobTitle, payload)) return;
     if (payload) trackJobRadarEvent("job_open", payload);
     navigate(`/jobradar/jobs/${jobId}`);
   };
@@ -1352,6 +1545,30 @@ export default function JobRadarFeedPage() {
     [archiveImportedApplication, dismissJoobleJob, isJoobleClosed]
   );
 
+  const handleJooblePrimaryClick = useCallback(
+    async (job: JoobleResult, jobId?: string | null) => {
+      const safeUrl = stripClosedJobParam(job.url) || job.url;
+      if (openOfferUnlockGate(job.title, { action: "external_open", source: "jooble", url: safeUrl, job_id: jobId ?? null })) {
+        return;
+      }
+
+      await handleJoobleOpen(job, jobId);
+    },
+    [handleJoobleOpen, openOfferUnlockGate]
+  );
+
+  const handleAdzunaPrimaryClick = useCallback(
+    (job: AdzunaResult, jobId?: string | null) => {
+      if (openOfferUnlockGate(job.title, { action: "external_open", source: "adzuna", url: job.url, job_id: jobId ?? null })) {
+        return;
+      }
+
+      trackJobRadarEvent("adzuna_open", { url: job.url });
+      window.open(job.url, "_blank", "noopener,noreferrer");
+    },
+    [openOfferUnlockGate]
+  );
+
   const importExternalJob = useCallback(
     async (source: "jooble" | "adzuna", job: JoobleResult | AdzunaResult) => {
       if (source === "jooble" && isJoobleClosed(job as JoobleResult)) {
@@ -1416,8 +1633,8 @@ export default function JobRadarFeedPage() {
         } else if (status === "rejected_geo") {
           pushToast({
             kind: "info",
-            title: "Import limité Afrique/Remote",
-            message: data?.message ?? "Import limité Afrique/Remote pour garder JobRadar premium.",
+            title: "Import limité à certaines offres compatibles",
+            message: data?.message ?? "Import limité pour préserver la qualité des résultats JobRadar.",
           });
         } else {
           pushToast({ kind: "info", title: "Import traité" });
@@ -1450,17 +1667,12 @@ export default function JobRadarFeedPage() {
     },
     [TOP_MATCH_MIN, TOP_MATCH_DQ_MIN]
   );
-  const topCount = matches.topMatches.length;
-  const forYouCount = matches.forYouRows.length;
-  const exploreCount = matches.exploreMatches.length;
-  const joobleCount = joobleResults.length;
-  const adzunaCount = adzunaResults.length;
   const gateCard = (
     <div className="jr-gateCard" role="group" aria-label="Accès premium JobRadar">
-      <div className="jr-gateTitle">Accès complet au feed</div>
+      <div className="jr-gateTitle">Accède à toutes les opportunités</div>
       <div className="jr-gateText">{FEED_GATE_MESSAGE}</div>
-      <button className="jrBtn jrBtnPrimary" type="button" onClick={() => navigate("/pricing")}>
-        Choisir ce pass
+      <button className="jrBtn jrBtnPrimary" type="button" onClick={launchPassActivation}>
+        Choisir mon pass
       </button>
     </div>
   );
@@ -1472,8 +1684,8 @@ export default function JobRadarFeedPage() {
           <div className="jr-heroTop">
             <div>
               <div className="jr-kicker">JobRadar</div>
-              <h1>Priorité aux meilleures opportunités</h1>
-              <p>Matching intelligent basé sur tes alertes et ton CV.</p>
+              <h1>{shadowUi.heroTitle}</h1>
+              <p>{shadowUi.heroDescription}</p>
             </div>
 
             <div className="jr-pillRow" aria-label="Statistiques">
@@ -1496,7 +1708,7 @@ export default function JobRadarFeedPage() {
                   : ""}
               </span>
               <span className="jr-pillHero jr-pillStrong">
-                {forYouCount} offre{forYouCount > 1 ? "s" : ""} pour toi
+                {getJobRadarShadowPillLabel(shadowMeta, forYouCount)}
               </span>
             </div>
           </div>
@@ -1523,25 +1735,29 @@ export default function JobRadarFeedPage() {
               ) : null}
             </div>
 
-            <div className="jr-modeToggle" role="tablist" aria-label="Mode de matching">
-              <button
-                className={matchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
-                type="button"
-                onClick={() => {
-                  setMatchMode("strict");
-                  trackJobRadarEvent("match_mode_select", { mode: "strict", forYouCount, exploreCount });
-                }}
-                disabled={busy || forYouCount === 0}
-                title={forYouCount === 0 ? "Aucune offre pour l’instant" : "Offres les plus pertinentes pour toi"}
-                aria-pressed={matchMode === "strict"}
-              >
-                Pour toi ({forYouCount})
-              </button>
+            <div className="jr-modeToggle" role="tablist" aria-label="Mode de tri des offres">
+              {shadowUi.showStrictTab && (
+                <button
+                  className={matchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  type="button"
+                  onClick={() => {
+                    setHasUserSelectedMode(true);
+                    setMatchMode("strict");
+                    trackJobRadarEvent("match_mode_select", { mode: "strict", forYouCount, exploreCount });
+                  }}
+                  disabled={busy || forYouCount === 0}
+                  title={forYouCount === 0 ? "Aucune offre pour l’instant" : "Offres les plus pertinentes pour toi"}
+                  aria-pressed={matchMode === "strict"}
+                >
+                  Pour toi ({forYouCount})
+                </button>
+              )}
 
               <button
                 className={matchMode === "large" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => {
+                  setHasUserSelectedMode(true);
                   setMatchMode("large");
                   trackJobRadarEvent("match_mode_select", { mode: "large", forYouCount, exploreCount });
                 }}
@@ -1549,13 +1765,14 @@ export default function JobRadarFeedPage() {
                 title="Explorer les offres du moment"
                 aria-pressed={matchMode === "large"}
               >
-                Explorer ({exploreCount})
+                {shadowUi.largeTabLabel} ({exploreCount})
               </button>
 
               <button
                 className={matchMode === "jooble" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => {
+                  setHasUserSelectedMode(true);
                   setMatchMode("jooble");
                   trackJobRadarEvent("match_mode_select", { mode: "jooble" });
                 }}
@@ -1570,6 +1787,7 @@ export default function JobRadarFeedPage() {
                 className={matchMode === "adzuna" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => {
+                  setHasUserSelectedMode(true);
                   setMatchMode("adzuna");
                   trackJobRadarEvent("match_mode_select", { mode: "adzuna" });
                 }}
@@ -1587,16 +1805,10 @@ export default function JobRadarFeedPage() {
           </div>
 
           <div className="jr-subline">
-            {matchMode === "strict"
-              ? "Pour toi : offres triées par pertinence."
-              : matchMode === "large"
-              ? "Explorer : sélection plus large, sans filtres trop stricts."
-              : matchMode === "jooble"
-              ? "Explorer (Jooble) : flux externe pour élargir le volume en Afrique."
-              : "Explorer (Adzuna) : flux externe pour élargir le volume en Afrique."}
+            {getJobRadarShadowSubline(shadowMeta, matchMode)}
           </div>
 
-          {matchMode === "strict" && (
+          {matchMode === "strict" && shadowUi.showOnlyVeryRelevantToggle && (
             <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 className={onlyVeryRelevant ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
@@ -1631,14 +1843,14 @@ export default function JobRadarFeedPage() {
                   type="button"
                   onClick={() => setJooblePreset("all_africa_fr")}
                 >
-                  Afrique (FR)
+                  Afrique
                 </button>
               </div>
               <div className="jr-joobleMeta">
                 {joobleLoading
                   ? "Recherche en cours…"
                   : joobleMeta.total
-                  ? `${joobleResults.length} affichées · ≈ ${joobleMeta.total} bruts`
+                  ? `${joobleResults.length} affichées · environ ${joobleMeta.total} résultats`
                   : joobleResults.length
                   ? `${joobleResults.length} affichées`
                   : ""}
@@ -1669,14 +1881,14 @@ export default function JobRadarFeedPage() {
                   type="button"
                   onClick={() => setAdzunaPreset("all_africa_fr")}
                 >
-                  Afrique (FR)
+                  Afrique
                 </button>
               </div>
               <div className="jr-joobleMeta">
                 {adzunaLoading
                   ? "Recherche en cours…"
                   : adzunaMeta.total
-                  ? `${adzunaResults.length} affichées · ≈ ${adzunaMeta.total} bruts`
+                  ? `${adzunaResults.length} affichées · environ ${adzunaMeta.total} résultats`
                   : adzunaResults.length
                   ? `${adzunaResults.length} affichées`
                   : ""}
@@ -1684,6 +1896,49 @@ export default function JobRadarFeedPage() {
             </div>
           )}
         </section>
+
+        {shadowUi.guidanceCard && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title={shadowUi.guidanceCard.title}
+              message={shadowUi.guidanceCard.message}
+              primaryAction={{
+                label: shadowUi.guidanceCard.primaryActionLabel,
+                to: shadowUi.guidanceCard.primaryActionTo,
+              }}
+              secondaryAction={
+                shadowUi.profileMode === "alerts_only" || shadowUi.profileMode === "cold_start"
+                  ? {
+                      label: shadowUi.profileMode === "alerts_only" ? "Explorer les offres" : "Voir les offres récentes",
+                      onClick: () => {
+                        setHasUserSelectedMode(true);
+                        setMatchMode("large");
+                        scrollToResults();
+                      },
+                    }
+                  : undefined
+              }
+              tone="info"
+            />
+          </div>
+        )}
+
+        {!shadowUi.guidanceCard && feedAdvisor && (
+          <JobRadarAdvisor
+            {...feedAdvisor}
+            variant="compact"
+            dismissible
+            dismissKey={`feed-${feedAdvisorMode}`}
+            className="jr-advisorSlot"
+            cta={
+              feedAdvisorMode === "needs_cv"
+                ? { label: feedAdvisor.ctaLabel ?? "Ajouter mon CV", to: "/me/cv" }
+                : feedAdvisorMode === "needs_alerts"
+                ? { label: feedAdvisor.ctaLabel ?? "Ajuster mes alertes", to: "/jobradar/alerts" }
+                : { label: feedAdvisor.ctaLabel ?? "Ajuster mon profil", to: "/profile" }
+            }
+          />
+        )}
 
         {errorMsg && (
           <div className="jr-error">
@@ -1749,11 +2004,11 @@ export default function JobRadarFeedPage() {
           </div>
         )}
 
-        {matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && topCount === 0 && (
+        {shadowUi.showStrictTab && matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && topCount === 0 && (
           <div style={{ marginTop: 12 }}>
             <NextStepCard
-              title="Aucun Top match aujourd’hui"
-              message="On a trouvé des offres “Pour toi”, mais aucune n’atteint le niveau Top match (mode strict)."
+              title="Aucune offre très adaptée aujourd’hui"
+              message="On a trouvé des offres “Pour toi”, mais aucune ne ressort encore parmi les offres les plus adaptées en mode strict."
               primaryAction={{
                 label: "Voir Pour toi",
                 onClick: () => {
@@ -1763,14 +2018,14 @@ export default function JobRadarFeedPage() {
                 },
               }}
               secondaryAction={{
-                label: "Assouplir Top match",
+                label: "Voir plus d’offres",
                 onClick: () => setShowTopMatchHelp((prev) => !prev),
               }}
               tone="info"
             />
             {showTopMatchHelp && (
               <div className="jr-topMatchPanel" role="note" aria-live="polite">
-                <div className="jr-topMatchPanelTitle">Top match = niveau strict</div>
+                <div className="jr-topMatchPanelTitle">Offres les plus adaptées = niveau strict</div>
                 <div className="jr-topMatchPanelText">
                   Seuils actuels : score ≥ {TOP_MATCH_MIN} et dataQuality ≥ {TOP_MATCH_DQ_MIN}. Tu peux élargir pour voir
                   plus d’offres.
@@ -1785,7 +2040,7 @@ export default function JobRadarFeedPage() {
                       scrollToResults();
                     }}
                   >
-                    Top match : élargi
+                    Voir plus d’offres
                   </button>
                 </div>
               </div>
@@ -1793,7 +2048,7 @@ export default function JobRadarFeedPage() {
           </div>
         )}
 
-        {matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && forYouRows.length === 0 && (
+        {shadowUi.showStrictTab && matchMode === "strict" && onlyVeryRelevant && forYouCount > 0 && forYouRows.length === 0 && (
           <div style={{ marginTop: 12 }}>
             <NextStepCard
               title="Aucune offre très pertinente"
@@ -1837,42 +2092,85 @@ export default function JobRadarFeedPage() {
             </div>
             <div className="sr-only">Chargement des offres…</div>
           </div>
-        ) : alerts.length === 0 && matchMode !== "jooble" && matchMode !== "adzuna" ? (
+        ) : alerts.length === 0 &&
+          !shadowUi.suppressNoAlertsEmptyState &&
+          matchMode !== "jooble" &&
+          matchMode !== "adzuna" ? (
           <EmptyState
             title="Tu n’as pas encore d’alerte"
-            description="Crée une alerte pour activer le matching et recevoir des offres pertinentes."
+            description="Crée une alerte pour recevoir des offres mieux ciblées."
             primaryAction={{ label: "Créer une alerte", to: "/jobradar/alerts" }}
             secondaryAction={{ label: "Améliorer mon profil", to: "/jobradar/profile" }}
             tone="info"
           />
         ) : matchMode !== "jooble" && displayed.length === 0 ? (
-          <EmptyState
-            title="Aucune offre pour tes alertes aujourd’hui"
-            description="On n’a rien trouvé pour tes alertes aujourd’hui. Tu peux élargir tes critères ou explorer les offres du moment."
-            primaryAction={{ label: "Recharger les offres", onClick: () => load() }}
-            secondaryAction={{
-              label: "Voir Explorer (Afrique francophone)",
-              onClick: () => {
-                setMatchMode("large");
-                scrollToResults();
-              },
-            }}
-            tone="neutral"
-          />
+          shadowUi.profileMode === "alerts_only" ? (
+            <EmptyState
+              title="Tes alertes ne suffisent pas encore pour construire de vrais matchs"
+              description="On n’a rien trouvé de suffisamment propre à afficher pour l’instant. Définis un rôle cible pour améliorer la précision."
+              primaryAction={{ label: "Définir mon rôle cible", to: "/jobradar/profile" }}
+              secondaryAction={{
+                label: "Rafraîchir",
+                onClick: () => load(),
+              }}
+              tone="neutral"
+            />
+          ) : shadowUi.profileMode === "cv_only" ? (
+            <EmptyState
+              title="Peu d’offres ressortent encore de ton CV"
+              description="Tes compétences donnent déjà une bonne base, mais ajouter un rôle cible aidera à mieux prioriser les offres."
+              primaryAction={{ label: "Ajouter un rôle cible", to: "/jobradar/profile" }}
+              secondaryAction={{
+                label: "Explorer les offres",
+                onClick: () => {
+                  setHasUserSelectedMode(true);
+                  setMatchMode("large");
+                  scrollToResults();
+                },
+              }}
+              tone="neutral"
+            />
+          ) : shadowUi.profileMode === "cold_start" ? (
+            <EmptyState
+              title="Complète ton profil pour débloquer de meilleures recommandations"
+              description="Pour l’instant, on préfère ne montrer que les opportunités les plus lisibles. Ajoute quelques informations pour aller plus loin."
+              primaryAction={{ label: "Compléter le profil", to: "/jobradar/profile" }}
+              secondaryAction={{
+                label: "Rafraîchir",
+                onClick: () => load(),
+              }}
+              tone="neutral"
+            />
+          ) : (
+            <EmptyState
+              title="Aucune offre pour tes alertes aujourd’hui"
+              description="On n’a rien trouvé pour tes alertes aujourd’hui. Tu peux élargir tes critères ou explorer les offres du moment."
+              primaryAction={{ label: "Recharger les offres", onClick: () => load() }}
+              secondaryAction={{
+                label: "Explorer plus d’opportunités",
+                onClick: () => {
+                  setHasUserSelectedMode(true);
+                  setMatchMode("large");
+                  scrollToResults();
+                },
+              }}
+              tone="neutral"
+            />
+          )
         ) : matchMode === "jooble" && joobleDisplayed.length === 0 && !joobleLoading ? (
           <EmptyState
             title="Aucun résultat Jooble pour l’instant"
-            description="Essaie un mot-clé plus large ou change de zone Afrique."
+            description="Essaie un mot-clé plus large ou élargis ta zone de recherche."
             primaryAction={{ label: "Relancer la recherche", onClick: () => fetchJooble(1, true) }}
-            secondaryAction={{ label: "Revenir au feed", onClick: () => setMatchMode("large") }}
+            secondaryAction={{ label: "Revenir aux offres", onClick: () => setMatchMode("large") }}
             tone="neutral"
           />
         ) : matchMode === "adzuna" && adzunaResults.length === 0 && !adzunaLoading ? (
           <EmptyState
             title="Aucun résultat Adzuna pour l’instant"
-            description="Essaie un mot-clé plus large ou change de zone Afrique."
+            description="Essaie un mot-clé plus large ou élargis ta zone de recherche."
             primaryAction={{ label: "Relancer la recherche", onClick: () => fetchAdzuna(1, true) }}
-            secondaryAction={{ label: "Revenir au feed", onClick: () => setMatchMode("large") }}
+            secondaryAction={{ label: "Revenir aux offres", onClick: () => setMatchMode("large") }}
             tone="neutral"
           />
         ) : (
@@ -1916,8 +2214,8 @@ export default function JobRadarFeedPage() {
                         {job.snippet && <div className="jr-snippet">{job.snippet}</div>}
 
                         <div className="jr-chips">
-                          {job.zone === "africa" && <span className="chip chipStrong">Zone : Afrique validée</span>}
-                          {job.zone === "remote" && <span className="chip chipSoft">Remote</span>}
+                          {job.zone === "africa" && <span className="chip chipStrong">Zone géographique validée</span>}
+                          {job.zone === "remote" && <span className="chip chipSoft">Télétravail</span>}
                           {job.salary && <span className="chip chipSoft">{job.salary}</span>}
                           {dateLabel && <span className="chip chipSoft">Publié le {dateLabel}</span>}
                         </div>
@@ -1926,7 +2224,7 @@ export default function JobRadarFeedPage() {
                           <button
                             className="jr-ctaSm"
                             type="button"
-                            onClick={() => handleJoobleOpen(job, importState?.jobId ?? null)}
+                            onClick={() => handleJooblePrimaryClick(job, importState?.jobId ?? null)}
                           >
                             Voir l’offre
                           </button>
@@ -1941,7 +2239,9 @@ export default function JobRadarFeedPage() {
                           {importState?.jobId && (
                             <button
                               className="jr-ctaGhost"
-                              onClick={() => openJob(importState.jobId!, { action: "external_view" })}
+                              onClick={() =>
+                                openJob(importState.jobId!, job.title, { action: "external_view", source: "jooble" })
+                              }
                               type="button"
                             >
                               Voir dans JobRadar
@@ -1996,15 +2296,13 @@ export default function JobRadarFeedPage() {
                         </div>
 
                         <div className="jr-cardActions">
-                          <a
+                          <button
                             className="jr-ctaSm"
-                            href={job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => trackJobRadarEvent("adzuna_open", { url: job.url })}
+                            onClick={() => handleAdzunaPrimaryClick(job, importState?.jobId ?? null)}
+                            type="button"
                           >
                             Voir l’offre
-                          </a>
+                          </button>
                           <button
                             className="jr-ctaGhost"
                             onClick={() => importExternalJob("adzuna", job)}
@@ -2016,7 +2314,9 @@ export default function JobRadarFeedPage() {
                           {importState?.jobId && (
                             <button
                               className="jr-ctaGhost"
-                              onClick={() => openJob(importState.jobId!, { action: "external_view" })}
+                              onClick={() =>
+                                openJob(importState.jobId!, job.title, { action: "external_view", source: "adzuna" })
+                              }
                               type="button"
                             >
                               Voir dans JobRadar
@@ -2036,7 +2336,7 @@ export default function JobRadarFeedPage() {
                   const isAdding = addingJobId === job.id;
                   const isDismissing = dismissingJobId === job.id;
                 const isTopMatch = p >= TOP_MATCH_MIN && (dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN;
-                const relevanceLabel = isTopMatch ? "Top match" : getRelevanceLabel(p);
+                const relevanceLabel = isTopMatch ? "Très adaptée" : getRelevanceLabel(p);
                 const scoreClass = isTopMatch
                   ? "jr-score jr-scoreStrong"
                   : p >= 70
@@ -2057,11 +2357,11 @@ export default function JobRadarFeedPage() {
                       key={job.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => openJob(job.id, eventPayload)}
+                      onClick={() => openJob(job.id, job.title, eventPayload)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          openJob(job.id, eventPayload);
+                          openJob(job.id, job.title, eventPayload);
                         }
                       }}
                     >
@@ -2104,7 +2404,7 @@ export default function JobRadarFeedPage() {
                           className="jr-link"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openJob(job.id, { ...eventPayload, action: "detail" });
+                            openJob(job.id, job.title, { ...eventPayload, action: "detail" });
                           }}
                           type="button"
                         >
@@ -2119,7 +2419,7 @@ export default function JobRadarFeedPage() {
                             dismissJob(job.id);
                           }}
                           disabled={isDismissing}
-                          title="Masquer cette offre du feed"
+                          title="Masquer cette offre"
                           type="button"
                         >
                           {isDismissing ? "…" : "Décliner"}
@@ -2164,6 +2464,57 @@ export default function JobRadarFeedPage() {
           </>
         )}
       </main>
+
+      {offerUnlockModal && (
+        <div className="modalOverlay" role="presentation" onClick={closeOfferUnlockModal}>
+          <div
+            className="modal jr-offerPaywallModal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="jr-offer-paywall-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="jr-offerPaywallModal__top">
+              <div className="jr-offerPaywallModal__eyebrow">Opportunité détectée</div>
+              <button
+                type="button"
+                className="jr-offerPaywallModal__close"
+                aria-label="Fermer"
+                onClick={closeOfferUnlockModal}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modalTitle" id="jr-offer-paywall-title">
+              {offerUnlockModal.title}
+            </div>
+            <div className="modalText">{OFFER_GATE_MESSAGE}</div>
+
+            <ul className="jr-offerPaywallModal__benefits" aria-label="Bénéfices du pass JobRadar">
+              {OFFER_GATE_BENEFITS.map((benefit) => (
+                <li key={benefit}>{benefit}</li>
+              ))}
+            </ul>
+
+            <div className="jr-offerPaywallModal__actions">
+              <button type="button" className="btn btnPrimary btnWide" onClick={launchPassActivation}>
+                Débloquer mes offres
+              </button>
+              <a
+                className="jr-offerPaywallModal__back"
+                href="#jr-results"
+                onClick={(event) => {
+                  event.preventDefault();
+                  closeOfferUnlockModal();
+                }}
+              >
+                Revenir aux offres
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
