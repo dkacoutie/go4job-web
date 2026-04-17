@@ -12,6 +12,7 @@ import {
   adaptJobRadarShadowResponse,
   compareShadowAndLocalBuckets,
   type ShadowFeedComparison,
+  type ShadowFeedMatchRow,
   type ShadowFeedUiState,
 } from "./lib/jobradarShadowAdapter";
 import {
@@ -61,6 +62,8 @@ type MatchRow = {
   dataQuality: DataQualityBreakdown;
   why: MatchWhy;
 };
+
+type FeedDisplayRow = MatchRow | ShadowFeedMatchRow;
 
 type JobRow = {
   id: string;
@@ -1363,7 +1366,7 @@ export default function JobRadarFeedPage() {
       ? shadowFeed.buckets
       : localFeedBuckets;
 
-  const forYouRows = visibleFeedBuckets.for_you.filter((row) => {
+  const forYouRows = visibleFeedBuckets.for_you.filter((row: FeedDisplayRow) => {
     if (!onlyVeryRelevant) return true;
     return row.p >= TOP_MATCH_MIN;
   });
@@ -1652,7 +1655,7 @@ export default function JobRadarFeedPage() {
   );
 
   const buildMatchEventPayload = useCallback(
-    (row: MatchRow) => {
+    (row: FeedDisplayRow) => {
       const details = row.why.details;
       return {
         job_id: row.job.id,
@@ -2330,7 +2333,7 @@ export default function JobRadarFeedPage() {
                 </>
               ) : (
                 <>
-                  {displayedLimited.map((row) => {
+                  {displayedLimited.map((row: FeedDisplayRow) => {
                   const { job, p, why, dataQuality } = row;
                   const eventPayload = buildMatchEventPayload(row);
                   const isAdding = addingJobId === job.id;
