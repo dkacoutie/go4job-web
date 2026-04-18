@@ -34,14 +34,15 @@ export default function PaymentMarketPanel({
   onSelect,
 }: PaymentMarketPanelProps) {
   const isBusy = loading || savingPreference;
-  const recommendedLabel = resolution.market === "eur" ? "EUR recommande" : "XOF recommande";
+  const titleLabel =
+    resolution.market === "eur" ? "Preference de paiement : EUR" : "XOF recommande";
 
   return (
     <section className="payment-market-panel" aria-label="Marche paiement">
       <div className="payment-market-panel__head">
         <div>
           <div className="payment-market-panel__eyebrow">Marche paiement</div>
-          <div className="payment-market-panel__title">{recommendedLabel}</div>
+          <div className="payment-market-panel__title">{titleLabel}</div>
         </div>
         <div className="payment-market-panel__source">{sourceLabel(resolution.source)}</div>
       </div>
@@ -73,7 +74,7 @@ export default function PaymentMarketPanel({
 
       <p className="payment-market-panel__note">
         {resolution.market === "eur"
-          ? "Ta preference EUR est bien prise en compte pour le futur checkout Europe-friendly. En attendant, le paiement en ligne reste en XOF."
+          ? "Votre preference EUR est enregistree. Pour le moment, le paiement en ligne reste facture en FCFA via notre checkout actuel."
           : "Le checkout actuel reste aligne sur le parcours XOF existant."}
       </p>
 
