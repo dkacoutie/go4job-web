@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import PaymentMarketPanel from "./PaymentMarketPanel";
 import { clearPartnerReferral, readPartnerReferral } from "../lib/partnerReferral";
+import { usePaymentMarket } from "../lib/paymentMarket";
 import { supabase } from "../lib/supabaseClient";
 import { trackMetaEvent } from "../lib/metaPixel";
 import { useSession } from "../lib/useSession";
@@ -66,6 +68,7 @@ export default function PricingPlansBlock({
   const navigate = useNavigate();
   const location = useLocation();
   const { session } = useSession();
+  const paymentMarket = usePaymentMarket(session?.user?.id);
   const { refreshPass, hasActivePass } = usePass();
   const onboarding = useJobRadarOnboarding();
   const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
@@ -202,6 +205,20 @@ export default function PricingPlansBlock({
   const checkoutPrimaryLabelResolved =
     postCheckoutPrimaryLabel ?? (onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon parcours");
 
+  const handleSelectPaymentMarket = async (market: "eur" | "xof") => {
+    try {
+      await paymentMarket.setPreference(market);
+      setInfoMsg(
+        market === "eur"
+          ? "Preference EUR enregistree. Le checkout EUR arrive bientot ; le paiement actuel reste en XOF."
+          : "Preference XOF enregistree."
+      );
+      setErrorMsg(null);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Impossible d'enregistrer la preference.");
+    }
+  };
+
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
     if (!session?.user) {
       navigate("/auth", { state: { from: location.pathname } });
@@ -300,6 +317,15 @@ export default function PricingPlansBlock({
       {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configur\u00e9.</div>}
       {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
       {infoMsg && <div className="pricing-info">{infoMsg}</div>}
+
+      <PaymentMarketPanel
+        resolution={paymentMarket.resolution}
+        loading={paymentMarket.loading}
+        savingPreference={paymentMarket.savingPreference}
+        error={paymentMarket.error}
+        canPersistPreference={paymentMarket.canPersistPreference}
+        onSelect={handleSelectPaymentMarket}
+      />
 
       {showPostCheckout && showActions && (
         <div className="pricing-success-actions" aria-label="Suite apres achat">

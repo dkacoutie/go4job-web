@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import OnboardingStepper from "./components/OnboardingStepper";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
@@ -11,6 +12,7 @@ type Profile = {
   full_name: string | null;
   phone: string | null;
   location: string | null;
+  country_code?: string | null;
   headline: string | null;
   experience_years: number | null;
   cv_file_path?: string | null;
@@ -82,9 +84,11 @@ function normalizeExperience(v: string) {
 
 export default function ProfilePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { session, loading } = useSession();
   const { pushToast } = useToast();
   const userId = session?.user?.id;
+  const onboardingFlow = searchParams.get("flow") === "onboarding";
 
   const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -134,7 +138,7 @@ export default function ProfilePage() {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "user_id, full_name, phone, location, headline, experience_years, cv_file_path, cv_filename, cv_updated_at"
+          "user_id, full_name, phone, location, country_code, headline, experience_years, cv_file_path, cv_filename, cv_updated_at"
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -154,7 +158,7 @@ export default function ProfilePage() {
 
       const loc = parseLocation(p?.location ?? null);
       setCity(loc.city);
-      setCountryCode(loc.countryCode);
+      setCountryCode(p?.country_code ?? loc.countryCode);
 
       setSkills(parseSkills(p?.headline ?? null));
       setExperienceYears(
@@ -364,6 +368,7 @@ export default function ProfilePage() {
           full_name: fullName.trim() || null,
           phone: phone.trim() || null,
           location: locationValue,
+          country_code: countryCode || null,
           headline: headlineValue || null,
           experience_years: expClean,
         },
@@ -392,10 +397,14 @@ export default function ProfilePage() {
     const incomplete = !fullName.trim() || !city.trim() || skills.length === 0 || expMissing;
     if (incomplete) {
       setNextStep({
-        title: "Profil enregistré (incomplet)",
-        message: "Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.",
+        title: onboardingFlow ? "Encore un petit effort sur le profil" : "Profil enregistré (incomplet)",
+        message: onboardingFlow
+          ? "Complète les points restants pour débloquer la suite du parcours premium."
+          : "Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.",
         primary: { label: "Continuer la configuration", onClick: () => focusFirstMissing() },
-        secondary: { label: "Voir mes offres quand même", to: "/jobradar/feed" },
+        secondary: onboardingFlow
+          ? { label: "Revenir au parcours", to: "/jobradar/onboarding?step=complete-profile" }
+          : { label: "Voir mes offres quand même", to: "/jobradar/feed" },
         tone: "info",
       });
       return;
@@ -403,10 +412,16 @@ export default function ProfilePage() {
 
     if (!cvFilePath) {
       setNextStep({
-        title: "Prochaine étape recommandée",
-        message: "Ajoute ton CV pour améliorer encore la précision de tes matchs.",
-        primary: { label: "Ajouter mon CV", onClick: () => cvInputRef.current?.click() },
-        secondary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
+        title: onboardingFlow ? "Étape suivante : ton CV" : "Prochaine étape recommandée",
+        message: onboardingFlow
+          ? "Ton profil est prêt. Passe au CV pour obtenir des offres mieux ciblées avant d’activer tes alertes."
+          : "Ajoute ton CV pour améliorer encore la précision de tes matchs.",
+        primary: onboardingFlow
+          ? { label: "Continuer vers le CV", to: "/me/cv?flow=onboarding" }
+          : { label: "Ajouter mon CV", onClick: () => cvInputRef.current?.click() },
+        secondary: onboardingFlow
+          ? { label: "Retour au parcours", to: "/jobradar/onboarding?step=cv" }
+          : { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
         tone: "info",
       });
       return;
@@ -414,11 +429,26 @@ export default function ProfilePage() {
 
     if (alertsCount === 0) {
       setNextStep({
-        title: "Prochaine étape recommandée",
-        message: "Crée une alerte pour recevoir des offres plus ciblées.",
-        primary: { label: "Créer une alerte", to: "/jobradar/alerts" },
-        secondary: { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
+        title: onboardingFlow ? "Dernière étape : les alertes" : "Prochaine étape recommandée",
+        message: onboardingFlow
+          ? "Parfait. Active maintenant ta première alerte pour terminer ton parcours."
+          : "Crée une alerte pour recevoir des offres plus ciblées.",
+        primary: { label: "Créer une alerte", to: onboardingFlow ? "/jobradar/alerts?flow=onboarding" : "/jobradar/alerts" },
+        secondary: onboardingFlow
+          ? { label: "Retour au parcours", to: "/jobradar/onboarding?step=alerts" }
+          : { label: "Voir mes offres mises à jour", to: "/jobradar/feed" },
         tone: "info",
+      });
+      return;
+    }
+
+    if (onboardingFlow) {
+      setNextStep({
+        title: "Profil prêt",
+        message: "Ton profil, ton CV et tes alertes sont prêts. Tu peux maintenant ouvrir tes offres au quotidien.",
+        primary: { label: "Ouvrir mes offres", to: "/jobradar/feed" },
+        secondary: { label: "Revenir au parcours", to: "/jobradar/onboarding?step=alerts" },
+        tone: "success",
       });
     }
   }
@@ -442,15 +472,19 @@ export default function ProfilePage() {
     <div className="profile-shell">
       <main className="profile-main">
         <section className="profile-card">
+          {onboardingFlow && (
+            <div style={{ marginBottom: 18 }}>
+              <OnboardingStepper currentStep="complete-profile" completedSteps={["profile", "preferences", "preview", "unlock"]} compact />
+            </div>
+          )}
           <div className="profile-head">
             <div>
               <h1 className="profile-title">Mon profil</h1>
               <p className="profile-sub">
-                Complète tes informations pour améliorer le matching et accélérer tes candidatures.
+                Complète tes informations pour obtenir des offres mieux ciblées et accélérer tes candidatures.
               </p>
             </div>
-
-            <button className="btn btnGhost profile-backBtn" onClick={() => navigate("/")}>Retour au dashboard</button>
+            <button className="btn btnGhost profile-backBtn" onClick={() => navigate(onboardingFlow ? "/jobradar/onboarding?step=complete-profile" : "/")}>Retour</button>
           </div>
 
           {pageLoading ? (

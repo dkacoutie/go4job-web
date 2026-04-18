@@ -10,6 +10,15 @@ type InitBody = {
   partner_referral_source_path?: string | null;
 };
 
+type BillingPlanPriceRow = {
+  id: string;
+  amount_minor: number;
+  currency: string;
+  is_active: boolean;
+  payment_method_type: string | null;
+  country_group: string | null;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -63,6 +72,56 @@ function paystackAmount(amountMinor: number, currency: string) {
   return amountMinor;
 }
 
+async function selectActivePlanPrice(args: {
+  admin: any;
+  planId: string;
+  requestedCurrency: string;
+}): Promise<
+  | { ok: true; price: BillingPlanPriceRow }
+  | { ok: false; status: number; error: string; message?: string }
+> {
+  const currency = clean(args.requestedCurrency).toUpperCase() || "XOF";
+
+  const { data, error } = await args.admin
+    .from("billing_plan_prices")
+    .select("id, amount_minor, currency, is_active, payment_method_type, country_group")
+    .eq("plan_id", args.planId)
+    .eq("currency", currency)
+    .eq("is_active", true);
+
+  if (error) {
+    return {
+      ok: false,
+      status: 500,
+      error: "price_selection_failed",
+      message: error.message,
+    };
+  }
+
+  const prices = ((data ?? []) as BillingPlanPriceRow[]).filter(
+    (entry) => (entry.currency || "").toUpperCase() === currency && entry.is_active === true
+  );
+
+  if (!prices.length) {
+    return {
+      ok: false,
+      status: 404,
+      error: "price_not_found",
+    };
+  }
+
+  if (prices.length > 1) {
+    return {
+      ok: false,
+      status: 409,
+      error: "price_selection_ambiguous",
+      message: `Multiple active ${currency} prices found for the requested plan.`,
+    };
+  }
+
+  return { ok: true, price: prices[0] };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json(405, { ok: false, error: "method_not_allowed" });
@@ -73,7 +132,7 @@ Deno.serve(async (req) => {
   const paystackSecret = cleanSecret(Deno.env.get("PAYSTACK_SECRET_KEY"));
   const callbackUrl = normalizeBaseUrl(clean(Deno.env.get("PAYSTACK_CALLBACK_URL")));
   const webhookUrl = normalizeBaseUrl(clean(Deno.env.get("PAYSTACK_WEBHOOK_URL")));
-  const currencyDefault = clean(Deno.env.get("PAYSTACK_CURRENCY")) || "XOF";
+  const currencyDefault = "XOF";
   const isTestMode = paystackSecret.startsWith("sk_test_");
 
   if (!supabaseUrl || !anonKey || !serviceKey) {
@@ -101,6 +160,13 @@ Deno.serve(async (req) => {
   const partnerReferralSourcePath = clean(body.partner_referral_source_path) || null;
 
   if (!planCode) return json(400, { ok: false, error: "missing_plan_code" });
+  if (currency !== "XOF") {
+    return json(409, {
+      ok: false,
+      error: "checkout_currency_not_enabled",
+      message: "Le checkout actuel reste disponible en XOF le temps d'activer le provider EUR.",
+    });
+  }
 
   const userClient = createClient(supabaseUrl, anonKey, {
     auth: { persistSession: false },
@@ -136,15 +202,21 @@ Deno.serve(async (req) => {
   if (planErr || !plan) return json(404, { ok: false, error: "plan_not_found" });
   if (plan.is_active === false) return json(400, { ok: false, error: "plan_inactive" });
 
-  const { data: price, error: priceErr } = await admin
-    .from("billing_plan_prices")
-    .select("id, amount_minor, currency, is_active, payment_method_type, country_group")
-    .eq("plan_id", plan.id)
-    .eq("currency", currency)
-    .eq("is_active", true)
-    .maybeSingle();
+  const selectedPrice = await selectActivePlanPrice({
+    admin,
+    planId: plan.id,
+    requestedCurrency: currency,
+  });
 
-  if (priceErr || !price) return json(404, { ok: false, error: "price_not_found" });
+  if (!selectedPrice.ok) {
+    return json(selectedPrice.status, {
+      ok: false,
+      error: selectedPrice.error,
+      ...(selectedPrice.message ? { message: selectedPrice.message } : {}),
+    });
+  }
+
+  const price = selectedPrice.price;
 
   const nowIso = new Date().toISOString();
   const { data: activePass } = await admin
