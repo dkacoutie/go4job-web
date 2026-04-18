@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import go4jobLogo from "../assets/go4job-logo.png";
+import { useSession } from "../lib/useSession";
 import "./PublicHeader.css";
 
 const PUBLIC_NAV_ITEMS = [
@@ -8,6 +9,10 @@ const PUBLIC_NAV_ITEMS = [
 ] as const;
 
 export default function PublicHeader() {
+  const { session } = useSession();
+  const actionTo = session ? "/jobradar/feed" : "/auth";
+  const actionLabel = session ? "Mes offres" : "Connexion";
+
   return (
     <div className="public-header">
       <NavLink className="public-header__brand" to="/landing" aria-label="Aller à l’accueil JobRadar">
@@ -33,8 +38,8 @@ export default function PublicHeader() {
       </nav>
 
       <div className="public-header__actions">
-        <NavLink className="public-header__signin" to="/auth">
-          Connexion
+        <NavLink className="public-header__signin" to={actionTo}>
+          {actionLabel}
         </NavLink>
       </div>
     </div>
