@@ -212,6 +212,21 @@ function toPositiveInt(value: unknown) {
   return integer > 0 ? integer : null;
 }
 
+function asPlainObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function toBoundedInt(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+function normalizeAdzunaSortMode(value: unknown): "freshness" | "exploration" {
+  return value === "freshness" ? "freshness" : "exploration";
+}
+
 class JobsUpsertFailedError extends Error {
   inserted: number;
   updated: number;
@@ -1505,11 +1520,20 @@ Deno.serve(async (req) => {
         ? jobSource.ingest_config.subset_label.trim()
         : "staging_small_subset";
       const stagingOnly = Boolean(jobSource.ingest_config?.staging_only ?? false);
-      const defaultParams = jobSource.ingest_config?.default_params &&
-          typeof jobSource.ingest_config.default_params === "object" &&
-          !Array.isArray(jobSource.ingest_config.default_params)
-        ? jobSource.ingest_config.default_params
+      const baseIngestConfig = asPlainObject(jobSource.ingest_config);
+      const runtimeState = asPlainObject(baseIngestConfig.runtime_state);
+      const baseDefaultParams = baseIngestConfig.default_params &&
+          typeof baseIngestConfig.default_params === "object" &&
+          !Array.isArray(baseIngestConfig.default_params)
+        ? asPlainObject(baseIngestConfig.default_params)
         : {};
+      const defaultParamsWithoutSort = Object.fromEntries(
+        Object.entries(baseDefaultParams).filter(([key]) => key !== "sort_by"),
+      );
+      const sortMode = normalizeAdzunaSortMode(baseIngestConfig.sort_mode);
+      const defaultParams = sortMode === "freshness"
+        ? { ...defaultParamsWithoutSort, sort_by: "date" }
+        : defaultParamsWithoutSort;
       const configuredMaxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
       const pageSize = Math.max(
         1,
@@ -1520,6 +1544,9 @@ Deno.serve(async (req) => {
         ? Math.min(5, Math.max(configuredMaxPages, Math.ceil(requestedLimit / pageSize)))
         : configuredMaxPages;
       const maxItems = Math.min(requestedLimit, pageSize * effectiveMaxPages);
+      const startPage = sortMode === "exploration"
+        ? toBoundedInt(runtimeState.next_page, 1, 1, 999)
+        : 1;
 
       const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
       currentRunId = runId;
@@ -1533,6 +1560,7 @@ Deno.serve(async (req) => {
         limit: maxItems,
         maxPages: effectiveMaxPages,
         resultsPerPage: pageSize,
+        startPage,
       });
 
       if (dry_run) {
@@ -1555,6 +1583,10 @@ Deno.serve(async (req) => {
           total_available: data.total_available,
           country_used: data.country_used,
           fallback_used: data.fallback_used,
+          sort_mode: sortMode,
+          start_page: data.start_page,
+          next_page: data.next_page,
+          last_page_fetched: data.last_page_fetched,
           sample: data.items.slice(0, 3),
         });
       }
@@ -1671,6 +1703,27 @@ Deno.serve(async (req) => {
       }
 
       const finishedAt = new Date().toISOString();
+      const rotationBase = inserted + updated;
+      const rotationNewRatio = rotationBase > 0 ? Number((inserted / rotationBase).toFixed(4)) : null;
+      const rotationSeenRatio = rotationBase > 0 ? Number((updated / rotationBase).toFixed(4)) : null;
+      const nextRuntimeState = {
+        ...runtimeState,
+        next_page: sortMode === "exploration" ? data.next_page : 1,
+        last_page_ingested: data.last_page_fetched,
+        last_start_page: data.start_page,
+        last_country_used: data.country_used,
+        last_sort_mode: sortMode,
+        last_limit: maxItems,
+        last_parsed: data.parsed,
+        last_total_available: data.total_available,
+        last_finished_at: finishedAt,
+        last_rotation: {
+          new_count: inserted,
+          seen_count: updated,
+          new_ratio: rotationNewRatio,
+          seen_ratio: rotationSeenRatio,
+        },
+      };
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
         finished_at: finishedAt,
         status: "success",
@@ -1683,6 +1736,11 @@ Deno.serve(async (req) => {
         last_checked_at: finishedAt,
         last_ingested_at: finishedAt,
         last_success_at: finishedAt,
+        ingest_config: {
+          ...baseIngestConfig,
+          sort_mode: sortMode,
+          runtime_state: nextRuntimeState,
+        },
         ...(jobSource.is_active === true && !jobSource.activated_at ? { activated_at: finishedAt } : {}),
       });
 
@@ -1696,6 +1754,14 @@ Deno.serve(async (req) => {
         total_available: data.total_available,
         country_used: data.country_used,
         fallback_used: data.fallback_used,
+        sort_mode: sortMode,
+        start_page: data.start_page,
+        next_page: data.next_page,
+        last_page_fetched: data.last_page_fetched,
+        rotation_new_count: inserted,
+        rotation_seen_count: updated,
+        rotation_new_ratio: rotationNewRatio,
+        rotation_seen_ratio: rotationSeenRatio,
         inserted,
         updated,
         upserted: rows.length,

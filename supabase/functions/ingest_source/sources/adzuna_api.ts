@@ -31,6 +31,7 @@ type FetchAdzunaItemsOptions = {
   limit: number;
   maxPages?: number;
   resultsPerPage?: number;
+  startPage?: number;
 };
 
 const COUNTRY_NAMES: Record<string, string> = {
@@ -439,6 +440,7 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 100));
   const maxPages = Math.max(1, Math.min(Math.trunc(options.maxPages ?? 1), 5));
   const pageSize = Math.max(1, Math.min(Math.trunc(options.resultsPerPage ?? 10), 50));
+  const startPage = Math.max(1, Math.min(Math.trunc(options.startPage ?? 1), 999));
   const normalizedDefaultParams = normalizeDefaultParams(options.defaultParams);
   const failures: string[] = [];
 
@@ -446,7 +448,7 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   let finalUrl = buildSearchUrl(
     searchUrlTemplate,
     countryCandidates[0] ?? "fr",
-    1,
+    startPage,
     pageSize,
     options.appId,
     options.appKey,
@@ -455,6 +457,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   let totalAvailable: number | null = null;
   let countryUsed = countryCandidates[0] ?? "fr";
   let fallbackUsed = false;
+  let lastPageFetched: number | null = null;
+  let nextPage = startPage;
 
   for (let candidateIndex = 0; candidateIndex < countryCandidates.length; candidateIndex += 1) {
     const countryCode = countryCandidates[candidateIndex];
@@ -462,9 +466,13 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     let lastUrl = finalUrl;
     let candidateTotal: number | null = null;
     let hadSuccess = false;
+    let candidateLastPageFetched: number | null = null;
+    let candidateNextPage = startPage;
+    let exhausted = false;
 
     try {
-      for (let page = 1; page <= maxPages && items.length < totalLimit; page += 1) {
+      for (let pageOffset = 0; pageOffset < maxPages && items.length < totalLimit; pageOffset += 1) {
+        const page = startPage + pageOffset;
         const remaining = totalLimit - items.length;
         const currentPageSize = Math.max(1, Math.min(pageSize, remaining));
         const url = buildSearchUrl(
@@ -483,7 +491,11 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
         lastUrl = url;
         candidateTotal = parseTotalAvailable(payload) ?? candidateTotal;
 
-        if (!pageItems.length) break;
+        if (!pageItems.length) {
+          exhausted = true;
+          candidateNextPage = 1;
+          break;
+        }
 
         for (const entry of pageItems) {
           const mapped = mapAdzunaItem(entry, countryCode);
@@ -491,7 +503,14 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
           if (items.length >= totalLimit) break;
         }
 
-        if (pageItems.length < currentPageSize) break;
+        candidateLastPageFetched = page;
+        candidateNextPage = page + 1;
+
+        if (pageItems.length < currentPageSize) {
+          exhausted = true;
+          candidateNextPage = 1;
+          break;
+        }
       }
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
@@ -506,6 +525,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     totalAvailable = candidateTotal;
     countryUsed = countryCode;
     fallbackUsed = candidateIndex > 0;
+    lastPageFetched = candidateLastPageFetched;
+    nextPage = exhausted ? 1 : candidateNextPage;
 
     if (items.length > 0 || candidateIndex === countryCandidates.length - 1 || !hadSuccess) {
       break;
@@ -519,5 +540,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     total_available: totalAvailable,
     country_used: countryUsed,
     fallback_used: fallbackUsed,
+    start_page: startPage,
+    last_page_fetched: lastPageFetched,
+    next_page: nextPage,
   };
 }
