@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { fetchAejItems } from "./sources/aej_html.ts";
 import { fetchCoordinationSudItems } from "./sources/coordination_sud.ts";
+import { fetchAdzunaItems } from "./sources/adzuna_api.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
 import { fetchFedAfricaItems } from "./sources/fedafrica.ts";
 import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
@@ -1469,31 +1470,210 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const configuredPageSize = Math.max(
+      const appId = mustEnv("ADZUNA_APP_ID");
+      const appKey = mustEnv("ADZUNA_APP_KEY");
+      const searchUrlTemplate = typeof jobSource.ingest_config?.search_url_template === "string" &&
+          jobSource.ingest_config.search_url_template.trim()
+        ? jobSource.ingest_config.search_url_template.trim()
+        : "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}";
+      const defaultCountry = typeof jobSource.ingest_config?.default_country === "string" &&
+          jobSource.ingest_config.default_country.trim()
+        ? jobSource.ingest_config.default_country.trim()
+        : "fr";
+      const fallbackCountry = typeof jobSource.ingest_config?.fallback_country === "string" &&
+          jobSource.ingest_config.fallback_country.trim()
+        ? jobSource.ingest_config.fallback_country.trim()
+        : null;
+      const subsetLabel = typeof jobSource.ingest_config?.subset_label === "string" &&
+          jobSource.ingest_config.subset_label.trim()
+        ? jobSource.ingest_config.subset_label.trim()
+        : "staging_small_subset";
+      const stagingOnly = Boolean(jobSource.ingest_config?.staging_only ?? false);
+      const defaultParams = jobSource.ingest_config?.default_params &&
+          typeof jobSource.ingest_config.default_params === "object" &&
+          !Array.isArray(jobSource.ingest_config.default_params)
+        ? jobSource.ingest_config.default_params
+        : {};
+      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
+      const pageSize = Math.max(
         1,
         Math.min(50, Number(jobSource.ingest_config?.results_per_page ?? 10)),
       );
-      const requestedLimit = Math.max(1, Math.min(50, limit));
+      const requestedLimit = Math.max(1, Math.min(100, limit));
+      const maxItems = Math.min(requestedLimit, pageSize * maxPages);
 
-      return json(
-        {
-          ok: dry_run,
+      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      currentRunId = runId;
+      const data = await fetchAdzunaItems({
+        appId,
+        appKey,
+        searchUrlTemplate,
+        defaultCountry,
+        fallbackCountry,
+        defaultParams,
+        limit: maxItems,
+        maxPages,
+        resultsPerPage: pageSize,
+      });
+
+      if (dry_run) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "success",
+          ok: true,
+          fetched_count: data.items.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
+        return json({
+          ok: true,
           source_code,
-          limit: Math.min(configuredPageSize, requestedLimit),
-          dry_run,
-          status: "adzuna_api_staging_pending",
-          message:
-            "Adzuna est configuree en staging. L'ingestion API sera branchee a l'etape 2.",
-          config_preview: {
-            search_url_template: jobSource.ingest_config?.search_url_template ?? null,
-            default_country: jobSource.ingest_config?.default_country ?? null,
-            fallback_country: jobSource.ingest_config?.fallback_country ?? null,
-            staging_only: Boolean(jobSource.ingest_config?.staging_only ?? false),
-            subset_label: jobSource.ingest_config?.subset_label ?? null,
+          limit: maxItems,
+          dry_run: true,
+          status: "dry_run_parsed",
+          list_url: data.list_url,
+          parsed: data.parsed,
+          total_available: data.total_available,
+          country_used: data.country_used,
+          fallback_used: data.fallback_used,
+          sample: data.items.slice(0, 3),
+        });
+      }
+
+      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const now = new Date().toISOString();
+
+      const rows = [];
+      for (const item of data.items) {
+        const sourceUrl = normalizeOptionalUrl(item.source_url) ??
+          normalizeOptionalUrl(item.apply_url);
+        const applyUrl = normalizeOptionalUrl(item.apply_url) ?? sourceUrl;
+        const location = item.location ?? jobSource.region ?? null;
+        const companyName = item.company_name ?? null;
+        const identity = await buildCrossSourceJobIdentity({
+          title: item.title,
+          companyName,
+          location,
+          sourceUrl,
+          applyUrl,
+        });
+        const descriptionText = item.description_text ?? null;
+        const jobType = detectJobType(
+          item.title,
+          `${descriptionText ?? ""} ${item.contract_type ?? ""}`,
+        );
+        const externalId = item.external_id?.trim()
+          ? item.external_id.trim()
+          : await buildExternalId(source_code, {
+            title: item.title,
+            company_name: companyName,
+            location,
+            country: item.country,
+            contract_type: item.contract_type,
+            description_html: null,
+            description_text: descriptionText,
+            source_url: sourceUrl ?? applyUrl ?? data.list_url,
+            apply_url: applyUrl,
+            published_at: item.published_at,
+            expires_at: item.expires_at,
+            is_expired: item.is_expired,
+          });
+
+        rows.push({
+          job_source_id: jobSource.id,
+          external_id: externalId,
+          title: item.title,
+          company_name: companyName,
+          location,
+          country: item.country ?? jobSource.country ?? null,
+          country_codes: item.country_code ? [item.country_code] : null,
+          remote_type: item.remote_type,
+          contract_type: item.contract_type,
+          seniority: null,
+          salary_min: item.salary_min,
+          salary_max: item.salary_max,
+          salary_currency: item.salary_currency,
+          salary_period: null,
+          description_html: null,
+          description_text: descriptionText,
+          apply_url: applyUrl,
+          source_url: sourceUrl,
+          canonical_url: identity.canonicalUrl,
+          dedupe_identity_key: identity.dedupeIdentityKey,
+          cross_source_fingerprint: identity.crossSourceFingerprint,
+          tags: item.tags ?? [],
+          posted_at: item.published_at,
+          published_at: item.published_at,
+          expires_at: item.expires_at,
+          scraped_at: now,
+          updated_at: now,
+          last_seen_at: now,
+          is_active: item.is_expired ? false : true,
+          is_expired: item.is_expired,
+          job_status: deriveJobStatus(item.is_expired),
+          job_type: jobType,
+          job_json: {
+            source_code,
+            provider: "adzuna_api",
+            endpoint: data.list_url,
+            staging_only: stagingOnly,
+            subset_label: subsetLabel,
+            attribution: {
+              name: "Adzuna",
+              url: "https://www.adzuna.com/",
+            },
+            country_used: data.country_used,
+            fallback_used: data.fallback_used,
+            total_available: data.total_available,
+            ad_id: item.ad_id,
+            country_code: item.country_code,
+            default_params: defaultParams,
+            raw: item.payload,
           },
-        },
-        dry_run ? 200 : 501,
-      );
+        });
+      }
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
+      } catch (upErr) {
+        const err = upErr as Error;
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
+        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+      }
+
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        limit: maxItems,
+        dry_run: false,
+        status: "adzuna_api_upserted",
+        parsed: data.parsed,
+        total_available: data.total_available,
+        country_used: data.country_used,
+        fallback_used: data.fallback_used,
+        inserted,
+        updated,
+        upserted: rows.length,
+      });
     }
 
     if (method === "scrape_generic") {
