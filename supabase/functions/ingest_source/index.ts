@@ -125,6 +125,21 @@ async function finishRun(
   }
 }
 
+async function patchJobSourceMetadata(
+  supabaseUrl: string,
+  serviceKey: string,
+  jobSourceId: string | null | undefined,
+  patch: Record<string, unknown>,
+) {
+  if (!jobSourceId) return;
+  try {
+    const url = `${supabaseUrl}/rest/v1/job_sources?id=eq.${encodeURIComponent(jobSourceId)}`;
+    await sbPatch(url, serviceKey, patch);
+  } catch {
+    // best effort only
+  }
+}
+
 async function sha256Hex(s: string) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf))
@@ -400,7 +415,7 @@ Deno.serve(async (req) => {
     // Fetch job source by code (for rss_generic)
     const jobSourceUrl =
       `${supabaseUrl}/rest/v1/job_sources?select=` +
-      `id,code,name,ingest_method,ingest_config,is_active,ingest_status,country,region,priority` +
+      `id,code,name,ingest_method,ingest_config,is_active,ingest_status,country,region,priority,activated_at,last_ingested_at,last_success_at,last_checked_at` +
       `&code=eq.${encodeURIComponent(source_code)}&limit=1`;
 
     const jobSourceArr = await sbGet<any[]>(jobSourceUrl, serviceKey);
@@ -1655,13 +1670,20 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
       }
 
+      const finishedAt = new Date().toISOString();
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         status: "success",
         ok: true,
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ...(jobSource.is_active === true && !jobSource.activated_at ? { activated_at: finishedAt } : {}),
       });
 
       return json({
