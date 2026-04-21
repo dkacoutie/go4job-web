@@ -49,6 +49,26 @@ const COUNTRY_NAMES: Record<string, string> = {
   za: "South Africa",
 };
 
+const COUNTRY_NAME_ALIASES: Record<string, string> = {
+  algeria: "dz",
+  cameroon: "cm",
+  "cote d'ivoire": "ci",
+  "cote divoire": "ci",
+  egypt: "eg",
+  france: "fr",
+  ghana: "gh",
+  kenya: "ke",
+  morocco: "ma",
+  nigeria: "ng",
+  senegal: "sn",
+  tunisia: "tn",
+  "south africa": "za",
+  "united kingdom": "gb",
+  "great britain": "gb",
+  uk: "gb",
+  "ivory coast": "ci",
+};
+
 const COUNTRY_CURRENCIES: Record<string, string> = {
   ci: "XOF",
   cm: "XAF",
@@ -155,19 +175,37 @@ function normalizeCountryCode(value: unknown): string | null {
   return /^[a-z]{2}$/.test(normalized) ? normalized : null;
 }
 
-function normalizeCountryName(value: unknown, fallbackCountryCode?: string | null) {
+function normalizeCountryLookupKey(value: unknown) {
   const text = safeStr(value);
-  if (text) {
-    const normalizedCode = normalizeCountryCode(text);
-    if (normalizedCode && COUNTRY_NAMES[normalizedCode]) return COUNTRY_NAMES[normalizedCode];
-    return text;
+  if (!text) return null;
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || null;
+}
+
+function resolveCountryInfo(value: unknown, fallbackCountryCode?: string | null) {
+  const code = normalizeCountryCode(value);
+  if (code && COUNTRY_NAMES[code]) {
+    return { country: COUNTRY_NAMES[code], country_code: code };
+  }
+
+  const lookupKey = normalizeCountryLookupKey(value);
+  if (lookupKey) {
+    const aliasCode = COUNTRY_NAME_ALIASES[lookupKey];
+    if (aliasCode && COUNTRY_NAMES[aliasCode]) {
+      return { country: COUNTRY_NAMES[aliasCode], country_code: aliasCode };
+    }
   }
 
   if (fallbackCountryCode && COUNTRY_NAMES[fallbackCountryCode]) {
-    return COUNTRY_NAMES[fallbackCountryCode];
+    return { country: COUNTRY_NAMES[fallbackCountryCode], country_code: fallbackCountryCode };
   }
 
-  return null;
+  return { country: null, country_code: null };
 }
 
 function normalizeSalaryCurrency(value: unknown, fallbackCountryCode?: string | null) {
@@ -310,11 +348,21 @@ function extractLocationInfo(job: Record<string, unknown>, fallbackCountryCode: 
     : [];
   const fallbackLocation = area.length ? area.join(", ") : null;
   const location = displayName ?? fallbackLocation;
-  const areaCountry = area.length ? area[area.length - 1] : null;
+  const explicitCountryValue =
+    locationRecord?.country ??
+    locationRecord?.country_code ??
+    locationRecord?.countryCode ??
+    job.country ??
+    job.country_code ??
+    job.countryCode;
+  const areaCountry =
+    area.find((entry) => resolveCountryInfo(entry).country_code !== null) ?? null;
+  const countryInfo = resolveCountryInfo(explicitCountryValue ?? areaCountry, fallbackCountryCode);
 
   return {
     location,
-    country: normalizeCountryName(areaCountry, fallbackCountryCode),
+    country: countryInfo.country,
+    country_code: countryInfo.country_code,
   };
 }
 
@@ -336,7 +384,7 @@ function mapAdzunaItem(input: unknown, fallbackCountryCode: string | null): Adzu
   const expiresAt = safeIsoDate(job.expiry_date ?? job.expiration_date ?? job.expires_at);
   const sourceUrl = safeStr(job.redirect_url ?? job.redirectUrl ?? job.url ?? job.adref);
   const applyUrl = safeStr(job.redirect_url ?? job.redirectUrl ?? job.adref ?? job.url);
-  const countryCode = fallbackCountryCode;
+  const countryCode = locationInfo.country_code ?? fallbackCountryCode;
 
   if (!sourceUrl && !applyUrl) return null;
 
