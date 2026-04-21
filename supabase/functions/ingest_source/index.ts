@@ -386,6 +386,7 @@ Deno.serve(async (req) => {
   const source_code = body?.source_code;
   const limit = Number(body?.limit ?? 30);
   const dry_run = Boolean(body?.dry_run ?? false);
+  const hasRequestedLimit = body?.limit !== undefined && body?.limit !== null;
 
   if (!source_code || typeof source_code !== "string") {
     return json({ ok: false, error: "missing_source_code" }, 400);
@@ -1494,13 +1495,16 @@ Deno.serve(async (req) => {
           !Array.isArray(jobSource.ingest_config.default_params)
         ? jobSource.ingest_config.default_params
         : {};
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
+      const configuredMaxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
       const pageSize = Math.max(
         1,
         Math.min(50, Number(jobSource.ingest_config?.results_per_page ?? 10)),
       );
       const requestedLimit = Math.max(1, Math.min(100, limit));
-      const maxItems = Math.min(requestedLimit, pageSize * maxPages);
+      const effectiveMaxPages = hasRequestedLimit
+        ? Math.min(5, Math.max(configuredMaxPages, Math.ceil(requestedLimit / pageSize)))
+        : configuredMaxPages;
+      const maxItems = Math.min(requestedLimit, pageSize * effectiveMaxPages);
 
       const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
       currentRunId = runId;
@@ -1512,7 +1516,7 @@ Deno.serve(async (req) => {
         fallbackCountry,
         defaultParams,
         limit: maxItems,
-        maxPages,
+        maxPages: effectiveMaxPages,
         resultsPerPage: pageSize,
       });
 
