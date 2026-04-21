@@ -1464,6 +1464,38 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (method === "api_adzuna") {
+      if (jobSource.is_active === false && !dry_run) {
+        return json({ ok: false, error: "job_source_inactive" }, 400);
+      }
+
+      const configuredPageSize = Math.max(
+        1,
+        Math.min(50, Number(jobSource.ingest_config?.results_per_page ?? 10)),
+      );
+      const requestedLimit = Math.max(1, Math.min(50, limit));
+
+      return json(
+        {
+          ok: dry_run,
+          source_code,
+          limit: Math.min(configuredPageSize, requestedLimit),
+          dry_run,
+          status: "adzuna_api_staging_pending",
+          message:
+            "Adzuna est configuree en staging. L'ingestion API sera branchee a l'etape 2.",
+          config_preview: {
+            search_url_template: jobSource.ingest_config?.search_url_template ?? null,
+            default_country: jobSource.ingest_config?.default_country ?? null,
+            fallback_country: jobSource.ingest_config?.fallback_country ?? null,
+            staging_only: Boolean(jobSource.ingest_config?.staging_only ?? false),
+            subset_label: jobSource.ingest_config?.subset_label ?? null,
+          },
+        },
+        dry_run ? 200 : 501,
+      );
+    }
+
     if (method === "scrape_generic") {
       if (jobSource.is_active === false && !dry_run) {
         return json({ ok: false, error: "job_source_inactive" }, 400);
