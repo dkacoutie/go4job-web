@@ -53,7 +53,11 @@ async function sbGet<T>(url: string, serviceKey: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function sbInsertOne<T>(url: string, serviceKey: string, row: unknown): Promise<T> {
+async function sbInsertOne<T>(
+  url: string,
+  serviceKey: string,
+  row: unknown,
+): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -70,7 +74,11 @@ async function sbInsertOne<T>(url: string, serviceKey: string, row: unknown): Pr
   return (await res.json()) as T;
 }
 
-async function sbPatch<T>(url: string, serviceKey: string, patch: unknown): Promise<T> {
+async function sbPatch<T>(
+  url: string,
+  serviceKey: string,
+  patch: unknown,
+): Promise<T> {
   const res = await fetch(url, {
     method: "PATCH",
     headers: {
@@ -118,7 +126,9 @@ async function finishRun(
 ) {
   if (!runId) return;
   try {
-    const url = `${supabaseUrl}/rest/v1/job_source_runs?id=eq.${encodeURIComponent(runId)}`;
+    const url = `${supabaseUrl}/rest/v1/job_source_runs?id=eq.${
+      encodeURIComponent(runId)
+    }`;
     await sbPatch(url, serviceKey, patch);
   } catch {
     // best effort only
@@ -133,7 +143,9 @@ async function patchJobSourceMetadata(
 ) {
   if (!jobSourceId) return;
   try {
-    const url = `${supabaseUrl}/rest/v1/job_sources?id=eq.${encodeURIComponent(jobSourceId)}`;
+    const url = `${supabaseUrl}/rest/v1/job_sources?id=eq.${
+      encodeURIComponent(jobSourceId)
+    }`;
     await sbPatch(url, serviceKey, patch);
   } catch {
     // best effort only
@@ -141,7 +153,10 @@ async function patchJobSourceMetadata(
 }
 
 async function sha256Hex(s: string) {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(s),
+  );
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -173,8 +188,13 @@ function parseTitleCompany(rawTitle: string) {
 function detectJobType(title: string, desc: string) {
   const text = `${title} ${desc}`.toLowerCase();
   if (/(volunteer|volunteering|volontariat)/.test(text)) return "volunteering";
-  if (/(alternance|apprentissage|apprenticeship|apprenti)/.test(text)) return "apprenticeship";
-  if (/(internship|intern\b|trainee|stagiaire|stage|graduate programme|graduate program)/.test(text)) {
+  if (/(alternance|apprentissage|apprenticeship|apprenti)/.test(text)) {
+    return "apprenticeship";
+  }
+  if (
+    /(internship|intern\b|trainee|stagiaire|stage|graduate programme|graduate program)/
+      .test(text)
+  ) {
     return "internship";
   }
   return null;
@@ -217,7 +237,12 @@ function asPlainObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function toBoundedInt(value: unknown, fallback: number, min: number, max: number) {
+function toBoundedInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
@@ -225,6 +250,112 @@ function toBoundedInt(value: unknown, fallback: number, min: number, max: number
 
 function normalizeAdzunaSortMode(value: unknown): "freshness" | "exploration" {
   return value === "freshness" ? "freshness" : "exploration";
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const ADZUNA_ACTIVE_WINDOW_DAYS = 60;
+
+function roundMetric(value: number | null, decimals = 2) {
+  if (value === null || !Number.isFinite(value)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function computeOfferFreshnessMetrics(
+  items: Array<{ published_at?: string | null }>,
+  referenceDate = new Date(),
+) {
+  const referenceTime = referenceDate.getTime();
+  const offerAgesDays: number[] = [];
+
+  for (const item of items) {
+    const publishedAt = typeof item?.published_at === "string"
+      ? item.published_at.trim()
+      : "";
+    if (!publishedAt) continue;
+
+    const publishedTime = Date.parse(publishedAt);
+    if (!Number.isFinite(publishedTime)) continue;
+
+    const ageDays = Math.max(0, (referenceTime - publishedTime) / MS_PER_DAY);
+    offerAgesDays.push(ageDays);
+  }
+
+  if (offerAgesDays.length === 0) {
+    return {
+      avg_offer_age_days: null,
+      pct_offers_under_7_days: null,
+      median_offer_age_days: null,
+      pct_offers_under_3_days: null,
+    };
+  }
+
+  const sortedAgesDays = [...offerAgesDays].sort((a, b) => a - b);
+  const avgAgeDays = sortedAgesDays.reduce((sum, value) => sum + value, 0) /
+    sortedAgesDays.length;
+  const middleIndex = Math.floor(sortedAgesDays.length / 2);
+  const medianAgeDays = sortedAgesDays.length % 2 === 0
+    ? (sortedAgesDays[middleIndex - 1] + sortedAgesDays[middleIndex]) / 2
+    : sortedAgesDays[middleIndex];
+  const pctUnderDays = (thresholdDays: number) =>
+    (sortedAgesDays.filter((value) => value < thresholdDays).length * 100) /
+    sortedAgesDays.length;
+
+  return {
+    avg_offer_age_days: roundMetric(avgAgeDays),
+    pct_offers_under_7_days: roundMetric(pctUnderDays(7)),
+    median_offer_age_days: roundMetric(medianAgeDays),
+    pct_offers_under_3_days: roundMetric(pctUnderDays(3)),
+  };
+}
+
+function normalizeAdzunaExplicitExpiresAt(
+  payload: Record<string, unknown> | null | undefined,
+) {
+  const raw = asPlainObject(payload);
+  const candidate = raw.expiry_date ?? raw.expiration_date ?? raw.expires_at;
+  const text = typeof candidate === "string"
+    ? candidate.trim()
+    : typeof candidate === "number"
+    ? String(candidate)
+    : null;
+
+  if (!text) return null;
+
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function normalizeAdzunaLifecycle(
+  item: {
+    published_at?: string | null;
+    payload?: Record<string, unknown> | null;
+  },
+  referenceDate = new Date(),
+) {
+  const referenceTime = referenceDate.getTime();
+  const publishedAt =
+    typeof item.published_at === "string" && item.published_at.trim()
+      ? item.published_at.trim()
+      : null;
+  const explicitExpiresAt = normalizeAdzunaExplicitExpiresAt(item.payload);
+  const publishedTime = publishedAt ? Date.parse(publishedAt) : Number.NaN;
+  const publishedIsRecent = Number.isFinite(publishedTime) &&
+    Math.max(0, (referenceTime - publishedTime) / MS_PER_DAY) <=
+      ADZUNA_ACTIVE_WINDOW_DAYS;
+  const explicitExpiryPassed = explicitExpiresAt
+    ? Date.parse(explicitExpiresAt) <= referenceTime
+    : false;
+  const shouldBeActive = publishedIsRecent && !explicitExpiryPassed;
+  const shouldBeExpired = !shouldBeActive;
+
+  return {
+    published_at: publishedAt,
+    expires_at: explicitExpiresAt,
+    is_active: shouldBeActive,
+    is_expired: shouldBeExpired,
+    job_status: deriveJobStatus(shouldBeExpired),
+  };
 }
 
 class JobsUpsertFailedError extends Error {
@@ -259,13 +390,17 @@ async function upsertJobsWithStats(
     if (existingErr) throw existingErr;
     existingIds = new Set(
       (existingRows ?? [])
-        .map((row: { external_id?: string | null }) => (row.external_id ?? "").trim())
+        .map((row: { external_id?: string | null }) =>
+          (row.external_id ?? "").trim()
+        )
         .filter(Boolean),
     );
   }
 
-  const inserted = externalIds.filter((externalId) => !existingIds.has(externalId)).length;
-  const updated = externalIds.filter((externalId) => existingIds.has(externalId)).length;
+  const inserted =
+    externalIds.filter((externalId) => !existingIds.has(externalId)).length;
+  const updated =
+    externalIds.filter((externalId) => existingIds.has(externalId)).length;
   const requestedBatchSize = toPositiveInt(options?.batchSize);
   const fallbackBatchSize = uniqueRows.length || 1;
   const batchSize = Math.max(
@@ -280,15 +415,23 @@ async function upsertJobsWithStats(
     const chunkExternalIds = chunk
       .map((row) => (row.external_id ?? "").trim())
       .filter(Boolean);
-    const chunkInserted = chunkExternalIds.filter((externalId) => !existingIds.has(externalId)).length;
-    const chunkUpdated = chunkExternalIds.filter((externalId) => existingIds.has(externalId)).length;
+    const chunkInserted = chunkExternalIds.filter((externalId) =>
+      !existingIds.has(externalId)
+    ).length;
+    const chunkUpdated = chunkExternalIds.filter((externalId) =>
+      existingIds.has(externalId)
+    ).length;
 
     const { error: upErr } = await supabase
       .from("jobs")
       .upsert(chunk, { onConflict: "external_id" });
 
     if (upErr) {
-      throw new JobsUpsertFailedError(upErr.message, insertedCommitted, updatedCommitted);
+      throw new JobsUpsertFailedError(
+        upErr.message,
+        insertedCommitted,
+        updatedCommitted,
+      );
     }
 
     insertedCommitted += chunkInserted;
@@ -319,7 +462,9 @@ async function buildExternalId(sourceCode: string, item: ScrapedItem) {
   if (raw) return raw;
   const normalizedTitle = (item.title ?? "").replace(/\s+/g, " ").trim();
   const normalizedSourceUrl = normalizeOptionalUrl(item.source_url) ?? "";
-  const seed = `${normalizedTitle}|${normalizedSourceUrl}|${item.published_at ?? ""}`;
+  const seed = `${normalizedTitle}|${normalizedSourceUrl}|${
+    item.published_at ?? ""
+  }`;
   const hash = await sha256Hex(seed);
   return `${sourceCode}:${hash}`;
 }
@@ -338,7 +483,8 @@ async function mapScrapedItemsToRows(
     const title = (it.title || "Offre d'emploi").trim();
     const desc = it.description_text || "";
     const jobType = detectJobType(title, desc);
-    const sourceUrl = normalizeOptionalUrl(it.source_url) ?? normalizeOptionalUrl(it.apply_url);
+    const sourceUrl = normalizeOptionalUrl(it.source_url) ??
+      normalizeOptionalUrl(it.apply_url);
     const applyUrl = normalizeOptionalUrl(it.apply_url) ?? sourceUrl;
     const location = it.location ?? jobSource.region ?? null;
     const companyName = it.company_name ?? null;
@@ -394,16 +540,24 @@ async function mapScrapedItemsToRows(
 
 Deno.serve(async (req) => {
   // Healthcheck
-  if (req.method === "GET") return json({ ok: true, status: "ingest_source_alive" });
+  if (req.method === "GET") {
+    return json({ ok: true, status: "ingest_source_alive" });
+  }
 
-  if (req.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  if (req.method !== "POST") {
+    return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
 
   // Auth via x-cron-secret
   const expected = Deno.env.get("CRON_SECRET");
-  if (!expected) return json({ ok: false, error: "CRON_SECRET_not_set_in_env" }, 500);
+  if (!expected) {
+    return json({ ok: false, error: "CRON_SECRET_not_set_in_env" }, 500);
+  }
 
   const provided = req.headers.get("x-cron-secret");
-  if (provided !== expected) return json({ ok: false, error: "unauthorized" }, 401);
+  if (provided !== expected) {
+    return json({ ok: false, error: "unauthorized" }, 401);
+  }
 
   // Body JSON
   let body: any;
@@ -428,8 +582,7 @@ Deno.serve(async (req) => {
     const serviceKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
 
     // Fetch job source by code (for rss_generic)
-    const jobSourceUrl =
-      `${supabaseUrl}/rest/v1/job_sources?select=` +
+    const jobSourceUrl = `${supabaseUrl}/rest/v1/job_sources?select=` +
       `id,code,name,ingest_method,ingest_config,is_active,ingest_status,country,region,priority,activated_at,last_ingested_at,last_success_at,last_checked_at` +
       `&code=eq.${encodeURIComponent(source_code)}&limit=1`;
 
@@ -437,7 +590,12 @@ Deno.serve(async (req) => {
     const jobSource = jobSourceArr?.[0] ?? null;
 
     if (source_code === "emploi_ci") {
-      const runId = await createRun(supabaseUrl, serviceKey, "ed25b64d-ace6-4296-8985-46702d58785d", "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        "ed25b64d-ace6-4296-8985-46702d58785d",
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchEmploiCiItems(limit);
 
@@ -537,8 +695,7 @@ Deno.serve(async (req) => {
           await sbInsertOne(jobsBase, serviceKey, row);
           inserted++;
         } else {
-          const patchUrl =
-            `${jobsBase}?job_source_id=eq.${job_source_id}` +
+          const patchUrl = `${jobsBase}?job_source_id=eq.${job_source_id}` +
             `&external_id=eq.${encodeURIComponent(external_id)}`;
 
           await sbPatch(patchUrl, serviceKey, baseRow);
@@ -580,11 +737,25 @@ Deno.serve(async (req) => {
 
       const listUrl = jobSource.ingest_config?.list_url ||
         "https://www.agenceemploijeunes.ci/site/offres-emplois";
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)));
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
+      );
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
 
@@ -609,12 +780,17 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const now = new Date().toISOString();
 
       const rows = await Promise.all(data.items.map(async (it) => {
         const desc = it.description_text || "";
-        const jobType = detectJobType(it.title, `${desc} ${it.contract_type ?? ""}`);
+        const jobType = detectJobType(
+          it.title,
+          `${desc} ${it.contract_type ?? ""}`,
+        );
         const location = it.location || jobSource.region || null;
         const identity = await buildCrossSourceJobIdentity({
           title: it.title,
@@ -679,7 +855,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -709,14 +889,34 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const listUrl = jobSource.ingest_config?.list_url || "https://www.fedafrica.com/offres";
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)));
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const listUrl = jobSource.ingest_config?.list_url ||
+        "https://www.fedafrica.com/offres";
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
+      );
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
-      const data = await fetchFedAfricaItems(listUrl, maxPages, maxItems, delayMs);
+      const data = await fetchFedAfricaItems(
+        listUrl,
+        maxPages,
+        maxItems,
+        delayMs,
+      );
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -739,7 +939,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const rows = await mapScrapedItemsToRows(
         data.items as ScrapedItem[],
         jobSource,
@@ -762,7 +964,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -792,14 +998,34 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const listUrl = jobSource.ingest_config?.list_url || "https://bceao2.tzportal.io/fr/jobs";
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const listUrl = jobSource.ingest_config?.list_url ||
+        "https://bceao2.tzportal.io/fr/jobs";
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+      );
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
-      const data = await fetchTzportalItems(listUrl, maxPages, maxItems, delayMs);
+      const data = await fetchTzportalItems(
+        listUrl,
+        maxPages,
+        maxItems,
+        delayMs,
+      );
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -822,7 +1048,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const rows = await mapScrapedItemsToRows(
         data.items as ScrapedItem[],
         jobSource,
@@ -845,7 +1073,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -875,14 +1107,34 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const listUrl = jobSource.ingest_config?.list_url || "https://www.coordinationsud.org/espace-emploi/";
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)));
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 40)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const listUrl = jobSource.ingest_config?.list_url ||
+        "https://www.coordinationsud.org/espace-emploi/";
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
+      );
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 40)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
-      const data = await fetchCoordinationSudItems(listUrl, maxPages, maxItems, delayMs);
+      const data = await fetchCoordinationSudItems(
+        listUrl,
+        maxPages,
+        maxItems,
+        delayMs,
+      );
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -905,7 +1157,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const rows = await mapScrapedItemsToRows(
         data.items as ScrapedItem[],
         jobSource,
@@ -928,7 +1182,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -961,12 +1219,28 @@ Deno.serve(async (req) => {
       const listUrl = jobSource.ingest_config?.list_url ||
         "https://www.uneca.org/fr/%C3%A0-propos/opportunit%C3%A9s";
       const fallbackUrl = jobSource.ingest_config?.fallback_url || null;
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
-      const data = await fetchUnecaItems(listUrl, fallbackUrl, maxItems, delayMs);
+      const data = await fetchUnecaItems(
+        listUrl,
+        fallbackUrl,
+        maxItems,
+        delayMs,
+      );
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -989,7 +1263,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const rows = await mapScrapedItemsToRows(
         data.items as ScrapedItem[],
         jobSource,
@@ -1012,7 +1288,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1044,9 +1324,17 @@ Deno.serve(async (req) => {
 
       const companyId = jobSource.ingest_config?.company_id || "TALENT2AFRICA";
       const apiKey = jobSource.ingest_config?.api_key || null;
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)));
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)),
+      );
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchSmartRecruitersItems(companyId, maxItems, apiKey);
 
@@ -1071,7 +1359,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const rows = await mapScrapedItemsToRows(
         data.items as ScrapedItem[],
         jobSource,
@@ -1094,7 +1384,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1124,31 +1418,53 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const apiUrl = jobSource.ingest_config?.api_url || "https://himalayas.app/jobs/api";
-      const searchUrl = jobSource.ingest_config?.search_url || "https://himalayas.app/jobs/api/search";
-      const attributionName = typeof jobSource.ingest_config?.attribution_name === "string" &&
+      const apiUrl = jobSource.ingest_config?.api_url ||
+        "https://himalayas.app/jobs/api";
+      const searchUrl = jobSource.ingest_config?.search_url ||
+        "https://himalayas.app/jobs/api/search";
+      const attributionName =
+        typeof jobSource.ingest_config?.attribution_name === "string" &&
           jobSource.ingest_config.attribution_name.trim()
-        ? jobSource.ingest_config.attribution_name.trim()
-        : "Himalayas";
-      const attributionUrl = typeof jobSource.ingest_config?.attribution_url === "string" &&
+          ? jobSource.ingest_config.attribution_name.trim()
+          : "Himalayas";
+      const attributionUrl =
+        typeof jobSource.ingest_config?.attribution_url === "string" &&
           jobSource.ingest_config.attribution_url.trim()
-        ? jobSource.ingest_config.attribution_url.trim()
-        : "https://himalayas.app/jobs";
-      const subsetLabel = typeof jobSource.ingest_config?.subset_label === "string" &&
+          ? jobSource.ingest_config.attribution_url.trim()
+          : "https://himalayas.app/jobs";
+      const subsetLabel =
+        typeof jobSource.ingest_config?.subset_label === "string" &&
           jobSource.ingest_config.subset_label.trim()
-        ? jobSource.ingest_config.subset_label.trim()
-        : "staging_small_subset";
-      const stagingOnly = Boolean(jobSource.ingest_config?.staging_only ?? false);
-      const searchQuery = typeof jobSource.ingest_config?.search_query === "string"
-        ? jobSource.ingest_config.search_query
-        : null;
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
-      const startOffset = Math.max(0, Math.trunc(Number(jobSource.ingest_config?.offset ?? 0)));
-      const configuredLimit = Math.max(1, Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)));
+          ? jobSource.ingest_config.subset_label.trim()
+          : "staging_small_subset";
+      const stagingOnly = Boolean(
+        jobSource.ingest_config?.staging_only ?? false,
+      );
+      const searchQuery =
+        typeof jobSource.ingest_config?.search_query === "string"
+          ? jobSource.ingest_config.search_query
+          : null;
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+      );
+      const startOffset = Math.max(
+        0,
+        Math.trunc(Number(jobSource.ingest_config?.offset ?? 0)),
+      );
+      const configuredLimit = Math.max(
+        1,
+        Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)),
+      );
       const requestedLimit = Math.max(1, Math.min(20, limit));
       const maxItems = Math.min(configuredLimit, requestedLimit);
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchHimalayasItems({
         apiUrl,
@@ -1180,7 +1496,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const now = new Date().toISOString();
 
       const rows = [];
@@ -1188,7 +1506,8 @@ Deno.serve(async (req) => {
         const preferredSourceUrl = normalizeOptionalUrl(item.canonical_url) ??
           normalizeOptionalUrl(item.source_url) ??
           normalizeOptionalUrl(item.apply_url);
-        const applyUrl = normalizeOptionalUrl(item.apply_url) ?? preferredSourceUrl;
+        const applyUrl = normalizeOptionalUrl(item.apply_url) ??
+          preferredSourceUrl;
         const canonicalSeedUrl = preferredSourceUrl ?? applyUrl;
         const identity = await buildCrossSourceJobIdentity({
           title: item.title,
@@ -1277,7 +1596,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1309,11 +1632,12 @@ Deno.serve(async (req) => {
 
       const clientId = mustEnv("FRANCE_TRAVAIL_CLIENT_ID");
       const clientSecret = mustEnv("FRANCE_TRAVAIL_CLIENT_SECRET");
-      const searchUrl = typeof jobSource.ingest_config?.search_url === "string" &&
+      const searchUrl =
+        typeof jobSource.ingest_config?.search_url === "string" &&
           jobSource.ingest_config.search_url.trim()
-        ? jobSource.ingest_config.search_url.trim()
-        : Deno.env.get("FRANCE_TRAVAIL_SEARCH_URL")?.trim() ||
-          "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search";
+          ? jobSource.ingest_config.search_url.trim()
+          : Deno.env.get("FRANCE_TRAVAIL_SEARCH_URL")?.trim() ||
+            "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search";
       const tokenUrl = typeof jobSource.ingest_config?.token_url === "string" &&
           jobSource.ingest_config.token_url.trim()
         ? jobSource.ingest_config.token_url.trim()
@@ -1324,18 +1648,27 @@ Deno.serve(async (req) => {
         ? jobSource.ingest_config.scope.trim()
         : Deno.env.get("FRANCE_TRAVAIL_SCOPE")?.trim() ||
           "api_offresdemploiv2 o2dsoffre";
-      const subsetLabel = typeof jobSource.ingest_config?.subset_label === "string" &&
+      const subsetLabel =
+        typeof jobSource.ingest_config?.subset_label === "string" &&
           jobSource.ingest_config.subset_label.trim()
-        ? jobSource.ingest_config.subset_label.trim()
-        : "staging_small_subset";
-      const stagingOnly = Boolean(jobSource.ingest_config?.staging_only ?? false);
+          ? jobSource.ingest_config.subset_label.trim()
+          : "staging_small_subset";
+      const stagingOnly = Boolean(
+        jobSource.ingest_config?.staging_only ?? false,
+      );
       const searchParams = jobSource.ingest_config?.search_params &&
           typeof jobSource.ingest_config.search_params === "object" &&
           !Array.isArray(jobSource.ingest_config.search_params)
         ? jobSource.ingest_config.search_params
         : {};
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
-      const configuredLimit = Math.max(1, Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)));
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+      );
+      const configuredLimit = Math.max(
+        1,
+        Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)),
+      );
       const requestedLimit = Math.max(1, Math.min(20, limit));
       const maxItems = Math.min(configuredLimit, requestedLimit);
       const configuredRangeStep = Math.max(
@@ -1344,7 +1677,12 @@ Deno.serve(async (req) => {
       );
       const rangeStep = Math.min(configuredRangeStep, maxItems);
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchFranceTravailItems({
         clientId,
@@ -1381,7 +1719,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const now = new Date().toISOString();
 
       const rows = [];
@@ -1470,7 +1810,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1503,23 +1847,29 @@ Deno.serve(async (req) => {
 
       const appId = mustEnv("ADZUNA_APP_ID");
       const appKey = mustEnv("ADZUNA_APP_KEY");
-      const searchUrlTemplate = typeof jobSource.ingest_config?.search_url_template === "string" &&
+      const searchUrlTemplate =
+        typeof jobSource.ingest_config?.search_url_template === "string" &&
           jobSource.ingest_config.search_url_template.trim()
-        ? jobSource.ingest_config.search_url_template.trim()
-        : "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}";
-      const defaultCountry = typeof jobSource.ingest_config?.default_country === "string" &&
+          ? jobSource.ingest_config.search_url_template.trim()
+          : "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}";
+      const defaultCountry =
+        typeof jobSource.ingest_config?.default_country === "string" &&
           jobSource.ingest_config.default_country.trim()
-        ? jobSource.ingest_config.default_country.trim()
-        : "fr";
-      const fallbackCountry = typeof jobSource.ingest_config?.fallback_country === "string" &&
+          ? jobSource.ingest_config.default_country.trim()
+          : "fr";
+      const fallbackCountry =
+        typeof jobSource.ingest_config?.fallback_country === "string" &&
           jobSource.ingest_config.fallback_country.trim()
-        ? jobSource.ingest_config.fallback_country.trim()
-        : null;
-      const subsetLabel = typeof jobSource.ingest_config?.subset_label === "string" &&
+          ? jobSource.ingest_config.fallback_country.trim()
+          : null;
+      const subsetLabel =
+        typeof jobSource.ingest_config?.subset_label === "string" &&
           jobSource.ingest_config.subset_label.trim()
-        ? jobSource.ingest_config.subset_label.trim()
-        : "staging_small_subset";
-      const stagingOnly = Boolean(jobSource.ingest_config?.staging_only ?? false);
+          ? jobSource.ingest_config.subset_label.trim()
+          : "staging_small_subset";
+      const stagingOnly = Boolean(
+        jobSource.ingest_config?.staging_only ?? false,
+      );
       const baseIngestConfig = asPlainObject(jobSource.ingest_config);
       const runtimeState = asPlainObject(baseIngestConfig.runtime_state);
       const baseDefaultParams = baseIngestConfig.default_params &&
@@ -1534,21 +1884,32 @@ Deno.serve(async (req) => {
       const defaultParams = sortMode === "freshness"
         ? { ...defaultParamsWithoutSort, sort_by: "date" }
         : defaultParamsWithoutSort;
-      const configuredMaxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
+      const configuredMaxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+      );
       const pageSize = Math.max(
         1,
         Math.min(50, Number(jobSource.ingest_config?.results_per_page ?? 10)),
       );
-      const requestedLimit = Math.max(1, Math.min(100, limit));
+      const requestedLimit = Math.max(1, Math.min(200, limit));
       const effectiveMaxPages = hasRequestedLimit
-        ? Math.min(5, Math.max(configuredMaxPages, Math.ceil(requestedLimit / pageSize)))
+        ? Math.min(
+          5,
+          Math.max(configuredMaxPages, Math.ceil(requestedLimit / pageSize)),
+        )
         : configuredMaxPages;
       const maxItems = Math.min(requestedLimit, pageSize * effectiveMaxPages);
       const startPage = sortMode === "exploration"
         ? toBoundedInt(runtimeState.next_page, 1, 1, 999)
         : 1;
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
       const data = await fetchAdzunaItems({
         appId,
@@ -1562,6 +1923,7 @@ Deno.serve(async (req) => {
         resultsPerPage: pageSize,
         startPage,
       });
+      const offerFreshnessMetrics = computeOfferFreshnessMetrics(data.items);
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1587,15 +1949,20 @@ Deno.serve(async (req) => {
           start_page: data.start_page,
           next_page: data.next_page,
           last_page_fetched: data.last_page_fetched,
+          ...offerFreshnessMetrics,
           sample: data.items.slice(0, 3),
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-      const now = new Date().toISOString();
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
+      const nowDate = new Date();
+      const now = nowDate.toISOString();
 
       const rows = [];
       for (const item of data.items) {
+        const adzunaLifecycle = normalizeAdzunaLifecycle(item, nowDate);
         const sourceUrl = normalizeOptionalUrl(item.source_url) ??
           normalizeOptionalUrl(item.apply_url);
         const applyUrl = normalizeOptionalUrl(item.apply_url) ?? sourceUrl;
@@ -1625,9 +1992,9 @@ Deno.serve(async (req) => {
             description_text: descriptionText,
             source_url: sourceUrl ?? applyUrl ?? data.list_url,
             apply_url: applyUrl,
-            published_at: item.published_at,
-            expires_at: item.expires_at,
-            is_expired: item.is_expired,
+            published_at: adzunaLifecycle.published_at,
+            expires_at: adzunaLifecycle.expires_at,
+            is_expired: adzunaLifecycle.is_expired,
           });
 
         rows.push({
@@ -1653,15 +2020,15 @@ Deno.serve(async (req) => {
           dedupe_identity_key: identity.dedupeIdentityKey,
           cross_source_fingerprint: identity.crossSourceFingerprint,
           tags: item.tags ?? [],
-          posted_at: item.published_at,
-          published_at: item.published_at,
-          expires_at: item.expires_at,
+          posted_at: adzunaLifecycle.published_at,
+          published_at: adzunaLifecycle.published_at,
+          expires_at: adzunaLifecycle.expires_at,
           scraped_at: now,
           updated_at: now,
           last_seen_at: now,
-          is_active: item.is_expired ? false : true,
-          is_expired: item.is_expired,
-          job_status: deriveJobStatus(item.is_expired),
+          is_active: adzunaLifecycle.is_active,
+          is_expired: adzunaLifecycle.is_expired,
+          job_status: adzunaLifecycle.job_status,
           job_type: jobType,
           job_json: {
             source_code,
@@ -1699,13 +2066,21 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       const finishedAt = new Date().toISOString();
       const rotationBase = inserted + updated;
-      const rotationNewRatio = rotationBase > 0 ? Number((inserted / rotationBase).toFixed(4)) : null;
-      const rotationSeenRatio = rotationBase > 0 ? Number((updated / rotationBase).toFixed(4)) : null;
+      const rotationNewRatio = rotationBase > 0
+        ? Number((inserted / rotationBase).toFixed(4))
+        : null;
+      const rotationSeenRatio = rotationBase > 0
+        ? Number((updated / rotationBase).toFixed(4))
+        : null;
       const nextRuntimeState = {
         ...runtimeState,
         next_page: sortMode === "exploration" ? data.next_page : 1,
@@ -1717,6 +2092,7 @@ Deno.serve(async (req) => {
         last_parsed: data.parsed,
         last_total_available: data.total_available,
         last_finished_at: finishedAt,
+        last_offer_freshness_metrics: offerFreshnessMetrics,
         last_rotation: {
           new_count: inserted,
           seen_count: updated,
@@ -1741,7 +2117,9 @@ Deno.serve(async (req) => {
           sort_mode: sortMode,
           runtime_state: nextRuntimeState,
         },
-        ...(jobSource.is_active === true && !jobSource.activated_at ? { activated_at: finishedAt } : {}),
+        ...(jobSource.is_active === true && !jobSource.activated_at
+          ? { activated_at: finishedAt }
+          : {}),
       });
 
       return json({
@@ -1758,6 +2136,7 @@ Deno.serve(async (req) => {
         start_page: data.start_page,
         next_page: data.next_page,
         last_page_fetched: data.last_page_fetched,
+        ...offerFreshnessMetrics,
         rotation_new_count: inserted,
         rotation_seen_count: updated,
         rotation_new_ratio: rotationNewRatio,
@@ -1778,14 +2157,34 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "missing_list_url" }, 400);
       }
 
-      const maxPages = Math.max(1, Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)));
-      const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 20)));
-      const delayMs = Math.max(0, Number(jobSource.ingest_config?.delay_ms ?? 800));
+      const maxPages = Math.max(
+        1,
+        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+      );
+      const maxItems = Math.max(
+        1,
+        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 20)),
+      );
+      const delayMs = Math.max(
+        0,
+        Number(jobSource.ingest_config?.delay_ms ?? 800),
+      );
       const linkPattern = jobSource.ingest_config?.link_pattern ?? null;
 
-      const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
       currentRunId = runId;
-      const data = await fetchGenericListItems(listUrl, maxPages, maxItems, delayMs, linkPattern);
+      const data = await fetchGenericListItems(
+        listUrl,
+        maxPages,
+        maxItems,
+        delayMs,
+        linkPattern,
+      );
 
       if (dry_run) {
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1808,7 +2207,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
       const scraped = data.items.map((it: any) => ({
         title: it.title || "Offre d'emploi",
         source_url: it.source_url,
@@ -1819,7 +2220,12 @@ Deno.serve(async (req) => {
         is_expired: false,
       })) as ScrapedItem[];
 
-      const rows = await mapScrapedItemsToRows(scraped, jobSource, source_code, data.list_url);
+      const rows = await mapScrapedItemsToRows(
+        scraped,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
       let inserted = 0;
       let updated = 0;
       try {
@@ -1835,7 +2241,11 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
       }
 
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -1873,10 +2283,19 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "missing_feed_url" }, 400);
     }
 
-    const maxItems = Math.max(1, Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)));
-    const rssUpsertBatchSize = toPositiveInt(jobSource.ingest_config?.upsert_batch_size) ??
-      (maxItems > 25 ? 25 : maxItems);
-    const runId = await createRun(supabaseUrl, serviceKey, jobSource.id, "ingest");
+    const maxItems = Math.max(
+      1,
+      Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)),
+    );
+    const rssUpsertBatchSize =
+      toPositiveInt(jobSource.ingest_config?.upsert_batch_size) ??
+        (maxItems > 25 ? 25 : maxItems);
+    const runId = await createRun(
+      supabaseUrl,
+      serviceKey,
+      jobSource.id,
+      "ingest",
+    );
     currentRunId = runId;
     const data = await fetchRssFeedItems(feedUrl, maxItems);
 
@@ -1901,7 +2320,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+    const supabase = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false },
+    });
     const now = new Date().toISOString();
 
     const rows = [];
@@ -1934,10 +2355,18 @@ Deno.serve(async (req) => {
       if (guid) {
         external_id = `${source_code}:${guid}`;
       } else if (link) {
-        const hash = await sha256Hex(`${title}|${company ?? ""}|${jobSource.region ?? ""}|${publishedIso ?? ""}|${link}`);
+        const hash = await sha256Hex(
+          `${title}|${company ?? ""}|${jobSource.region ?? ""}|${
+            publishedIso ?? ""
+          }|${link}`,
+        );
         external_id = `${source_code}:${hash}`;
       } else {
-        const hash = await sha256Hex(`${title}|${company ?? ""}|${jobSource.region ?? ""}|${publishedIso ?? ""}`);
+        const hash = await sha256Hex(
+          `${title}|${company ?? ""}|${jobSource.region ?? ""}|${
+            publishedIso ?? ""
+          }`,
+        );
         external_id = `${source_code}:${hash}`;
       }
 
@@ -2000,7 +2429,11 @@ Deno.serve(async (req) => {
         inserted_count: err.inserted,
         updated_count: err.updated,
       });
-      return json({ ok: false, error: "jobs_upsert_failed", message: err.message }, 500);
+      return json({
+        ok: false,
+        error: "jobs_upsert_failed",
+        message: err.message,
+      }, 500);
     }
 
     await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -2039,7 +2472,11 @@ Deno.serve(async (req) => {
       },
     );
     return json(
-      { ok: false, error: "ingest_failed", message: e instanceof Error ? e.message : String(e) },
+      {
+        ok: false,
+        error: "ingest_failed",
+        message: e instanceof Error ? e.message : String(e),
+      },
       500,
     );
   }

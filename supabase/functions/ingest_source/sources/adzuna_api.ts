@@ -188,7 +188,10 @@ function normalizeCountryLookupKey(value: unknown) {
     .trim() || null;
 }
 
-function resolveCountryInfo(value: unknown, fallbackCountryCode?: string | null) {
+function resolveCountryInfo(
+  value: unknown,
+  fallbackCountryCode?: string | null,
+) {
   const code = normalizeCountryCode(value);
   if (code && COUNTRY_NAMES[code]) {
     return { country: COUNTRY_NAMES[code], country_code: code };
@@ -203,13 +206,19 @@ function resolveCountryInfo(value: unknown, fallbackCountryCode?: string | null)
   }
 
   if (fallbackCountryCode && COUNTRY_NAMES[fallbackCountryCode]) {
-    return { country: COUNTRY_NAMES[fallbackCountryCode], country_code: fallbackCountryCode };
+    return {
+      country: COUNTRY_NAMES[fallbackCountryCode],
+      country_code: fallbackCountryCode,
+    };
   }
 
   return { country: null, country_code: null };
 }
 
-function normalizeSalaryCurrency(value: unknown, fallbackCountryCode?: string | null) {
+function normalizeSalaryCurrency(
+  value: unknown,
+  fallbackCountryCode?: string | null,
+) {
   const text = safeStr(value);
   if (text) return text.toUpperCase();
   if (fallbackCountryCode && COUNTRY_CURRENCIES[fallbackCountryCode]) {
@@ -240,8 +249,12 @@ function normalizeRemoteType(
 
   if (!hay) return null;
   if (/(hybrid|hybride)/.test(hay)) return "hybrid";
-  if (/(on[\s-]?site|onsite|sur site|presentiel|presential)/.test(hay)) return "on_site";
-  if (/(remote|teletravail|work from home|worldwide|anywhere)/.test(hay)) return "remote";
+  if (/(on[\s-]?site|onsite|sur site|presentiel|presential)/.test(hay)) {
+    return "on_site";
+  }
+  if (/(remote|teletravail|work from home|worldwide|anywhere)/.test(hay)) {
+    return "remote";
+  }
   return null;
 }
 
@@ -250,7 +263,9 @@ function isExpired(expiresAt: string | null) {
   return Date.parse(expiresAt) <= Date.now();
 }
 
-function normalizeDefaultParams(input: Record<string, unknown> | null | undefined) {
+function normalizeDefaultParams(
+  input: Record<string, unknown> | null | undefined,
+) {
   const normalized = new URLSearchParams();
 
   for (const [key, value] of Object.entries(input ?? {})) {
@@ -291,7 +306,8 @@ function buildSearchUrl(
   appKey: string,
   defaultParams: URLSearchParams,
 ) {
-  const template = searchUrlTemplate.includes("{country}") && searchUrlTemplate.includes("{page}")
+  const template = searchUrlTemplate.includes("{country}") &&
+      searchUrlTemplate.includes("{page}")
     ? searchUrlTemplate
     : "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}";
 
@@ -337,28 +353,38 @@ function parseTotalAvailable(payload: unknown) {
   const record = asRecord(payload);
   if (!record) return null;
 
-  const total = toFiniteNumber(record.count ?? record.total ?? record.totalResults);
+  const total = toFiniteNumber(
+    record.count ?? record.total ?? record.totalResults,
+  );
   return total !== null ? Math.trunc(total) : null;
 }
 
-function extractLocationInfo(job: Record<string, unknown>, fallbackCountryCode: string | null) {
+function extractLocationInfo(
+  job: Record<string, unknown>,
+  fallbackCountryCode: string | null,
+) {
   const locationRecord = asRecord(job.location);
-  const displayName = safeStr(locationRecord?.display_name ?? locationRecord?.displayName ?? job.location);
+  const displayName = safeStr(
+    locationRecord?.display_name ?? locationRecord?.displayName ?? job.location,
+  );
   const area = Array.isArray(locationRecord?.area)
     ? uniqueStrings(locationRecord.area.map((entry) => safeStr(entry)))
     : [];
   const fallbackLocation = area.length ? area.join(", ") : null;
   const location = displayName ?? fallbackLocation;
-  const explicitCountryValue =
-    locationRecord?.country ??
+  const explicitCountryValue = locationRecord?.country ??
     locationRecord?.country_code ??
     locationRecord?.countryCode ??
     job.country ??
     job.country_code ??
     job.countryCode;
   const areaCountry =
-    area.find((entry) => resolveCountryInfo(entry).country_code !== null) ?? null;
-  const countryInfo = resolveCountryInfo(explicitCountryValue ?? areaCountry, fallbackCountryCode);
+    area.find((entry) => resolveCountryInfo(entry).country_code !== null) ??
+      null;
+  const countryInfo = resolveCountryInfo(
+    explicitCountryValue ?? areaCountry,
+    fallbackCountryCode,
+  );
 
   return {
     location,
@@ -374,17 +400,30 @@ function parseTags(job: Record<string, unknown>) {
   return tags.length ? tags : null;
 }
 
-function mapAdzunaItem(input: unknown, fallbackCountryCode: string | null): AdzunaApiItem | null {
+function extractExplicitAdzunaExpiresAt(job: Record<string, unknown>) {
+  return safeIsoDate(job.expiry_date ?? job.expiration_date ?? job.expires_at);
+}
+
+function mapAdzunaItem(
+  input: unknown,
+  fallbackCountryCode: string | null,
+): AdzunaApiItem | null {
   const job = asRecord(input);
   if (!job) return null;
 
   const title = safeStr(job.title) ?? "Offre Adzuna";
   const descriptionText = stripHtmlLikeText(job.description ?? job.snippet);
   const locationInfo = extractLocationInfo(job, fallbackCountryCode);
-  const publishedAt = safeIsoDate(job.created ?? job.created_at ?? job.publication_date);
-  const expiresAt = safeIsoDate(job.expiry_date ?? job.expiration_date ?? job.expires_at);
-  const sourceUrl = safeStr(job.redirect_url ?? job.redirectUrl ?? job.url ?? job.adref);
-  const applyUrl = safeStr(job.redirect_url ?? job.redirectUrl ?? job.adref ?? job.url);
+  const publishedAt = safeIsoDate(
+    job.created ?? job.created_at ?? job.publication_date,
+  );
+  const expiresAt = extractExplicitAdzunaExpiresAt(job);
+  const sourceUrl = safeStr(
+    job.redirect_url ?? job.redirectUrl ?? job.url ?? job.adref,
+  );
+  const applyUrl = safeStr(
+    job.redirect_url ?? job.redirectUrl ?? job.adref ?? job.url,
+  );
   const countryCode = locationInfo.country_code ?? fallbackCountryCode;
 
   if (!sourceUrl && !applyUrl) return null;
@@ -397,7 +436,11 @@ function mapAdzunaItem(input: unknown, fallbackCountryCode: string | null): Adzu
     location: locationInfo.location,
     country: locationInfo.country,
     country_code: countryCode,
-    remote_type: normalizeRemoteType(title, locationInfo.location, descriptionText),
+    remote_type: normalizeRemoteType(
+      title,
+      locationInfo.location,
+      descriptionText,
+    ),
     contract_type: normalizeContractType(job),
     description_text: descriptionText,
     source_url: sourceUrl ?? applyUrl,
@@ -407,7 +450,10 @@ function mapAdzunaItem(input: unknown, fallbackCountryCode: string | null): Adzu
     is_expired: isExpired(expiresAt),
     salary_min: toFiniteNumber(job.salary_min),
     salary_max: toFiniteNumber(job.salary_max),
-    salary_currency: normalizeSalaryCurrency(job.salary_currency ?? job.currency, countryCode),
+    salary_currency: normalizeSalaryCurrency(
+      job.salary_currency ?? job.currency,
+      countryCode,
+    ),
     tags: parseTags(job),
     payload: job,
   };
@@ -416,14 +462,17 @@ function mapAdzunaItem(input: unknown, fallbackCountryCode: string | null): Adzu
 async function fetchSearchPage(url: string) {
   const res = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
+      "user-agent":
+        "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
       accept: "application/json",
     },
   });
 
   if (!res.ok) {
     const text = (await res.text()).replace(/\s+/g, " ").trim().slice(0, 300);
-    throw new Error(`adzuna_fetch_failed: ${res.status}${text ? ` ${text}` : ""}`);
+    throw new Error(
+      `adzuna_fetch_failed: ${res.status}${text ? ` ${text}` : ""}`,
+    );
   }
 
   return await res.json();
@@ -437,10 +486,16 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   const countryCandidates = uniqueStrings([primaryCountry, secondaryCountry])
     .map((value) => normalizeCountryCode(value))
     .filter((value): value is string => Boolean(value));
-  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 100));
+  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 200));
   const maxPages = Math.max(1, Math.min(Math.trunc(options.maxPages ?? 1), 5));
-  const pageSize = Math.max(1, Math.min(Math.trunc(options.resultsPerPage ?? 10), 50));
-  const startPage = Math.max(1, Math.min(Math.trunc(options.startPage ?? 1), 999));
+  const pageSize = Math.max(
+    1,
+    Math.min(Math.trunc(options.resultsPerPage ?? 10), 50),
+  );
+  const startPage = Math.max(
+    1,
+    Math.min(Math.trunc(options.startPage ?? 1), 999),
+  );
   const normalizedDefaultParams = normalizeDefaultParams(options.defaultParams);
   const failures: string[] = [];
 
@@ -460,7 +515,11 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   let lastPageFetched: number | null = null;
   let nextPage = startPage;
 
-  for (let candidateIndex = 0; candidateIndex < countryCandidates.length; candidateIndex += 1) {
+  for (
+    let candidateIndex = 0;
+    candidateIndex < countryCandidates.length;
+    candidateIndex += 1
+  ) {
     const countryCode = countryCandidates[candidateIndex];
     const items: AdzunaApiItem[] = [];
     let lastUrl = finalUrl;
@@ -471,7 +530,11 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     let exhausted = false;
 
     try {
-      for (let pageOffset = 0; pageOffset < maxPages && items.length < totalLimit; pageOffset += 1) {
+      for (
+        let pageOffset = 0;
+        pageOffset < maxPages && items.length < totalLimit;
+        pageOffset += 1
+      ) {
         const page = startPage + pageOffset;
         const remaining = totalLimit - items.length;
         const currentPageSize = Math.max(1, Math.min(pageSize, remaining));
@@ -528,7 +591,10 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     lastPageFetched = candidateLastPageFetched;
     nextPage = exhausted ? 1 : candidateNextPage;
 
-    if (items.length > 0 || candidateIndex === countryCandidates.length - 1 || !hadSuccess) {
+    if (
+      items.length > 0 || candidateIndex === countryCandidates.length - 1 ||
+      !hadSuccess
+    ) {
       break;
     }
   }
