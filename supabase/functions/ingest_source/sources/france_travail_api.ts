@@ -271,9 +271,9 @@ export async function fetchFranceTravailItems(options: FetchFranceTravailItemsOp
     "https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=/partenaire";
   const searchUrl = safeStr(options.searchUrl) ??
     "https://api.francetravail.io/partenaire/offresdemploi/v2/offres/search";
-  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 100));
+  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 1000));
   const maxPages = Math.max(1, Math.min(Math.trunc(options.maxPages ?? 1), 10));
-  const rangeStep = Math.max(1, Math.min(Math.trunc(options.rangeStep ?? totalLimit), 150));
+  const rangeStep = Math.max(1, Math.min(Math.trunc(options.rangeStep ?? totalLimit), 100));
   const searchParams = normalizeSearchParams(options.searchParams);
   const accessToken = await fetchAccessToken(
     tokenUrl,

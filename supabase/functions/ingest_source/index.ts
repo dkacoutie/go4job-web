@@ -2,17 +2,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { fetchAejItems } from "./sources/aej_html.ts";
-import { fetchCoordinationSudItems } from "./sources/coordination_sud.ts";
 import { fetchAdzunaItems } from "./sources/adzuna_api.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
-import { fetchFedAfricaItems } from "./sources/fedafrica.ts";
 import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
-import { fetchGenericListItems } from "./sources/generic_list.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
-import { fetchSmartRecruitersItems } from "./sources/smartrecruiters.ts";
-import { fetchTzportalItems } from "./sources/tzportal_bceao.ts";
-import { fetchUnecaItems } from "./sources/uneca.ts";
 import {
   buildCrossSourceJobIdentity,
   canonicalizeJobUrl,
@@ -218,6 +212,31 @@ function dedupeRowsByExternalId<T extends { external_id?: string }>(rows: T[]) {
   return noId.concat(Array.from(byId.values()));
 }
 
+function countDuplicateExternalIds(
+  rows: Array<{ external_id?: string | null }>,
+) {
+  const seen = new Set<string>();
+  let duplicates = 0;
+  for (const row of rows) {
+    const key = (row?.external_id ?? "").trim();
+    if (!key) continue;
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+  }
+  return duplicates;
+}
+
+function countMissingExpiresAt(rows: Array<{ expires_at?: string | null }>) {
+  return rows.filter((row) => !row.expires_at).length;
+}
+
+function countExpiredAtBirth(rows: Array<{ is_expired?: boolean | null }>) {
+  return rows.filter((row) => row.is_expired === true).length;
+}
+
 function normalizeOptionalUrl(raw: string | null | undefined) {
   const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) return null;
@@ -361,12 +380,19 @@ function normalizeAdzunaLifecycle(
 class JobsUpsertFailedError extends Error {
   inserted: number;
   updated: number;
+  chunkIndex: number | null;
 
-  constructor(message: string, inserted = 0, updated = 0) {
+  constructor(
+    message: string,
+    inserted = 0,
+    updated = 0,
+    chunkIndex: number | null = null,
+  ) {
     super(message);
     this.name = "JobsUpsertFailedError";
     this.inserted = inserted;
     this.updated = updated;
+    this.chunkIndex = chunkIndex;
   }
 }
 
@@ -379,28 +405,6 @@ async function upsertJobsWithStats(
   const externalIds = uniqueRows
     .map((row) => (row.external_id ?? "").trim())
     .filter(Boolean);
-
-  let existingIds = new Set<string>();
-  if (externalIds.length > 0) {
-    const { data: existingRows, error: existingErr } = await supabase
-      .from("jobs")
-      .select("external_id")
-      .in("external_id", externalIds);
-
-    if (existingErr) throw existingErr;
-    existingIds = new Set(
-      (existingRows ?? [])
-        .map((row: { external_id?: string | null }) =>
-          (row.external_id ?? "").trim()
-        )
-        .filter(Boolean),
-    );
-  }
-
-  const inserted =
-    externalIds.filter((externalId) => !existingIds.has(externalId)).length;
-  const updated =
-    externalIds.filter((externalId) => existingIds.has(externalId)).length;
   const requestedBatchSize = toPositiveInt(options?.batchSize);
   const fallbackBatchSize = uniqueRows.length || 1;
   const batchSize = Math.max(
@@ -408,9 +412,44 @@ async function upsertJobsWithStats(
     Math.min(fallbackBatchSize, requestedBatchSize ?? fallbackBatchSize),
   );
 
+  let existingIds = new Set<string>();
+  if (externalIds.length > 0) {
+    for (let i = 0; i < externalIds.length; i += batchSize) {
+      const idChunk = externalIds.slice(i, i + batchSize);
+      const { data: existingRows, error: existingErr } = await supabase
+        .from("jobs")
+        .select("external_id")
+        .in("external_id", idChunk);
+
+      if (existingErr) {
+        throw new JobsUpsertFailedError(
+          existingErr.message,
+          0,
+          0,
+          Math.floor(i / batchSize) + 1,
+        );
+      }
+      for (
+        const existingId of (existingRows ?? [])
+          .map((row: { external_id?: string | null }) =>
+            (row.external_id ?? "").trim()
+          )
+          .filter(Boolean)
+      ) {
+        existingIds.add(existingId);
+      }
+    }
+  }
+
+  const inserted =
+    externalIds.filter((externalId) => !existingIds.has(externalId)).length;
+  const updated =
+    externalIds.filter((externalId) => existingIds.has(externalId)).length;
+
   let insertedCommitted = 0;
   let updatedCommitted = 0;
   for (let i = 0; i < uniqueRows.length; i += batchSize) {
+    const chunkIndex = Math.floor(i / batchSize) + 1;
     const chunk = uniqueRows.slice(i, i + batchSize);
     const chunkExternalIds = chunk
       .map((row) => (row.external_id ?? "").trim())
@@ -431,6 +470,7 @@ async function upsertJobsWithStats(
         upErr.message,
         insertedCommitted,
         updatedCommitted,
+        chunkIndex,
       );
     }
 
@@ -438,7 +478,13 @@ async function upsertJobsWithStats(
     updatedCommitted += chunkUpdated;
   }
 
-  return { uniqueRows, inserted, updated };
+  return {
+    uniqueRows,
+    inserted,
+    updated,
+    upsertChunkSize: batchSize,
+    upsertChunkCount: Math.ceil(uniqueRows.length / batchSize),
+  };
 }
 
 type ScrapedItem = {
@@ -884,535 +930,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (method === "scrape_fedafrica") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const listUrl = jobSource.ingest_config?.list_url ||
-        "https://www.fedafrica.com/offres";
-      const maxPages = Math.max(
-        1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
-      );
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchFedAfricaItems(
-        listUrl,
-        maxPages,
-        maxItems,
-        delayMs,
-      );
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const rows = await mapScrapedItemsToRows(
-        data.items as ScrapedItem[],
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "fedafrica_upserted",
-        parsed: data.parsed,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
-    if (method === "scrape_tzportal_bceao") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const listUrl = jobSource.ingest_config?.list_url ||
-        "https://bceao2.tzportal.io/fr/jobs";
-      const maxPages = Math.max(
-        1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
-      );
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchTzportalItems(
-        listUrl,
-        maxPages,
-        maxItems,
-        delayMs,
-      );
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const rows = await mapScrapedItemsToRows(
-        data.items as ScrapedItem[],
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "bceao_upserted",
-        parsed: data.parsed,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
-    if (method === "scrape_coordination_sud") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const listUrl = jobSource.ingest_config?.list_url ||
-        "https://www.coordinationsud.org/espace-emploi/";
-      const maxPages = Math.max(
-        1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
-      );
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 40)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchCoordinationSudItems(
-        listUrl,
-        maxPages,
-        maxItems,
-        delayMs,
-      );
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const rows = await mapScrapedItemsToRows(
-        data.items as ScrapedItem[],
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "coordination_sud_upserted",
-        parsed: data.parsed,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
-    if (method === "scrape_uneca") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const listUrl = jobSource.ingest_config?.list_url ||
-        "https://www.uneca.org/fr/%C3%A0-propos/opportunit%C3%A9s";
-      const fallbackUrl = jobSource.ingest_config?.fallback_url || null;
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchUnecaItems(
-        listUrl,
-        fallbackUrl,
-        maxItems,
-        delayMs,
-      );
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const rows = await mapScrapedItemsToRows(
-        data.items as ScrapedItem[],
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "uneca_upserted",
-        parsed: data.parsed,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
-    if (method === "api_smartrecruiters") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const companyId = jobSource.ingest_config?.company_id || "TALENT2AFRICA";
-      const apiKey = jobSource.ingest_config?.api_key || null;
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 50)),
-      );
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchSmartRecruitersItems(companyId, maxItems, apiKey);
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const rows = await mapScrapedItemsToRows(
-        data.items as ScrapedItem[],
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "smartrecruiters_upserted",
-        parsed: data.parsed,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
     if (method === "api_himalayas") {
       if (jobSource.is_active === false && !dry_run) {
         return json({ ok: false, error: "job_source_inactive" }, 400);
@@ -1656,26 +1173,148 @@ Deno.serve(async (req) => {
       const stagingOnly = Boolean(
         jobSource.ingest_config?.staging_only ?? false,
       );
-      const searchParams = jobSource.ingest_config?.search_params &&
-          typeof jobSource.ingest_config.search_params === "object" &&
-          !Array.isArray(jobSource.ingest_config.search_params)
-        ? jobSource.ingest_config.search_params
+      const ingestConfig = asPlainObject(jobSource.ingest_config);
+      const baseSearchParams = ingestConfig.search_params &&
+          typeof ingestConfig.search_params === "object" &&
+          !Array.isArray(ingestConfig.search_params)
+        ? asPlainObject(ingestConfig.search_params)
         : {};
+      const runtimeState = asPlainObject(ingestConfig.runtime_state);
+      const rotationSegments = Array.isArray(ingestConfig.rotation_segments)
+        ? ingestConfig.rotation_segments
+          .map((segment) => asPlainObject(segment))
+          .filter((segment) => Object.keys(segment).length > 0)
+        : ingestConfig.rotation_segments &&
+            typeof ingestConfig.rotation_segments === "object"
+        ? Object.entries(asPlainObject(ingestConfig.rotation_segments))
+          .map(([key, segment]) => ({
+            key,
+            ...asPlainObject(segment),
+          }))
+          .filter((segment) => Object.keys(segment).length > 1)
+        : [];
+      const configuredSegmentKey =
+        typeof ingestConfig.segment_key === "string" &&
+          ingestConfig.segment_key.trim()
+          ? ingestConfig.segment_key.trim()
+          : typeof runtimeState.segment_key === "string" &&
+              runtimeState.segment_key.trim()
+          ? runtimeState.segment_key.trim()
+          : typeof runtimeState.current_segment_key === "string" &&
+              runtimeState.current_segment_key.trim()
+          ? runtimeState.current_segment_key.trim()
+          : typeof ingestConfig.current_segment_key === "string" &&
+              ingestConfig.current_segment_key.trim()
+          ? ingestConfig.current_segment_key.trim()
+          : typeof baseSearchParams.segment_key === "string" &&
+              baseSearchParams.segment_key.trim()
+          ? baseSearchParams.segment_key.trim()
+          : null;
+      const segmentCount = rotationSegments.length;
+      const configuredSegmentIndex = toPositiveInt(
+        ingestConfig.current_segment_index ??
+          runtimeState.current_segment_index,
+      );
+      const defaultSegmentIndex = segmentCount > 0
+        ? Math.min(Math.max(configuredSegmentIndex ?? 0, 0), segmentCount - 1)
+        : 0;
+      const keyedSegmentIndex = configuredSegmentKey
+        ? rotationSegments.findIndex((segment) =>
+          segment.key === configuredSegmentKey ||
+          segment.segment_key === configuredSegmentKey
+        )
+        : -1;
+      const currentSegmentIndex = keyedSegmentIndex >= 0
+        ? keyedSegmentIndex
+        : defaultSegmentIndex;
+      const currentSegment = segmentCount > 0
+        ? rotationSegments[currentSegmentIndex] ?? null
+        : null;
+      const segmentKey = configuredSegmentKey ??
+        (typeof currentSegment?.key === "string" && currentSegment.key.trim()
+          ? currentSegment.key.trim()
+          : typeof currentSegment?.segment_key === "string" &&
+              currentSegment.segment_key.trim()
+          ? currentSegment.segment_key.trim()
+          : "generic_recent");
+      const segmentLabel =
+        typeof currentSegment?.label === "string" && currentSegment.label.trim()
+          ? currentSegment.label.trim()
+          : typeof currentSegment?.segment_label === "string" &&
+              currentSegment.segment_label.trim()
+          ? currentSegment.segment_label.trim()
+          : segmentKey;
+      const nextSegmentIndex = segmentCount > 0
+        ? (currentSegmentIndex + 1) % segmentCount
+        : currentSegmentIndex;
+      const nextSegment = segmentCount > 0
+        ? rotationSegments[nextSegmentIndex] ?? null
+        : null;
+      const nextSegmentKey =
+        typeof nextSegment?.key === "string" && nextSegment.key.trim()
+          ? nextSegment.key.trim()
+          : typeof nextSegment?.segment_key === "string" &&
+              nextSegment.segment_key.trim()
+          ? nextSegment.segment_key.trim()
+          : segmentKey;
+      const rotationMode = typeof ingestConfig.rotation_mode === "string" &&
+          ingestConfig.rotation_mode.trim()
+        ? ingestConfig.rotation_mode.trim()
+        : segmentCount > 0
+        ? "rotation_segments"
+        : "single";
+      const segmentSearchParams = currentSegment?.search_params &&
+          typeof currentSegment.search_params === "object" &&
+          !Array.isArray(currentSegment.search_params)
+        ? asPlainObject(currentSegment.search_params)
+        : currentSegment?.params &&
+            typeof currentSegment.params === "object" &&
+            !Array.isArray(currentSegment.params)
+        ? asPlainObject(currentSegment.params)
+        : {};
+      const searchParams = {
+        ...baseSearchParams,
+        ...segmentSearchParams,
+      };
       const maxPages = Math.max(
         1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+        Math.min(
+          10,
+          Number(currentSegment?.max_pages ?? ingestConfig.max_pages ?? 1),
+        ),
       );
+      const requestedLimit = Math.max(1, Math.min(100, limit));
       const configuredLimit = Math.max(
         1,
-        Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)),
+        Math.min(
+          100,
+          requestedLimit,
+          Number(ingestConfig.limit ?? requestedLimit),
+        ),
       );
-      const requestedLimit = Math.max(1, Math.min(20, limit));
-      const maxItems = Math.min(configuredLimit, requestedLimit);
       const configuredRangeStep = Math.max(
         1,
-        Math.min(150, Number(jobSource.ingest_config?.range_step ?? maxItems)),
+        Math.min(100, Number(ingestConfig.range_step ?? configuredLimit)),
       );
-      const rangeStep = Math.min(configuredRangeStep, maxItems);
+      const rangeStep = Math.min(configuredRangeStep, configuredLimit);
+      const maxItems = Math.min(1000, rangeStep * maxPages);
+      const upsertChunkSize = Math.max(
+        1,
+        Math.min(500, toPositiveInt(ingestConfig.upsert_batch_size) ?? 250),
+      );
+      const franceTravailMetaBase = {
+        requested_limit: requestedLimit,
+        range_step: rangeStep,
+        max_pages: maxPages,
+        effective_limit: maxItems,
+        segment_key: segmentKey,
+        segment_label: segmentLabel,
+        next_segment_key: nextSegmentKey,
+        current_segment_index: currentSegmentIndex,
+        next_segment_index: nextSegmentIndex,
+        rotation_mode: rotationMode,
+        upsert_chunk_size: upsertChunkSize,
+      };
 
       const runId = await createRun(
         supabaseUrl,
@@ -1695,8 +1334,21 @@ Deno.serve(async (req) => {
         rangeStep,
         searchParams,
       });
+      const skippedDuplicates = countDuplicateExternalIds(data.items);
+      const expiredAtBirth = countExpiredAtBirth(data.items);
+      const missingExpiresAt = countMissingExpiresAt(data.items);
 
       if (dry_run) {
+        const meta = {
+          ...franceTravailMetaBase,
+          fetched: data.items.length,
+          inserted: 0,
+          updated: 0,
+          upsert_chunk_count: Math.ceil(data.items.length / upsertChunkSize),
+          skipped_duplicates: skippedDuplicates,
+          expired_at_birth: expiredAtBirth,
+          missing_expires_at: missingExpiresAt,
+        };
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
           finished_at: new Date().toISOString(),
           status: "success",
@@ -1704,11 +1356,13 @@ Deno.serve(async (req) => {
           fetched_count: data.items.length,
           inserted_count: 0,
           updated_count: 0,
+          meta,
         });
         return json({
           ok: true,
           source_code,
           limit: maxItems,
+          meta,
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
@@ -1797,39 +1451,99 @@ Deno.serve(async (req) => {
 
       let inserted = 0;
       let updated = 0;
+      let upsertChunkCount = 0;
       try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
+        const upsertResult = await upsertJobsWithStats(supabase, rows, {
+          batchSize: upsertChunkSize,
+        });
+        inserted = upsertResult.inserted;
+        updated = upsertResult.updated;
+        upsertChunkCount = upsertResult.upsertChunkCount;
       } catch (upErr) {
-        const err = upErr as Error;
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        const chunkSuffix = err.chunkIndex ? `_chunk_${err.chunkIndex}` : "";
+        const meta = {
+          ...franceTravailMetaBase,
+          fetched: rows.length,
+          inserted: err.inserted,
+          updated: err.updated,
+          upsert_chunk_count: Math.ceil(rows.length / upsertChunkSize),
+          skipped_duplicates: skippedDuplicates,
+          expired_at_birth: expiredAtBirth,
+          missing_expires_at: missingExpiresAt,
+        };
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
           finished_at: new Date().toISOString(),
           status: "failed",
           ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
+          error: `jobs_upsert_failed${chunkSuffix}: ${err.message}`,
           fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+          meta,
         });
         return json({
           ok: false,
-          error: "jobs_upsert_failed",
+          error: `jobs_upsert_failed${chunkSuffix}`,
           message: err.message,
+          meta,
         }, 500);
       }
 
+      const finishedAt = new Date().toISOString();
+      const meta = {
+        ...franceTravailMetaBase,
+        fetched: rows.length,
+        inserted,
+        updated,
+        upsert_chunk_count: upsertChunkCount,
+        skipped_duplicates: skippedDuplicates,
+        expired_at_birth: expiredAtBirth,
+        missing_expires_at: missingExpiresAt,
+      };
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         status: "success",
         ok: true,
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+        meta,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_config: {
+          ...ingestConfig,
+          current_segment_index: nextSegmentIndex,
+          segment_key: nextSegmentKey,
+          runtime_state: {
+            ...runtimeState,
+            current_segment_index: nextSegmentIndex,
+            current_segment_key: nextSegmentKey,
+            last_segment_index: currentSegmentIndex,
+            last_segment_key: segmentKey,
+            last_segment_label: segmentLabel,
+            last_fetched: rows.length,
+            last_inserted: inserted,
+            last_updated: updated,
+            last_effective_limit: maxItems,
+            last_success_at: finishedAt,
+          },
+        },
+        ...(jobSource.is_active === true && !jobSource.activated_at
+          ? { activated_at: finishedAt }
+          : {}),
       });
 
       return json({
         ok: true,
         source_code,
         limit: maxItems,
+        meta,
         dry_run: false,
         status: "france_travail_api_upserted",
         parsed: data.parsed,
@@ -2141,129 +1855,6 @@ Deno.serve(async (req) => {
         rotation_seen_count: updated,
         rotation_new_ratio: rotationNewRatio,
         rotation_seen_ratio: rotationSeenRatio,
-        inserted,
-        updated,
-        upserted: rows.length,
-      });
-    }
-
-    if (method === "scrape_generic") {
-      if (jobSource.is_active === false && !dry_run) {
-        return json({ ok: false, error: "job_source_inactive" }, 400);
-      }
-
-      const listUrl = jobSource.ingest_config?.list_url;
-      if (!listUrl || typeof listUrl !== "string") {
-        return json({ ok: false, error: "missing_list_url" }, 400);
-      }
-
-      const maxPages = Math.max(
-        1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
-      );
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 20)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
-      const linkPattern = jobSource.ingest_config?.link_pattern ?? null;
-
-      const runId = await createRun(
-        supabaseUrl,
-        serviceKey,
-        jobSource.id,
-        "ingest",
-      );
-      currentRunId = runId;
-      const data = await fetchGenericListItems(
-        listUrl,
-        maxPages,
-        maxItems,
-        delayMs,
-        linkPattern,
-      );
-
-      if (dry_run) {
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
-        });
-      }
-
-      const supabase = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
-      const scraped = data.items.map((it: any) => ({
-        title: it.title || "Offre d'emploi",
-        source_url: it.source_url,
-        apply_url: it.source_url,
-        published_at: it.published_at ?? null,
-        description_text: null,
-        description_html: null,
-        is_expired: false,
-      })) as ScrapedItem[];
-
-      const rows = await mapScrapedItemsToRows(
-        scraped,
-        jobSource,
-        source_code,
-        data.list_url,
-      );
-      let inserted = 0;
-      let updated = 0;
-      try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
-      } catch (upErr) {
-        const err = upErr as Error;
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "failed",
-          ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
-          fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
-        return json({
-          ok: false,
-          error: "jobs_upsert_failed",
-          message: err.message,
-        }, 500);
-      }
-
-      await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
-        status: "success",
-        ok: true,
-        fetched_count: rows.length,
-        inserted_count: inserted,
-        updated_count: updated,
-      });
-
-      return json({
-        ok: true,
-        source_code,
-        limit: maxItems,
-        dry_run: false,
-        status: "generic_upserted",
-        parsed: data.parsed,
         inserted,
         updated,
         upserted: rows.length,
