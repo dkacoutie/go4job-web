@@ -31,6 +31,15 @@ export const JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE = [
   "realwork_remote_rss",
   "fnacdarty_rss",
   "rss_ngojobsinafrica",
+  "coallia_rss",
+  "aej_ci",
+  "chu_rouen_rss",
+  "hn_hiring_rss",
+  "lip_belgique_rss",
+  "remotive_rss",
+  "rss_cfaocareers_ci",
+  "rss_himalayas_all",
+  "smartrecruiters_talent2africa",
 ] as const;
 
 export type JobFamilyBlockedSource =

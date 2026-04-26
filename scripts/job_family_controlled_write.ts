@@ -166,6 +166,32 @@ type RolloutReport = {
   anomalies: Array<Record<string, unknown>>;
 };
 
+type PreflightExample = {
+  job_id: string;
+  title: string | null;
+  company_name: string | null;
+  source_code: string;
+  raw_source_code: string | null;
+  proposed_job_family: string;
+  confidence: JobFamilyClassification["confidence"];
+  rule_id: string;
+};
+
+type PreflightAllowlistReport = {
+  started_at: string;
+  finished_at: string;
+  rollout_max_total: number;
+  rollout_batch_write: number;
+  min_confidence: WriteConfidenceThreshold;
+  total_scanned: number;
+  candidate_count: number;
+  candidate_sources: Array<{ source_code: string; count: number }>;
+  allowed_sources: string[];
+  missing_allowed_sources: string[];
+  affected_candidates_count: number;
+  examples_by_missing_source: Record<string, PreflightExample[]>;
+};
+
 function parseArgs() {
   const parsed = new Map<string, string>();
   for (const arg of Deno.args) {
@@ -193,6 +219,7 @@ function parseArgs() {
     rollout_batch_write: parsed.has("rollout-batch-write")
       ? Math.max(1, Number(parsed.get("rollout-batch-write")))
       : 500,
+    preflight_allowlist: parsed.get("preflight-allowlist") === "true",
     summary_only: parsed.get("summary-only") === "true",
     batch_size: parsed.has("batch-size")
       ? Math.max(1, Number(parsed.get("batch-size")))
@@ -662,6 +689,29 @@ function renderRolloutMarkdown(report: RolloutReport): string {
   return `${lines.join("\n")}\n`;
 }
 
+function renderPreflightMarkdown(report: PreflightAllowlistReport): string {
+  const lines = [
+    "# Job Family Controlled Write Allowlist Preflight",
+    "",
+    `Started: ${report.started_at}`,
+    `Finished: ${report.finished_at}`,
+    `Min confidence: ${report.min_confidence}`,
+    `Rollout max total: ${report.rollout_max_total}`,
+    `Rollout batch write: ${report.rollout_batch_write}`,
+    `Total scanned: ${report.total_scanned}`,
+    `Candidate count: ${report.candidate_count}`,
+    `Affected candidates: ${report.affected_candidates_count}`,
+    `Missing allowed sources: ${report.missing_allowed_sources.join(", ") || "(none)"}`,
+    "",
+    "## Candidate Sources",
+    "",
+    ...report.candidate_sources.map((item) =>
+      `- ${item.source_code}: ${item.count}`
+    ),
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
 async function saveRolloutReport(outputDir: string, report: RolloutReport) {
   await Deno.mkdir(outputDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:]/g, "-").replace(
@@ -672,6 +722,23 @@ async function saveRolloutReport(outputDir: string, report: RolloutReport) {
   const mdPath = `${outputDir}/job-family-controlled-write-rollout-${stamp}.md`;
   await Deno.writeTextFile(jsonPath, JSON.stringify(report, null, 2));
   await Deno.writeTextFile(mdPath, renderRolloutMarkdown(report));
+  return { jsonPath, mdPath };
+}
+
+async function savePreflightReport(
+  outputDir: string,
+  report: PreflightAllowlistReport,
+) {
+  await Deno.mkdir(outputDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:]/g, "-").replace(
+    /\..+$/,
+    "",
+  );
+  const jsonPath =
+    `${outputDir}/job-family-controlled-write-preflight-${stamp}.json`;
+  const mdPath = `${outputDir}/job-family-controlled-write-preflight-${stamp}.md`;
+  await Deno.writeTextFile(jsonPath, JSON.stringify(report, null, 2));
+  await Deno.writeTextFile(mdPath, renderPreflightMarkdown(report));
   return { jsonPath, mdPath };
 }
 
@@ -804,6 +871,93 @@ async function runControlledWriteBatch(
   };
 }
 
+function toPreflightExample(row: ClassifiedRow): PreflightExample {
+  return {
+    job_id: row.id,
+    title: row.title,
+    company_name: row.company_name,
+    source_code: row.source_code,
+    raw_source_code: row.raw_source_code,
+    proposed_job_family: row.classification.family_key,
+    confidence: row.classification.confidence,
+    rule_id: row.classification.rule_trace.rule_id,
+  };
+}
+
+async function buildAllowlistPreflightReport(
+  client: Client,
+  args: ReturnType<typeof parseArgs>,
+): Promise<PreflightAllowlistReport> {
+  const startedAt = new Date().toISOString();
+  const jobs = await fetchFeedVisibleJobs(client, args.limit);
+  const classifiedRows = classifyRows(jobs);
+  const prepared = buildCandidateRows(classifiedRows, args.min_confidence);
+  const candidates = prepared.candidates.slice(0, args.rollout_max_total);
+
+  const allowedSources = [...JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE];
+  const allowedSourceSet = new Set<string>(allowedSources);
+  const missingSources = Array.from(
+    new Set(
+      candidates
+        .map((row) => row.source_code)
+        .filter((sourceCode) => !allowedSourceSet.has(sourceCode)),
+    ),
+  ).sort();
+  const missingSourceSet = new Set(missingSources);
+  const affectedCandidates = candidates.filter((row) =>
+    missingSourceSet.has(row.source_code)
+  );
+  const examplesByMissingSource: Record<string, PreflightExample[]> = {};
+  for (const row of affectedCandidates) {
+    const examples = examplesByMissingSource[row.source_code] ?? [];
+    if (examples.length < 10) examples.push(toPreflightExample(row));
+    examplesByMissingSource[row.source_code] = examples;
+  }
+
+  return {
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    rollout_max_total: args.rollout_max_total,
+    rollout_batch_write: args.rollout_batch_write,
+    min_confidence: args.min_confidence,
+    total_scanned: classifiedRows.length,
+    candidate_count: candidates.length,
+    candidate_sources: countBySource(candidates),
+    allowed_sources: allowedSources,
+    missing_allowed_sources: missingSources,
+    affected_candidates_count: affectedCandidates.length,
+    examples_by_missing_source: examplesByMissingSource,
+  };
+}
+
+function printPreflightSummary(
+  report: PreflightAllowlistReport,
+  saved: { jsonPath: string; mdPath: string },
+): void {
+  console.log(
+    [
+      `preflight_allowlist`,
+      `scanned=${report.total_scanned}`,
+      `candidates=${report.candidate_count}`,
+      `candidate_sources=${report.candidate_sources.map((item) => `${item.source_code}:${item.count}`).join(",")}`,
+      `missing=${report.missing_allowed_sources.join(",") || "(none)"}`,
+      `affected=${report.affected_candidates_count}`,
+      `json=${saved.jsonPath}`,
+      `md=${saved.mdPath}`,
+    ].join(" | "),
+  );
+  for (const sourceCode of report.missing_allowed_sources) {
+    const examples = report.examples_by_missing_source[sourceCode] ?? [];
+    console.log(
+      `missing_source=${sourceCode} | examples=${
+        examples.map((example) =>
+          `${example.title ?? "(untitled)"} -> ${example.proposed_job_family}/${example.confidence}/${example.rule_id}`
+        ).join(" ; ")
+      }`,
+    );
+  }
+}
+
 function printBatchSummary(summary: BatchSummary): void {
   console.log(
     [
@@ -828,6 +982,52 @@ async function runRollout(
   args: ReturnType<typeof parseArgs>,
 ): Promise<void> {
   const startedAt = new Date().toISOString();
+  if (args.apply) {
+    const preflightReport = await buildAllowlistPreflightReport(client, args);
+    const savedPreflight = await savePreflightReport(
+      args.output_dir,
+      preflightReport,
+    );
+    printPreflightSummary(preflightReport, savedPreflight);
+    if (preflightReport.missing_allowed_sources.length > 0) {
+      const rolloutReport: RolloutReport = {
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        rollout_max_total: args.rollout_max_total,
+        rollout_batch_write: args.rollout_batch_write,
+        min_confidence: args.min_confidence,
+        apply: args.apply,
+        total_written: 0,
+        total_batches: 0,
+        stopped_reason: "missing_allowed_sources",
+        per_batch_summary: [],
+        aggregated_top_sources: [],
+        aggregated_top_families: [],
+        anomalies: [{
+          type: "missing_allowed_sources",
+          missing_allowed_sources: preflightReport.missing_allowed_sources,
+          affected_candidates_count:
+            preflightReport.affected_candidates_count,
+          preflight_report_path: savedPreflight.jsonPath,
+        }],
+      };
+      const savedRollout = await saveRolloutReport(
+        args.output_dir,
+        rolloutReport,
+      );
+      console.log(
+        [
+          `rollout_final total_written=0`,
+          `batches=0`,
+          `stopped_reason=missing_allowed_sources`,
+          `json=${savedRollout.jsonPath}`,
+          `md=${savedRollout.mdPath}`,
+        ].join(" | "),
+      );
+      return;
+    }
+  }
+
   const seenCandidateIds = new Set<string>();
   const perBatchSummary: BatchSummary[] = [];
   const sourceCounts = new Map<string, number>();
@@ -963,6 +1163,13 @@ async function main() {
 
   await client.connect();
   try {
+    if (args.preflight_allowlist) {
+      const report = await buildAllowlistPreflightReport(client, args);
+      const saved = await savePreflightReport(args.output_dir, report);
+      printPreflightSummary(report, saved);
+      return;
+    }
+
     if (args.rollout) {
       await runRollout(client, args);
       return;
