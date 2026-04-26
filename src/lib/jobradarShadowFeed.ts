@@ -136,9 +136,9 @@ function humanizeFallbackReason(reason: string | null | undefined): string {
     case "alert_signals_are_directional_but_not_strong_enough_for_high_confidence_top_match":
       return "Tes alertes donnent une bonne direction, mais il manque encore un signal fort pour construire de vrais Top Match.";
     case "cv_skills_help_detect_domain_fit_but_role_intent_is_still_implicit":
-      return "Tes compÃ©tences permettent dÃ©jÃ  de repÃ©rer un domaine pertinent, mais ton rÃ´le cible reste encore implicite.";
+      return "Tes compétences permettent déjà de repérer un domaine pertinent, mais ton rôle cible reste encore implicite.";
     case "not_enough_personalization_signals_yet_for_strong_ranking":
-      return "Il nâ€™y a pas encore assez dâ€™indices pour te proposer des recommandations trÃ¨s personnalisÃ©es.";
+      return "Il n’y a pas encore assez d’indices pour te proposer des recommandations très personnalisées.";
     default:
       return "";
   }
@@ -148,8 +148,8 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
   if (!meta) {
     return {
       profileMode: null,
-      heroTitle: "DÃ©couvre les opportunitÃ©s du moment",
-      heroDescription: "On affine l'affichage selon les signaux dÃ©jÃ  disponibles dans ton profil.",
+      heroTitle: "Découvre les opportunités du moment",
+      heroDescription: "On affine l'affichage selon les signaux déjà disponibles dans ton profil.",
       showStrictTab: false,
       showOnlyVeryRelevantToggle: false,
       largeTabLabel: "Explorer",
@@ -168,21 +168,21 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
   if (meta.profile_mode === "alerts_only") {
     return {
       profileMode: meta.profile_mode,
-      heroTitle: "DÃ©couvre des offres basÃ©es sur tes alertes",
+      heroTitle: "Découvre des offres basées sur tes alertes",
       heroDescription:
         humanizeFallbackReason(meta.fallback_reason) ||
-        "On met en avant une sÃ©lection guidÃ©e par tes alertes en attendant un signal plus fort.",
+        "On met en avant une sélection guidée par tes alertes en attendant un signal plus fort.",
       showStrictTab: false,
       showOnlyVeryRelevantToggle: false,
-      largeTabLabel: "BasÃ© sur tes alertes",
+      largeTabLabel: "Basé sur tes alertes",
       preferredMode,
       suppressNoAlertsEmptyState: true,
       guidanceCard: {
-        title: "BasÃ© sur tes alertes",
+        title: "Basé sur tes alertes",
         message:
           humanizeFallbackReason(meta.fallback_reason) ||
-          "Ajoute un rÃ´le cible pour transformer cette dÃ©couverte guidÃ©e en recommandations plus prÃ©cises.",
-        primaryActionLabel: "DÃ©finir mon rÃ´le cible",
+          "Ajoute un rôle cible pour transformer cette découverte guidée en recommandations plus précises.",
+        primaryActionLabel: "Définir mon rôle cible",
         primaryActionTo: "/jobradar/profile",
       },
     };
@@ -191,21 +191,21 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
   if (meta.profile_mode === "cv_only") {
     return {
       profileMode: meta.profile_mode,
-      heroTitle: "Des offres alignÃ©es avec tes compÃ©tences",
+      heroTitle: "Des offres alignées avec tes compétences",
       heroDescription:
         humanizeFallbackReason(meta.fallback_reason) ||
-        "On met en avant les offres cohÃ©rentes avec ton CV, puis on Ã©largit pour explorer davantage.",
+        "On met en avant les offres cohérentes avec ton CV, puis on élargit pour explorer davantage.",
       showStrictTab: true,
       showOnlyVeryRelevantToggle: topCount > 0,
       largeTabLabel: "Explorer",
       preferredMode,
       suppressNoAlertsEmptyState: true,
       guidanceCard: {
-        title: "Affiner le rÃ´le cible",
+        title: "Affiner le rôle cible",
         message:
           humanizeFallbackReason(meta.fallback_reason) ||
-          "Ajoute un rÃ´le cible pour rendre les recommandations encore plus prÃ©cises.",
-        primaryActionLabel: "Ajouter un rÃ´le cible",
+          "Ajoute un rôle cible pour rendre les recommandations encore plus précises.",
+        primaryActionLabel: "Ajouter un rôle cible",
         primaryActionTo: "/jobradar/profile",
       },
     };
@@ -214,21 +214,21 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
   if (meta.profile_mode === "cold_start") {
     return {
       profileMode: meta.profile_mode,
-      heroTitle: "OpportunitÃ©s rÃ©centes pour dÃ©marrer",
+      heroTitle: "Opportunités récentes pour démarrer",
       heroDescription:
         humanizeFallbackReason(meta.fallback_reason) ||
-        "ComplÃ¨te ton profil pour recevoir des recommandations plus prÃ©cises.",
+        "Complète ton profil pour recevoir des recommandations plus précises.",
       showStrictTab: false,
       showOnlyVeryRelevantToggle: false,
-      largeTabLabel: "OpportunitÃ©s rÃ©centes",
+      largeTabLabel: "Opportunités récentes",
       preferredMode,
       suppressNoAlertsEmptyState: true,
       guidanceCard: {
-        title: "ComplÃ¨te ton profil JobRadar",
+        title: "Complète ton profil JobRadar",
         message:
           humanizeFallbackReason(meta.fallback_reason) ||
-          "Plus ton profil est prÃ©cis, plus les recommandations seront utiles.",
-        primaryActionLabel: "ComplÃ©ter le profil",
+          "Plus ton profil est précis, plus les recommandations seront utiles.",
+        primaryActionLabel: "Compléter le profil",
         primaryActionTo: "/jobradar/profile",
       },
     };
@@ -236,8 +236,8 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
 
   return {
     profileMode: meta.profile_mode,
-    heroTitle: "PrioritÃ© aux meilleures opportunitÃ©s",
-    heroDescription: "Voici les offres les plus adaptÃ©es Ã  ton profil.",
+    heroTitle: "Priorité aux meilleures opportunités",
+    heroDescription: "Voici les offres les plus adaptées à ton profil.",
     showStrictTab: true,
     showOnlyVeryRelevantToggle: true,
     largeTabLabel: "Explorer",
@@ -254,9 +254,9 @@ export function getJobRadarShadowPillLabel(meta: JobRadarShadowMeta | null, forY
   if (meta.profile_mode === "rich") {
     return `${forYouCount} offre${forYouCount > 1 ? "s" : ""} pour toi`;
   }
-  if (meta.profile_mode === "alerts_only") return "BasÃ© sur tes alertes";
-  if (meta.profile_mode === "cv_only") return "CompÃ©tences dÃ©tectÃ©es";
-  return "Profil Ã  complÃ©ter";
+  if (meta.profile_mode === "alerts_only") return "Basé sur tes alertes";
+  if (meta.profile_mode === "cv_only") return "Compétences détectées";
+  return "Profil à compléter";
 }
 
 export function getJobRadarShadowSubline(
@@ -264,24 +264,24 @@ export function getJobRadarShadowSubline(
   matchMode: "strict" | "large"
 ): string {
   if (!meta) {
-    return "Explorer : sÃ©lection affichÃ©e sans personnalisation forte tant que ton profil est en cours d'analyse.";
+    return "Explorer : sélection affichée sans personnalisation forte tant que ton profil est en cours d'analyse.";
   }
   if (meta.profile_mode === "rich") {
     return matchMode === "strict"
-      ? "Pour toi : offres triÃ©es par pertinence."
-      : "Explorer : sÃ©lection plus large, sans filtres trop stricts.";
+      ? "Pour toi : offres triées par pertinence."
+      : "Explorer : sélection plus large, sans filtres trop stricts.";
   }
   if (meta.profile_mode === "alerts_only") {
     return matchMode === "large"
-      ? "BasÃ© sur tes alertes : une sÃ©lection de dÃ©couverte guidÃ©e pour Ã©largir les opportunitÃ©s."
-      : "Pour toi : disponible quand ton profil devient plus prÃ©cis.";
+      ? "Basé sur tes alertes : une sélection de découverte guidée pour élargir les opportunités."
+      : "Pour toi : disponible quand ton profil devient plus précis.";
   }
   if (meta.profile_mode === "cv_only") {
     return matchMode === "strict"
-      ? "Pour toi : offres triÃ©es dâ€™aprÃ¨s tes compÃ©tences et ton domaine probable."
-      : "Explorer : opportunitÃ©s adjacentes pour Ã©largir la recherche.";
+      ? "Pour toi : offres triées d’après tes compétences et ton domaine probable."
+      : "Explorer : opportunités adjacentes pour élargir la recherche.";
   }
   return matchMode === "large"
-    ? "OpportunitÃ©s rÃ©centes : une sÃ©lection de dÃ©part en attendant un profil plus complet."
+    ? "Opportunités récentes : une sélection de départ en attendant un profil plus complet."
     : "Pour toi : disponible quand ton profil est plus complet.";
 }
