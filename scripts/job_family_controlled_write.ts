@@ -130,6 +130,42 @@ type RunReport = {
   anomalies: Array<Record<string, unknown>>;
 };
 
+type RunReportWithPath = RunReport & {
+  rollback: boolean;
+  report_path: string;
+};
+
+type BatchSummary = {
+  batch_number: number;
+  run_mode: "apply" | "dry_run";
+  total_scanned: number;
+  candidate_count: number;
+  written_count: number;
+  total_written_so_far: number;
+  already_conformant_or_no_rewrite_count: number;
+  runtime_other_count: number;
+  anomalies_count: number;
+  top_sources: Array<{ source_code: string; count: number }>;
+  top_families: Array<{ family_key: string; count: number }>;
+  report_path: string;
+};
+
+type RolloutReport = {
+  started_at: string;
+  finished_at: string;
+  rollout_max_total: number;
+  rollout_batch_write: number;
+  min_confidence: WriteConfidenceThreshold;
+  apply: boolean;
+  total_written: number;
+  total_batches: number;
+  stopped_reason: string;
+  per_batch_summary: BatchSummary[];
+  aggregated_top_sources: Array<{ source_code: string; count: number }>;
+  aggregated_top_families: Array<{ family_key: string; count: number }>;
+  anomalies: Array<Record<string, unknown>>;
+};
+
 function parseArgs() {
   const parsed = new Map<string, string>();
   for (const arg of Deno.args) {
@@ -150,6 +186,14 @@ function parseArgs() {
     limit: parsed.has("limit") ? Number(parsed.get("limit")) : null,
     max_write: parsed.has("max-write") ? Number(parsed.get("max-write")) : null,
     min_confidence: minConfidence as WriteConfidenceThreshold,
+    rollout: parsed.get("rollout") === "true",
+    rollout_max_total: parsed.has("rollout-max-total")
+      ? Math.max(1, Number(parsed.get("rollout-max-total")))
+      : 5000,
+    rollout_batch_write: parsed.has("rollout-batch-write")
+      ? Math.max(1, Number(parsed.get("rollout-batch-write")))
+      : 500,
+    summary_only: parsed.get("summary-only") === "true",
     batch_size: parsed.has("batch-size")
       ? Math.max(1, Number(parsed.get("batch-size")))
       : 250,
@@ -305,6 +349,54 @@ function countBySource(
       right.count - left.count ||
       left.source_code.localeCompare(right.source_code)
     );
+}
+
+function countByFamily(
+  rows: ClassifiedRow[],
+): Array<{ family_key: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const familyKey = row.classification.family_key;
+    counts.set(familyKey, (counts.get(familyKey) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([family_key, count]) => ({ family_key, count }))
+    .sort((left, right) =>
+      right.count - left.count ||
+      left.family_key.localeCompare(right.family_key)
+    );
+}
+
+function mergeCounts<T extends string>(
+  counts: Map<T, number>,
+  entries: Array<{ count: number } & Record<string, unknown>>,
+  key: keyof (typeof entries)[number],
+): void {
+  for (const entry of entries) {
+    const value = entry[key];
+    if (typeof value !== "string") continue;
+    counts.set(value as T, (counts.get(value as T) ?? 0) + entry.count);
+  }
+}
+
+function sortedCounts(
+  counts: Map<string, number>,
+  keyName: "source_code" | "family_key",
+): Array<{ source_code: string; count: number } | {
+  family_key: string;
+  count: number;
+}> {
+  return Array.from(counts.entries())
+    .map(([key, count]) => ({ [keyName]: key, count }))
+    .sort((left, right) => {
+      const leftKey = String(left[keyName]);
+      const rightKey = String(right[keyName]);
+      return right.count - left.count || leftKey.localeCompare(rightKey);
+    }) as Array<{ source_code: string; count: number } | {
+      family_key: string;
+      count: number;
+    }>;
 }
 
 function buildReportExample(
@@ -545,133 +637,363 @@ async function saveReport(outputDir: string, report: RunReport) {
   return jsonPath;
 }
 
+function renderRolloutMarkdown(report: RolloutReport): string {
+  const lines = [
+    "# Job Family Controlled Write Rollout",
+    "",
+    `Started: ${report.started_at}`,
+    `Finished: ${report.finished_at}`,
+    `Apply: ${report.apply}`,
+    `Min confidence: ${report.min_confidence}`,
+    `Rollout max total: ${report.rollout_max_total}`,
+    `Rollout batch write: ${report.rollout_batch_write}`,
+    `Total written: ${report.total_written}`,
+    `Total batches: ${report.total_batches}`,
+    `Stopped reason: ${report.stopped_reason}`,
+    "",
+    "## Batches",
+    "",
+    "| Batch | Mode | Scanned | Candidates | Written | Total | Conformant | Runtime other | Anomalies | Report |",
+    "|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    ...report.per_batch_summary.map((batch) =>
+      `| ${batch.batch_number} | ${batch.run_mode} | ${batch.total_scanned} | ${batch.candidate_count} | ${batch.written_count} | ${batch.total_written_so_far} | ${batch.already_conformant_or_no_rewrite_count} | ${batch.runtime_other_count} | ${batch.anomalies_count} | ${batch.report_path} |`
+    ),
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+async function saveRolloutReport(outputDir: string, report: RolloutReport) {
+  await Deno.mkdir(outputDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:]/g, "-").replace(
+    /\..+$/,
+    "",
+  );
+  const jsonPath = `${outputDir}/job-family-controlled-write-rollout-${stamp}.json`;
+  const mdPath = `${outputDir}/job-family-controlled-write-rollout-${stamp}.md`;
+  await Deno.writeTextFile(jsonPath, JSON.stringify(report, null, 2));
+  await Deno.writeTextFile(mdPath, renderRolloutMarkdown(report));
+  return { jsonPath, mdPath };
+}
+
+function classifyRows(jobs: JobRow[]): ClassifiedRow[] {
+  return jobs.map((job) => {
+    const sourcePolicy = getJobFamilySourcePolicy(job.source_code);
+
+    return {
+      ...job,
+      source_code: sourcePolicy.normalized_source_code,
+      raw_source_code: sourcePolicy.raw_source_code,
+      classification: classifyJobFamilyForControlledWrite({
+        title: job.title,
+        job_family: job.job_family,
+        required_skills: job.required_skills,
+        optional_skills: job.optional_skills,
+        job_skills: job.job_skills,
+        tags: job.tags,
+        official_desc: job.official_desc,
+        description: job.description_text,
+        company_name: job.company_name,
+        source_code: sourcePolicy.normalized_source_code,
+        job_json: job.job_json ?? null,
+      }),
+    };
+  });
+}
+
+async function runControlledWriteBatch(
+  client: Client,
+  args: ReturnType<typeof parseArgs>,
+  maxWrite: number | null,
+  excludedCandidateIds = new Set<string>(),
+): Promise<RunReportWithPath> {
+  const startedAt = new Date().toISOString();
+  const jobs = await fetchFeedVisibleJobs(client, args.limit);
+  const classifiedRows = classifyRows(jobs);
+  const prepared = buildCandidateRows(classifiedRows, args.min_confidence);
+  const eligibleCandidates = prepared.candidates.filter((row) =>
+    !excludedCandidateIds.has(row.id)
+  );
+  const candidateRows = maxWrite != null
+    ? eligibleCandidates.slice(0, Math.max(0, Math.trunc(maxWrite)))
+    : eligibleCandidates;
+
+  let writtenRows: ClassifiedRow[] = [];
+  let runtimeSkippedOther: ClassifiedRow[] = [];
+  let batchResultExamples: BatchResultExample[] = [];
+  let runtimeOtherResultExamples: BatchResultExample[] = [];
+  let anomalies: Array<Record<string, unknown>> = [];
+
+  if (args.apply || args.rollback) {
+    const executed = await executeBatches(
+      client,
+      candidateRows,
+      args.batch_size,
+      args.rollback,
+    );
+    writtenRows = executed.writtenRows;
+    runtimeSkippedOther = executed.skippedOther;
+    batchResultExamples = executed.batchResultExamples;
+    runtimeOtherResultExamples = executed.runtimeOtherResultExamples;
+    anomalies = executed.anomalies;
+  } else {
+    writtenRows = candidateRows;
+  }
+
+  const report: RunReport = {
+    run_mode: args.apply && !args.rollback ? "apply" : "dry_run",
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    write_version: JOB_FAMILY_CONTROLLED_WRITE_VERSION,
+    source_policy: JOB_FAMILY_SOURCE_POLICY,
+    source_policy_version: JOB_FAMILY_SOURCE_POLICY_VERSION,
+    classifier_version: JOB_FAMILY_CONTROLLED_CLASSIFIER_VERSION,
+    taxonomy_version: JOB_FAMILY_TAXONOMY_VERSION,
+    allowed_sources: [...JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE],
+    blocked_sources: [...JOB_FAMILY_BLOCKED_SOURCES],
+    batch_size: args.batch_size,
+    min_confidence: args.min_confidence,
+    total_scanned: classifiedRows.length,
+    candidate_count: candidateRows.length,
+    planned_write_count: candidateRows.length,
+    would_write_count: candidateRows.length,
+    written_count: writtenRows.length,
+    blocked_by_blocklist_count: prepared.blockedByBlocklist.length,
+    skipped_for_quality_count: prepared.skippedForQuality.length,
+    already_conformant_or_no_rewrite_count:
+      prepared.alreadyConformantOrNoRewrite.length,
+    runtime_other_count: runtimeSkippedOther.length,
+    skipped_ambiguous_count: prepared.skippedAmbiguous.length,
+    skipped_uncategorized_count: prepared.skippedUncategorized.length,
+    write_rate: toPct(writtenRows.length, classifiedRows.length),
+    top_written_sources: countBySource(writtenRows).slice(0, 15),
+    top_blocked_by_blocklist_sources: countBySource(
+      prepared.blockedByBlocklist,
+    )
+      .slice(0, 15),
+    candidate_examples: buildReportExamples(candidateRows, 50, true),
+    skipped_for_quality_examples: buildReportExamples(
+      prepared.skippedForQuality,
+      25,
+      false,
+    ),
+    skipped_uncategorized_examples: buildReportExamples(
+      prepared.skippedUncategorized,
+      25,
+      false,
+    ),
+    already_conformant_or_no_rewrite_examples: buildReportExamples(
+      prepared.alreadyConformantOrNoRewrite,
+      25,
+      false,
+    ),
+    runtime_other_examples: buildReportExamples(
+      runtimeSkippedOther,
+      25,
+      false,
+    ),
+    batch_result_examples: batchResultExamples.slice(0, 50),
+    runtime_other_result_examples: runtimeOtherResultExamples.slice(0, 50),
+    anomalies: anomalies.slice(0, 25),
+  };
+
+  const jsonPath = await saveReport(args.output_dir, report);
+  return {
+    ...report,
+    rollback: args.rollback,
+    report_path: jsonPath,
+  };
+}
+
+function printBatchSummary(summary: BatchSummary): void {
+  console.log(
+    [
+      `batch=${summary.batch_number}`,
+      `mode=${summary.run_mode}`,
+      `scanned=${summary.total_scanned}`,
+      `candidates=${summary.candidate_count}`,
+      `written=${summary.written_count}`,
+      `total=${summary.total_written_so_far}`,
+      `conformant=${summary.already_conformant_or_no_rewrite_count}`,
+      `runtime_other=${summary.runtime_other_count}`,
+      `anomalies=${summary.anomalies_count}`,
+      `top_sources=${summary.top_sources.map((item) => `${item.source_code}:${item.count}`).join(",")}`,
+      `top_families=${summary.top_families.map((item) => `${item.family_key}:${item.count}`).join(",")}`,
+      `report=${summary.report_path}`,
+    ].join(" | "),
+  );
+}
+
+async function runRollout(
+  client: Client,
+  args: ReturnType<typeof parseArgs>,
+): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const seenCandidateIds = new Set<string>();
+  const perBatchSummary: BatchSummary[] = [];
+  const sourceCounts = new Map<string, number>();
+  const familyCounts = new Map<string, number>();
+  const anomalies: Array<Record<string, unknown>> = [];
+  let totalWritten = 0;
+  let stoppedReason = "rollout_max_total_reached";
+
+  while (totalWritten < args.rollout_max_total) {
+    const remaining = args.rollout_max_total - totalWritten;
+    const batchWrite = Math.min(args.rollout_batch_write, remaining);
+    const batchNumber = perBatchSummary.length + 1;
+    let report: RunReportWithPath;
+
+    try {
+      report = await runControlledWriteBatch(
+        client,
+        args,
+        batchWrite,
+        seenCandidateIds,
+      );
+    } catch (error) {
+      stoppedReason = "exception";
+      anomalies.push({
+        type: "rollout_exception",
+        batch_number: batchNumber,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      break;
+    }
+
+    for (const example of report.candidate_examples) {
+      seenCandidateIds.add(example.job_id);
+    }
+    totalWritten += report.written_count;
+
+    const topFamilies = countByFamilyFromExamples(report.candidate_examples)
+      .slice(0, 10);
+    mergeCounts(sourceCounts, report.top_written_sources, "source_code");
+    mergeCounts(familyCounts, topFamilies, "family_key");
+
+    const summary: BatchSummary = {
+      batch_number: batchNumber,
+      run_mode: report.run_mode,
+      total_scanned: report.total_scanned,
+      candidate_count: report.candidate_count,
+      written_count: report.written_count,
+      total_written_so_far: totalWritten,
+      already_conformant_or_no_rewrite_count:
+        report.already_conformant_or_no_rewrite_count,
+      runtime_other_count: report.runtime_other_count,
+      anomalies_count: report.anomalies.length,
+      top_sources: report.top_written_sources.slice(0, 5),
+      top_families: topFamilies.slice(0, 5),
+      report_path: report.report_path,
+    };
+    perBatchSummary.push(summary);
+    printBatchSummary(summary);
+
+    if (report.anomalies.length > 0) {
+      stoppedReason = "anomalies_detected";
+      anomalies.push(...report.anomalies);
+      break;
+    }
+    if (report.runtime_other_count > 0) {
+      stoppedReason = "runtime_other_detected";
+      break;
+    }
+    if (report.written_count === 0) {
+      stoppedReason = "written_count_zero";
+      break;
+    }
+    if (totalWritten >= args.rollout_max_total) {
+      stoppedReason = "rollout_max_total_reached";
+      break;
+    }
+  }
+
+  const rolloutReport: RolloutReport = {
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    rollout_max_total: args.rollout_max_total,
+    rollout_batch_write: args.rollout_batch_write,
+    min_confidence: args.min_confidence,
+    apply: args.apply,
+    total_written: totalWritten,
+    total_batches: perBatchSummary.length,
+    stopped_reason: stoppedReason,
+    per_batch_summary: perBatchSummary,
+    aggregated_top_sources: sortedCounts(sourceCounts, "source_code") as Array<
+      { source_code: string; count: number }
+    >,
+    aggregated_top_families: sortedCounts(familyCounts, "family_key") as Array<
+      { family_key: string; count: number }
+    >,
+    anomalies: anomalies.slice(0, 25),
+  };
+  const saved = await saveRolloutReport(args.output_dir, rolloutReport);
+  console.log(
+    [
+      `rollout_final total_written=${rolloutReport.total_written}`,
+      `batches=${rolloutReport.total_batches}`,
+      `stopped_reason=${rolloutReport.stopped_reason}`,
+      `json=${saved.jsonPath}`,
+      `md=${saved.mdPath}`,
+    ].join(" | "),
+  );
+}
+
+function countByFamilyFromExamples(
+  rows: ReportExample[],
+): Array<{ family_key: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    counts.set(
+      row.proposed_job_family,
+      (counts.get(row.proposed_job_family) ?? 0) + 1,
+    );
+  }
+  return Array.from(counts.entries())
+    .map(([family_key, count]) => ({ family_key, count }))
+    .sort((left, right) =>
+      right.count - left.count ||
+      left.family_key.localeCompare(right.family_key)
+    );
+}
+
 async function main() {
   const args = parseArgs();
-  const startedAt = new Date().toISOString();
   const password = await readDbPassword();
   const poolerUrl = await readPoolerUrl();
   const client = buildClient(poolerUrl, password);
 
   await client.connect();
   try {
-    const jobs = await fetchFeedVisibleJobs(client, args.limit);
-    const classifiedRows: ClassifiedRow[] = jobs.map((job) => {
-      const sourcePolicy = getJobFamilySourcePolicy(job.source_code);
-
-      return {
-        ...job,
-        source_code: sourcePolicy.normalized_source_code,
-        raw_source_code: sourcePolicy.raw_source_code,
-        classification: classifyJobFamilyForControlledWrite({
-          title: job.title,
-          job_family: job.job_family,
-          required_skills: job.required_skills,
-          optional_skills: job.optional_skills,
-          job_skills: job.job_skills,
-          tags: job.tags,
-          official_desc: job.official_desc,
-          description: job.description_text,
-          company_name: job.company_name,
-          source_code: sourcePolicy.normalized_source_code,
-          job_json: job.job_json ?? null,
-        }),
-      };
-    });
-
-    const prepared = buildCandidateRows(classifiedRows, args.min_confidence);
-    const candidateRows = args.max_write != null
-      ? prepared.candidates.slice(0, Math.max(0, Math.trunc(args.max_write)))
-      : prepared.candidates;
-
-    let writtenRows: ClassifiedRow[] = [];
-    let runtimeSkippedOther: ClassifiedRow[] = [];
-    let batchResultExamples: BatchResultExample[] = [];
-    let runtimeOtherResultExamples: BatchResultExample[] = [];
-    let anomalies: Array<Record<string, unknown>> = [];
-
-    if (args.apply || args.rollback) {
-      const executed = await executeBatches(
-        client,
-        candidateRows,
-        args.batch_size,
-        args.rollback,
-      );
-      writtenRows = executed.writtenRows;
-      runtimeSkippedOther = executed.skippedOther;
-      batchResultExamples = executed.batchResultExamples;
-      runtimeOtherResultExamples = executed.runtimeOtherResultExamples;
-      anomalies = executed.anomalies;
-    } else {
-      writtenRows = candidateRows;
+    if (args.rollout) {
+      await runRollout(client, args);
+      return;
     }
 
-    const report: RunReport = {
-      run_mode: args.apply && !args.rollback ? "apply" : "dry_run",
-      started_at: startedAt,
-      finished_at: new Date().toISOString(),
-      write_version: JOB_FAMILY_CONTROLLED_WRITE_VERSION,
-      source_policy: JOB_FAMILY_SOURCE_POLICY,
-      source_policy_version: JOB_FAMILY_SOURCE_POLICY_VERSION,
-      classifier_version: JOB_FAMILY_CONTROLLED_CLASSIFIER_VERSION,
-      taxonomy_version: JOB_FAMILY_TAXONOMY_VERSION,
-      allowed_sources: [...JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE],
-      blocked_sources: [...JOB_FAMILY_BLOCKED_SOURCES],
-      batch_size: args.batch_size,
-      min_confidence: args.min_confidence,
-      total_scanned: classifiedRows.length,
-      candidate_count: candidateRows.length,
-      planned_write_count: candidateRows.length,
-      would_write_count: candidateRows.length,
-      written_count: writtenRows.length,
-      blocked_by_blocklist_count: prepared.blockedByBlocklist.length,
-      skipped_for_quality_count: prepared.skippedForQuality.length,
-      already_conformant_or_no_rewrite_count:
-        prepared.alreadyConformantOrNoRewrite.length,
-      runtime_other_count: runtimeSkippedOther.length,
-      skipped_ambiguous_count: prepared.skippedAmbiguous.length,
-      skipped_uncategorized_count: prepared.skippedUncategorized.length,
-      write_rate: toPct(writtenRows.length, classifiedRows.length),
-      top_written_sources: countBySource(writtenRows).slice(0, 15),
-      top_blocked_by_blocklist_sources: countBySource(
-        prepared.blockedByBlocklist,
-      )
-        .slice(0, 15),
-      candidate_examples: buildReportExamples(candidateRows, 50, true),
-      skipped_for_quality_examples: buildReportExamples(
-        prepared.skippedForQuality,
-        25,
-        false,
-      ),
-      skipped_uncategorized_examples: buildReportExamples(
-        prepared.skippedUncategorized,
-        25,
-        false,
-      ),
-      already_conformant_or_no_rewrite_examples: buildReportExamples(
-        prepared.alreadyConformantOrNoRewrite,
-        25,
-        false,
-      ),
-      runtime_other_examples: buildReportExamples(
-        runtimeSkippedOther,
-        25,
-        false,
-      ),
-      batch_result_examples: batchResultExamples.slice(0, 50),
-      runtime_other_result_examples: runtimeOtherResultExamples.slice(0, 50),
-      anomalies: anomalies.slice(0, 25),
-    };
-
-    const jsonPath = await saveReport(args.output_dir, report);
-    console.log(JSON.stringify(
-      {
-        ...report,
-        rollback: args.rollback,
-        report_path: jsonPath,
-      },
-      null,
-      2,
-    ));
+    const report = await runControlledWriteBatch(
+      client,
+      args,
+      args.max_write,
+    );
+    if (args.summary_only) {
+      const summary: BatchSummary = {
+        batch_number: 1,
+        run_mode: report.run_mode,
+        total_scanned: report.total_scanned,
+        candidate_count: report.candidate_count,
+        written_count: report.written_count,
+        total_written_so_far: report.written_count,
+        already_conformant_or_no_rewrite_count:
+          report.already_conformant_or_no_rewrite_count,
+        runtime_other_count: report.runtime_other_count,
+        anomalies_count: report.anomalies.length,
+        top_sources: report.top_written_sources.slice(0, 5),
+        top_families: countByFamilyFromExamples(report.candidate_examples)
+          .slice(0, 5),
+        report_path: report.report_path,
+      };
+      printBatchSummary(summary);
+    } else {
+      console.log(JSON.stringify(report, null, 2));
+    }
   } finally {
     await client.end();
   }
