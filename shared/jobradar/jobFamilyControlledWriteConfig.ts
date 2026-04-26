@@ -28,6 +28,9 @@ export const JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE = [
   "emploi_territorial_rss",
   "rss_vuejobs",
   "empllo_rss",
+  "realwork_remote_rss",
+  "fnacdarty_rss",
+  "rss_ngojobsinafrica",
 ] as const;
 
 export type JobFamilyBlockedSource =
