@@ -40,6 +40,8 @@ type ClassifiedRow = JobRow & {
   classification: JobFamilyClassification;
 };
 
+type WriteConfidenceThreshold = "high" | "medium";
+
 type BatchWriteResultRow = {
   job_id: string | null;
   action: string | null;
@@ -47,6 +49,24 @@ type BatchWriteResultRow = {
   enrichment_id: string | null;
   version: number | null;
   error_message: string | null;
+};
+
+type ReportExample = {
+  job_id: string;
+  title: string | null;
+  company_name: string | null;
+  source_code: string | null;
+  raw_source_code: string | null;
+  previous_job_family: string | null;
+  proposed_job_family: string;
+  decision: JobFamilyClassification["decision"];
+  confidence: JobFamilyClassification["confidence"];
+  rule_id: string;
+  rule_source: string;
+  matched_value: string;
+  score: number;
+  margin: number;
+  would_write: boolean;
 };
 
 type RunReport = {
@@ -60,8 +80,11 @@ type RunReport = {
   taxonomy_version: string;
   blocked_sources: string[];
   batch_size: number;
+  min_confidence: WriteConfidenceThreshold;
   total_scanned: number;
   candidate_count: number;
+  planned_write_count: number;
+  would_write_count: number;
   written_count: number;
   blocked_by_blocklist_count: number;
   skipped_for_quality_count: number;
@@ -78,6 +101,11 @@ type RunReport = {
     source_code: string;
     count: number;
   }>;
+  candidate_examples: ReportExample[];
+  skipped_for_quality_examples: ReportExample[];
+  skipped_uncategorized_examples: ReportExample[];
+  already_conformant_or_no_rewrite_examples: ReportExample[];
+  runtime_other_examples: ReportExample[];
   anomalies: Array<Record<string, unknown>>;
 };
 
@@ -88,12 +116,19 @@ function parseArgs() {
     const [key, value = "true"] = arg.slice(2).split("=", 2);
     parsed.set(key, value);
   }
+  const minConfidence = parsed.get("min-confidence") ?? "high";
+  if (minConfidence !== "high" && minConfidence !== "medium") {
+    throw new Error(
+      "Invalid --min-confidence. Expected one of: high, medium.",
+    );
+  }
 
   return {
     apply: parsed.get("apply") === "true",
     rollback: parsed.get("rollback") === "true",
     limit: parsed.has("limit") ? Number(parsed.get("limit")) : null,
     max_write: parsed.has("max-write") ? Number(parsed.get("max-write")) : null,
+    min_confidence: minConfidence as WriteConfidenceThreshold,
     batch_size: parsed.has("batch-size")
       ? Math.max(1, Number(parsed.get("batch-size")))
       : 250,
@@ -251,7 +286,51 @@ function countBySource(
     );
 }
 
-function buildCandidateRows(rows: ClassifiedRow[]) {
+function buildReportExample(
+  row: ClassifiedRow,
+  wouldWrite: boolean,
+): ReportExample {
+  return {
+    job_id: row.id,
+    title: row.title,
+    company_name: row.company_name,
+    source_code: row.source_code,
+    raw_source_code: row.raw_source_code,
+    previous_job_family: row.job_family,
+    proposed_job_family: row.classification.family_key,
+    decision: row.classification.decision,
+    confidence: row.classification.confidence,
+    rule_id: row.classification.rule_trace.rule_id,
+    rule_source: row.classification.rule_trace.rule_source,
+    matched_value: row.classification.rule_trace.matched_value,
+    score: row.classification.score,
+    margin: row.classification.margin,
+    would_write: wouldWrite,
+  };
+}
+
+function buildReportExamples(
+  rows: ClassifiedRow[],
+  limit: number,
+  wouldWrite: boolean,
+): ReportExample[] {
+  return rows.slice(0, limit).map((row) => buildReportExample(row, wouldWrite));
+}
+
+function meetsMinConfidence(
+  confidence: JobFamilyClassification["confidence"],
+  minConfidence: WriteConfidenceThreshold,
+): boolean {
+  if (minConfidence === "medium") {
+    return confidence === "high" || confidence === "medium";
+  }
+  return confidence === "high";
+}
+
+function buildCandidateRows(
+  rows: ClassifiedRow[],
+  minConfidence: WriteConfidenceThreshold,
+) {
   const candidates: ClassifiedRow[] = [];
   const blockedByBlocklist: ClassifiedRow[] = [];
   const skippedAmbiguous: ClassifiedRow[] = [];
@@ -279,6 +358,11 @@ function buildCandidateRows(rows: ClassifiedRow[]) {
       row.classification.family_key === "other_uncategorized" ||
       !isWriteSafeConfidence(row.classification.confidence)
     ) {
+      skippedForQuality.push(row);
+      continue;
+    }
+
+    if (!meetsMinConfidence(row.classification.confidence, minConfidence)) {
       skippedForQuality.push(row);
       continue;
     }
@@ -439,7 +523,7 @@ async function main() {
       };
     });
 
-    const prepared = buildCandidateRows(classifiedRows);
+    const prepared = buildCandidateRows(classifiedRows, args.min_confidence);
     const candidateRows = args.max_write != null
       ? prepared.candidates.slice(0, Math.max(0, Math.trunc(args.max_write)))
       : prepared.candidates;
@@ -473,8 +557,11 @@ async function main() {
       taxonomy_version: JOB_FAMILY_TAXONOMY_VERSION,
       blocked_sources: [...JOB_FAMILY_BLOCKED_SOURCES],
       batch_size: args.batch_size,
+      min_confidence: args.min_confidence,
       total_scanned: classifiedRows.length,
       candidate_count: candidateRows.length,
+      planned_write_count: candidateRows.length,
+      would_write_count: candidateRows.length,
       written_count: writtenRows.length,
       blocked_by_blocklist_count: prepared.blockedByBlocklist.length,
       skipped_for_quality_count: prepared.skippedForQuality.length,
@@ -489,6 +576,27 @@ async function main() {
         prepared.blockedByBlocklist,
       )
         .slice(0, 15),
+      candidate_examples: buildReportExamples(candidateRows, 50, true),
+      skipped_for_quality_examples: buildReportExamples(
+        prepared.skippedForQuality,
+        25,
+        false,
+      ),
+      skipped_uncategorized_examples: buildReportExamples(
+        prepared.skippedUncategorized,
+        25,
+        false,
+      ),
+      already_conformant_or_no_rewrite_examples: buildReportExamples(
+        prepared.alreadyConformantOrNoRewrite,
+        25,
+        false,
+      ),
+      runtime_other_examples: buildReportExamples(
+        runtimeSkippedOther,
+        25,
+        false,
+      ),
       anomalies: anomalies.slice(0, 25),
     };
 
