@@ -26,6 +26,8 @@ export const JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE = [
   "adzuna_api",
   "rss_nofluffjobs",
   "emploi_territorial_rss",
+  "rss_vuejobs",
+  "empllo_rss",
 ] as const;
 
 export type JobFamilyBlockedSource =
