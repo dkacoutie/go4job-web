@@ -8,6 +8,7 @@ import {
 import {
   getJobFamilySourcePolicy,
   isWriteSafeConfidence,
+  JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE,
   JOB_FAMILY_BLOCKED_SOURCES,
   JOB_FAMILY_CONTROLLED_WRITE_VERSION,
   JOB_FAMILY_SOURCE_POLICY,
@@ -69,6 +70,23 @@ type ReportExample = {
   would_write: boolean;
 };
 
+type BatchResultExample = {
+  job_id: string | null;
+  title: string | null;
+  source_code: string | null;
+  proposed_job_family: string | null;
+  confidence: JobFamilyClassification["confidence"] | null;
+  rule_id: string | null;
+  action: string | null;
+  db_action: string | null;
+  skip_reason: string | null;
+  db_skip_reason: string | null;
+  error_message: string | null;
+  db_error_message: string | null;
+  enrichment_id: string | null;
+  rollback_mode: boolean;
+};
+
 type RunReport = {
   run_mode: "apply" | "dry_run";
   started_at: string;
@@ -78,6 +96,7 @@ type RunReport = {
   source_policy_version: string;
   classifier_version: string;
   taxonomy_version: string;
+  allowed_sources: string[];
   blocked_sources: string[];
   batch_size: number;
   min_confidence: WriteConfidenceThreshold;
@@ -106,6 +125,8 @@ type RunReport = {
   skipped_uncategorized_examples: ReportExample[];
   already_conformant_or_no_rewrite_examples: ReportExample[];
   runtime_other_examples: ReportExample[];
+  batch_result_examples: BatchResultExample[];
+  runtime_other_result_examples: BatchResultExample[];
   anomalies: Array<Record<string, unknown>>;
 };
 
@@ -317,6 +338,29 @@ function buildReportExamples(
   return rows.slice(0, limit).map((row) => buildReportExample(row, wouldWrite));
 }
 
+function buildBatchResultExample(
+  item: BatchWriteResultRow,
+  row: ClassifiedRow | null,
+  rollback: boolean,
+): BatchResultExample {
+  return {
+    job_id: item.job_id,
+    title: row?.title ?? null,
+    source_code: row?.source_code ?? null,
+    proposed_job_family: row?.classification.family_key ?? null,
+    confidence: row?.classification.confidence ?? null,
+    rule_id: row?.classification.rule_trace.rule_id ?? null,
+    action: item.action,
+    db_action: item.action,
+    skip_reason: item.skip_reason,
+    db_skip_reason: item.skip_reason,
+    error_message: item.error_message,
+    db_error_message: item.error_message,
+    enrichment_id: item.enrichment_id,
+    rollback_mode: rollback,
+  };
+}
+
 function meetsMinConfidence(
   confidence: JobFamilyClassification["confidence"],
   minConfidence: WriteConfidenceThreshold,
@@ -412,7 +456,7 @@ async function callBatchFunction(
       "select * from public.insert_job_enrichment_batch($1::jsonb, $2::text[])",
       [
         JSON.stringify(buildBatchPayload(rows)),
-        [...JOB_FAMILY_BLOCKED_SOURCES],
+        [...JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE],
       ],
     );
 
@@ -444,11 +488,17 @@ async function executeBatches(
   const writtenRows: ClassifiedRow[] = [];
   const skippedOther: ClassifiedRow[] = [];
   const anomalies: Array<Record<string, unknown>> = [];
+  const batchResultExamples: BatchResultExample[] = [];
+  const runtimeOtherResultExamples: BatchResultExample[] = [];
 
   for (const chunk of chunkArray(rows, batchSize)) {
     const results = await callBatchFunction(client, chunk, rollback);
     for (const item of results) {
       const row = item.job_id ? byJobId.get(item.job_id) : null;
+      const resultExample = buildBatchResultExample(item, row ?? null, rollback);
+      if (batchResultExamples.length < 50) {
+        batchResultExamples.push(resultExample);
+      }
       const action = (item.action ?? "").trim().toLowerCase();
       const skipReason = (item.skip_reason ?? "").trim().toLowerCase();
 
@@ -458,6 +508,9 @@ async function executeBatches(
       }
 
       if (row) skippedOther.push(row);
+      if (runtimeOtherResultExamples.length < 50) {
+        runtimeOtherResultExamples.push(resultExample);
+      }
 
       if (skipReason === "other" || item.error_message) {
         anomalies.push({
@@ -475,6 +528,8 @@ async function executeBatches(
   return {
     writtenRows,
     skippedOther,
+    batchResultExamples,
+    runtimeOtherResultExamples,
     anomalies,
   };
 }
@@ -530,6 +585,8 @@ async function main() {
 
     let writtenRows: ClassifiedRow[] = [];
     let runtimeSkippedOther: ClassifiedRow[] = [];
+    let batchResultExamples: BatchResultExample[] = [];
+    let runtimeOtherResultExamples: BatchResultExample[] = [];
     let anomalies: Array<Record<string, unknown>> = [];
 
     if (args.apply || args.rollback) {
@@ -541,6 +598,8 @@ async function main() {
       );
       writtenRows = executed.writtenRows;
       runtimeSkippedOther = executed.skippedOther;
+      batchResultExamples = executed.batchResultExamples;
+      runtimeOtherResultExamples = executed.runtimeOtherResultExamples;
       anomalies = executed.anomalies;
     } else {
       writtenRows = candidateRows;
@@ -555,6 +614,7 @@ async function main() {
       source_policy_version: JOB_FAMILY_SOURCE_POLICY_VERSION,
       classifier_version: JOB_FAMILY_CONTROLLED_CLASSIFIER_VERSION,
       taxonomy_version: JOB_FAMILY_TAXONOMY_VERSION,
+      allowed_sources: [...JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE],
       blocked_sources: [...JOB_FAMILY_BLOCKED_SOURCES],
       batch_size: args.batch_size,
       min_confidence: args.min_confidence,
@@ -597,6 +657,8 @@ async function main() {
         25,
         false,
       ),
+      batch_result_examples: batchResultExamples.slice(0, 50),
+      runtime_other_result_examples: runtimeOtherResultExamples.slice(0, 50),
       anomalies: anomalies.slice(0, 25),
     };
 

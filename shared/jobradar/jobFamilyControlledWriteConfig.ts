@@ -18,6 +18,16 @@ export const JOB_FAMILY_BLOCKED_SOURCES = [
   "(unknown)",
 ] as const;
 
+export const JOB_FAMILY_ALLOWED_SOURCES_FOR_CONTROLLED_WRITE = [
+  "rss_remoteyeah_all",
+  "jobicy_rss",
+  "weworkremotely_all",
+  "france_travail_api",
+  "adzuna_api",
+  "rss_nofluffjobs",
+  "emploi_territorial_rss",
+] as const;
+
 export type JobFamilyBlockedSource =
   (typeof JOB_FAMILY_BLOCKED_SOURCES)[number];
 
