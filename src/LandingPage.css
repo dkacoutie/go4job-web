@@ -143,6 +143,46 @@
   gap: 22px;
 }
 
+.landing-steps__grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.step-card{
+  background: rgba(255,255,255,0.76);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 16px 36px rgba(2,6,23,0.07);
+}
+
+.step-card span{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: rgba(11,76,194,0.1);
+  color: rgba(11,76,194,0.96);
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.step-card h3{
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.step-card p{
+  margin: 0;
+  color: rgba(15,23,42,0.65);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
 .benefit-card{
   background: var(--panel);
   border: 1px solid var(--border);

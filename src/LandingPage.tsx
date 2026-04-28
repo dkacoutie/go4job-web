@@ -8,28 +8,33 @@ export default function LandingPage() {
     navigate("/auth", { state: { from: "/jobradar/feed" } });
   };
 
+  const goPricing = () => {
+    navigate("/pricing");
+  };
+
   return (
     <div className="landing-shell">
       <section className="landing-hero">
         <div className="landing-hero__content">
-          <div className="landing-badge">11 000+ offres d’emploi</div>
-          <h1>Ne perds plus des heures à chercher un job</h1>
+          <div className="landing-badge">Plus de 11 000 offres disponibles</div>
+          <h1>Repère plus vite les offres qui te correspondent</h1>
           <p>
-            Accède à 11 000+ offres d’emploi sur JobRadar et repère plus vite les opportunités qui
-            te correspondent.
+            JobRadar t’aide à chercher plus clairement, gagner du temps et trouver des opportunités
+            adaptées à ton profil en Afrique, en Europe et à distance.
           </p>
 
           <div className="landing-hero__cta">
             <button type="button" className="btn btnPrimary" onClick={goAuth}>
-              Commencer
+              Voir mes offres
             </button>
-            <a className="btn btnGhost" href="#benefits">
-              Découvrir JobRadar
-            </a>
+            <button type="button" className="btn btnGhost" onClick={goPricing}>
+              Voir les tarifs
+            </button>
           </div>
 
           <div className="landing-micro">
-            Simple, rapide et pensé pour les talents d’Afrique francophone.
+            Tu peux découvrir JobRadar gratuitement. Un pass permet ensuite de débloquer plus
+            d’opportunités.
           </div>
         </div>
 
@@ -44,9 +49,33 @@ export default function LandingPage() {
       </section>
 
       <section className="landing-proofbar" aria-label="Preuves">
-        <div className="landing-proofbar__item">11 000+ offres d’emploi</div>
-        <div className="landing-proofbar__item">Recherche plus simple</div>
-        <div className="landing-proofbar__item">Suivi plus clair</div>
+        <div className="landing-proofbar__item">Plus de 11 000 offres mises à jour régulièrement</div>
+        <div className="landing-proofbar__item">Afrique, Europe et distance</div>
+        <div className="landing-proofbar__item">Offres sauvegardées pour y revenir</div>
+      </section>
+
+      <section className="landing-section landing-steps" aria-label="Comment ça marche">
+        <div className="landing-section__header">
+          <h2>Comment ça marche ?</h2>
+          <p>Un parcours simple pour passer plus vite des offres disponibles aux offres utiles.</p>
+        </div>
+        <div className="landing-steps__grid">
+          <div className="step-card">
+            <span>1</span>
+            <h3>Indique le poste que tu recherches</h3>
+            <p>Ajoute ton poste cible, ta zone et tes préférences pour donner un cap clair à JobRadar.</p>
+          </div>
+          <div className="step-card">
+            <span>2</span>
+            <h3>JobRadar trie les offres selon ton profil</h3>
+            <p>Tu évites de te perdre dans trop d’offres et tu vois d’abord celles qui semblent les plus utiles.</p>
+          </div>
+          <div className="step-card">
+            <span>3</span>
+            <h3>Sauvegarde les offres intéressantes</h3>
+            <p>Garde les opportunités de côté ou active un pass pour débloquer plus d’offres.</p>
+          </div>
+        </div>
       </section>
 
       <section id="benefits" className="landing-section landing-benefits">
@@ -55,35 +84,39 @@ export default function LandingPage() {
         </div>
         <div className="landing-benefits__grid">
           <div className="benefit-card">
-            <h3>Gagne du temps</h3>
-            <p>Ne multiplie plus les recherches dispersées sur plusieurs sites et groupes.</p>
+            <h3>Tu gagnes du temps dans ta recherche</h3>
+            <p>JobRadar rassemble des offres et t’aide à avancer sans multiplier les recherches dispersées.</p>
           </div>
           <div className="benefit-card">
-            <h3>Repère plus vite les bonnes opportunités</h3>
+            <h3>Tu vois d’abord les offres les plus adaptées</h3>
             <p>
-              Accède à un grand volume d’offres et filtre plus facilement ce qui te correspond.
+              Les offres sont présentées pour t’aider à repérer plus vite celles qui correspondent à ton projet.
             </p>
           </div>
           <div className="benefit-card">
-            <h3>Reste organisé</h3>
-            <p>Suis tes opportunités et structure ta recherche avec plus de clarté.</p>
+            <h3>Tu cherches en Afrique, en Europe et à distance</h3>
+            <p>Explore des opportunités locales, internationales et à distance selon tes objectifs.</p>
+          </div>
+          <div className="benefit-card">
+            <h3>Tu gardes les offres intéressantes de côté</h3>
+            <p>Sauvegarde les offres utiles pour les retrouver facilement quand tu veux avancer.</p>
           </div>
         </div>
       </section>
 
       <section className="landing-cta-final">
         <div>
-          <h2>Prêt à découvrir JobRadar ?</h2>
+          <h2>Prêt à chercher plus clairement ?</h2>
           <p>
-            Accède à une plateforme pensée pour t’aider à chercher plus vite, plus clairement et
-            avec de meilleures opportunités sous les yeux.
+            Crée ton compte pour voir tes premières offres et comprendre plus vite quelles opportunités
+            valent ton attention.
           </p>
           <span className="landing-cta-final__note">
-            Découvre JobRadar et commence ta recherche plus sereinement.
+            Tu peux commencer gratuitement, puis choisir un pass si tu veux débloquer plus d’opportunités.
           </span>
         </div>
         <button type="button" className="btn btnPrimary" onClick={goAuth}>
-          Créer mon compte
+          Voir mes offres
         </button>
       </section>
 
