@@ -465,14 +465,16 @@ export default function JobRadarFeedPage() {
   const userId = session?.user?.id ?? null;
 
   const FEED_PREVIEW_LIMIT = 4;
-  const FEED_GATE_MESSAGE = "Débloque l’accès complet aux offres pour voir plus d’opportunités adaptées à ton profil.";
+  const FEED_GATE_MESSAGE =
+    "Active un pass pour voir plus d’offres adaptées, ouvrir les opportunités complètes et sauvegarder tes annonces.";
+  const FEED_GATE_REASSURANCE = ["Paiement unique", "Sans renouvellement automatique", "Carte ou Mobile Money"] as const;
   const OFFER_GATE_MESSAGE =
-    "Cette offre correspond à ton profil. Active ton pass pour voir l’offre complète et débloquer toutes tes offres.";
+    "Cette offre correspond à ton profil. Active un pass pour voir l’offre complète, accéder à plus d’opportunités et garder tes annonces de côté.";
   const OFFER_GATE_BENEFITS = [
-    "Accès complet à toutes tes offres",
+    "Plus d’offres adaptées à ton profil",
     "Offre complète pour chaque opportunité",
-    "Sauvegarde et suivi de tes candidatures",
-    "Alertes personnalisées",
+    "Paiement unique, sans renouvellement automatique",
+    "Carte ou Mobile Money",
   ] as const;
   const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";
   const allowPremium = hasActivePass && !isLoadingPass;
@@ -1118,8 +1120,13 @@ export default function JobRadarFeedPage() {
   );
   const gateCard = (
     <div className="jr-gateCard" role="group" aria-label="Accès premium JobRadar">
-      <div className="jr-gateTitle">Accède à toutes les opportunités</div>
+      <div className="jr-gateTitle">Débloque plus d’offres adaptées à ton profil</div>
       <div className="jr-gateText">{FEED_GATE_MESSAGE}</div>
+      <div className="jr-gateReassurance" aria-label="Réassurance paiement">
+        {FEED_GATE_REASSURANCE.map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
       <button className="jrBtn jrBtnPrimary" type="button" onClick={launchPassActivation}>
         Choisir mon pass
       </button>
@@ -1620,7 +1627,7 @@ export default function JobRadarFeedPage() {
 
             <div className="jr-offerPaywallModal__actions">
               <button type="button" className="btn btnPrimary btnWide" onClick={launchPassActivation}>
-                Débloquer mes offres
+                Choisir mon pass
               </button>
               <a
                 className="jr-offerPaywallModal__back"
