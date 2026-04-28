@@ -1591,32 +1591,174 @@ Deno.serve(async (req) => {
           !Array.isArray(baseIngestConfig.default_params)
         ? asPlainObject(baseIngestConfig.default_params)
         : {};
-      const defaultParamsWithoutSort = Object.fromEntries(
-        Object.entries(baseDefaultParams).filter(([key]) => key !== "sort_by"),
+      const rotationSegments: Record<string, unknown>[] = Array.isArray(
+          baseIngestConfig.rotation_segments,
+        )
+        ? baseIngestConfig.rotation_segments
+          .map((segment) => asPlainObject(segment))
+          .filter((segment) => Object.keys(segment).length > 0)
+        : baseIngestConfig.rotation_segments &&
+            typeof baseIngestConfig.rotation_segments === "object"
+        ? Object.entries(asPlainObject(baseIngestConfig.rotation_segments))
+          .map(([key, segment]) => ({
+            key,
+            ...asPlainObject(segment),
+          }))
+          .filter((segment) => Object.keys(segment).length > 1)
+        : [];
+      const segmentCount = rotationSegments.length;
+      const configuredSegmentIndex = toPositiveInt(
+        baseIngestConfig.current_segment_index ??
+          runtimeState.current_segment_index,
       );
-      const sortMode = normalizeAdzunaSortMode(baseIngestConfig.sort_mode);
+      const currentSegmentIndex = segmentCount > 0
+        ? Math.min(Math.max(configuredSegmentIndex ?? 0, 0), segmentCount - 1)
+        : 0;
+      const currentSegment = segmentCount > 0
+        ? rotationSegments[currentSegmentIndex] ?? {}
+        : {};
+      const nextSegmentIndex = segmentCount > 0
+        ? (currentSegmentIndex + 1) % segmentCount
+        : currentSegmentIndex;
+      const nextSegment = segmentCount > 0
+        ? rotationSegments[nextSegmentIndex] ?? {}
+        : {};
+      const segmentKey =
+        typeof currentSegment.key === "string" && currentSegment.key.trim()
+          ? currentSegment.key.trim()
+          : typeof currentSegment.segment_key === "string" &&
+              currentSegment.segment_key.trim()
+          ? currentSegment.segment_key.trim()
+          : "adzuna_default";
+      const segmentLabel =
+        typeof currentSegment.label === "string" && currentSegment.label.trim()
+          ? currentSegment.label.trim()
+          : typeof currentSegment.segment_label === "string" &&
+              currentSegment.segment_label.trim()
+          ? currentSegment.segment_label.trim()
+          : segmentKey;
+      const nextSegmentKey =
+        typeof nextSegment.key === "string" && nextSegment.key.trim()
+          ? nextSegment.key.trim()
+          : typeof nextSegment.segment_key === "string" &&
+              nextSegment.segment_key.trim()
+          ? nextSegment.segment_key.trim()
+          : segmentKey;
+      const rotationMode = typeof baseIngestConfig.rotation_mode === "string" &&
+          baseIngestConfig.rotation_mode.trim()
+        ? baseIngestConfig.rotation_mode.trim()
+        : segmentCount > 0
+        ? "rotation_segments"
+        : "single";
+      const segmentParams = currentSegment.search_params &&
+          typeof currentSegment.search_params === "object" &&
+          !Array.isArray(currentSegment.search_params)
+        ? asPlainObject(currentSegment.search_params)
+        : currentSegment.params &&
+            typeof currentSegment.params === "object" &&
+            !Array.isArray(currentSegment.params)
+        ? asPlainObject(currentSegment.params)
+        : {};
+      const searchParamsWithoutSort = Object.fromEntries(
+        Object.entries({ ...baseDefaultParams, ...segmentParams }).filter((
+          [key],
+        ) => key !== "sort_by"),
+      );
+      const sortMode = normalizeAdzunaSortMode(
+        currentSegment.sort_mode ?? baseIngestConfig.sort_mode,
+      );
+      const segmentSortBy = typeof segmentParams.sort_by === "string" &&
+          segmentParams.sort_by.trim()
+        ? segmentParams.sort_by.trim()
+        : null;
       const defaultParams = sortMode === "freshness"
-        ? { ...defaultParamsWithoutSort, sort_by: "date" }
-        : defaultParamsWithoutSort;
+        ? { ...searchParamsWithoutSort, sort_by: "date" }
+        : segmentSortBy
+        ? { ...searchParamsWithoutSort, sort_by: segmentSortBy }
+        : searchParamsWithoutSort;
+      const segmentDefaultCountry =
+        typeof currentSegment.country === "string" &&
+          currentSegment.country.trim()
+          ? currentSegment.country.trim()
+          : typeof segmentParams.country === "string" &&
+              segmentParams.country.trim()
+          ? segmentParams.country.trim()
+          : typeof currentSegment.default_country === "string" &&
+              currentSegment.default_country.trim()
+          ? currentSegment.default_country.trim()
+          : defaultCountry;
+      const segmentFallbackCountry =
+        typeof currentSegment.fallback_country === "string" &&
+          currentSegment.fallback_country.trim()
+          ? currentSegment.fallback_country.trim()
+          : fallbackCountry;
       const configuredMaxPages = Math.max(
         1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
+        Math.min(
+          20,
+          Number(currentSegment.max_pages ?? baseIngestConfig.max_pages ?? 1),
+        ),
       );
       const pageSize = Math.max(
         1,
-        Math.min(50, Number(jobSource.ingest_config?.results_per_page ?? 10)),
+        Math.min(
+          50,
+          Number(
+            currentSegment.results_per_page ??
+              baseIngestConfig.results_per_page ??
+              10,
+          ),
+        ),
       );
-      const requestedLimit = Math.max(1, Math.min(200, limit));
+      const requestedLimit = Math.max(1, Math.min(1000, limit));
+      const maxSegmentPagesByBudget = Math.max(
+        1,
+        Math.floor(requestedLimit / pageSize),
+      );
+      const segmentPagesRequested = segmentCount > 0
+        ? Math.min(20, segmentCount, maxSegmentPagesByBudget)
+        : null;
       const effectiveMaxPages = hasRequestedLimit
         ? Math.min(
-          5,
+          20,
           Math.max(configuredMaxPages, Math.ceil(requestedLimit / pageSize)),
         )
         : configuredMaxPages;
-      const maxItems = Math.min(requestedLimit, pageSize * effectiveMaxPages);
+      const pagesRequested = segmentPagesRequested ?? effectiveMaxPages;
+      const maxItems = Math.min(requestedLimit, pageSize * pagesRequested);
+      const segmentPages = asPlainObject(runtimeState.segment_pages);
+      const currentSegmentPageState = asPlainObject(segmentPages[segmentKey]);
       const startPage = sortMode === "exploration"
-        ? toBoundedInt(runtimeState.next_page, 1, 1, 999)
+        ? toBoundedInt(
+          currentSegmentPageState.next_page ?? runtimeState.next_page,
+          1,
+          1,
+          999,
+        )
         : 1;
+      const upsertChunkSize = Math.max(
+        1,
+        Math.min(500, toPositiveInt(baseIngestConfig.upsert_batch_size) ?? 250),
+      );
+      const adzunaMetaBase = {
+        requested_limit: requestedLimit,
+        effective_limit: maxItems,
+        results_per_page: pageSize,
+        pages_requested: pagesRequested,
+        start_page: startPage,
+        segment_key: segmentKey,
+        segment_label: segmentLabel,
+        current_segment_index: currentSegmentIndex,
+        next_segment_index: nextSegmentIndex,
+        next_segment_key: nextSegmentKey,
+        rotation_mode: rotationMode,
+        country_requested: segmentDefaultCountry,
+        fallback_country: segmentFallbackCountry,
+        sort_mode: sortMode,
+        search_params: defaultParams,
+        segment_params: segmentParams,
+        upsert_chunk_size: upsertChunkSize,
+      };
 
       const runId = await createRun(
         supabaseUrl,
@@ -1625,21 +1767,262 @@ Deno.serve(async (req) => {
         "ingest",
       );
       currentRunId = runId;
-      const data = await fetchAdzunaItems({
-        appId,
-        appKey,
-        searchUrlTemplate,
-        defaultCountry,
-        fallbackCountry,
-        defaultParams,
-        limit: maxItems,
-        maxPages: effectiveMaxPages,
-        resultsPerPage: pageSize,
-        startPage,
-      });
+      let data: {
+        list_url: string;
+        parsed: number;
+        items: Awaited<ReturnType<typeof fetchAdzunaItems>>["items"];
+        raw_fetched: number;
+        skipped_duplicates: number;
+        total_available: number | null;
+        country_used: string;
+        fallback_used: boolean;
+        start_page: number;
+        last_page_fetched: number | null;
+        next_page: number;
+      };
+      let segmentsProcessed: Array<Record<string, unknown>> = [];
+      let nextSegmentIndexAfterRun = nextSegmentIndex;
+      let nextSegmentKeyAfterRun = nextSegmentKey;
+      const nextSegmentPages = { ...segmentPages };
+
+      if (segmentCount > 0) {
+        const items: Awaited<ReturnType<typeof fetchAdzunaItems>>["items"] = [];
+        const seenExternalIds = new Set<string>();
+        let rawFetched = 0;
+        let skippedDuplicates = 0;
+        let listUrl = "";
+        let totalAvailable: number | null = null;
+        let countryUsed = segmentDefaultCountry;
+        let fallbackUsed = false;
+        let firstStartPage = startPage;
+        let lastPageFetched: number | null = null;
+        let lastNextPage = startPage;
+
+        // TODO: V2 could spend remaining budget on high-yield segments.
+        for (
+          let segmentOffset = 0;
+          segmentOffset < pagesRequested && items.length < maxItems;
+          segmentOffset += 1
+        ) {
+          const index = (currentSegmentIndex + segmentOffset) % segmentCount;
+          const segment = rotationSegments[index] ?? {};
+          const key = typeof segment.key === "string" && segment.key.trim()
+            ? segment.key.trim()
+            : typeof segment.segment_key === "string" &&
+                segment.segment_key.trim()
+            ? segment.segment_key.trim()
+            : `adzuna_segment_${index}`;
+          const label = typeof segment.label === "string" &&
+              segment.label.trim()
+            ? segment.label.trim()
+            : typeof segment.segment_label === "string" &&
+                segment.segment_label.trim()
+            ? segment.segment_label.trim()
+            : key;
+          const params = segment.search_params &&
+              typeof segment.search_params === "object" &&
+              !Array.isArray(segment.search_params)
+            ? asPlainObject(segment.search_params)
+            : segment.params &&
+                typeof segment.params === "object" &&
+                !Array.isArray(segment.params)
+            ? asPlainObject(segment.params)
+            : {};
+          const paramsWithoutSort = Object.fromEntries(
+            Object.entries({ ...baseDefaultParams, ...params }).filter((
+              [paramKey],
+            ) => paramKey !== "sort_by"),
+          );
+          const segmentMode = normalizeAdzunaSortMode(
+            segment.sort_mode ?? baseIngestConfig.sort_mode,
+          );
+          const segmentSortBy = typeof params.sort_by === "string" &&
+              params.sort_by.trim()
+            ? params.sort_by.trim()
+            : null;
+          const paramsForFetch = segmentMode === "freshness"
+            ? { ...paramsWithoutSort, sort_by: "date" }
+            : segmentSortBy
+            ? { ...paramsWithoutSort, sort_by: segmentSortBy }
+            : paramsWithoutSort;
+          const country = typeof segment.country === "string" &&
+              segment.country.trim()
+            ? segment.country.trim()
+            : typeof params.country === "string" && params.country.trim()
+            ? params.country.trim()
+            : typeof segment.default_country === "string" &&
+                segment.default_country.trim()
+            ? segment.default_country.trim()
+            : defaultCountry;
+          const fallback = typeof segment.fallback_country === "string" &&
+              segment.fallback_country.trim()
+            ? segment.fallback_country.trim()
+            : fallbackCountry;
+          const pageState = asPlainObject(segmentPages[key]);
+          const segmentStartPage = segmentMode === "exploration"
+            ? toBoundedInt(
+              pageState.next_page ?? runtimeState.next_page,
+              1,
+              1,
+              999,
+            )
+            : 1;
+          const remaining = maxItems - items.length;
+          const segmentData = await fetchAdzunaItems({
+            appId,
+            appKey,
+            searchUrlTemplate,
+            defaultCountry: country,
+            fallbackCountry: fallback,
+            defaultParams: paramsForFetch,
+            limit: Math.min(pageSize, remaining),
+            maxPages: 1,
+            resultsPerPage: pageSize,
+            startPage: segmentStartPage,
+          });
+
+          rawFetched += segmentData.raw_fetched;
+          skippedDuplicates += segmentData.skipped_duplicates;
+          listUrl = segmentData.list_url;
+          totalAvailable = segmentData.total_available ?? totalAvailable;
+          countryUsed = segmentData.country_used;
+          fallbackUsed = fallbackUsed || segmentData.fallback_used;
+          if (segmentOffset === 0) firstStartPage = segmentData.start_page;
+          lastPageFetched = segmentData.last_page_fetched ?? lastPageFetched;
+          lastNextPage = segmentData.next_page;
+
+          let segmentFetched = 0;
+          let segmentInterSegmentDuplicates = 0;
+          for (const item of segmentData.items) {
+            const externalId = item.external_id?.trim();
+            if (externalId) {
+              if (seenExternalIds.has(externalId)) {
+                segmentInterSegmentDuplicates += 1;
+                continue;
+              }
+              seenExternalIds.add(externalId);
+            }
+            items.push(item);
+            segmentFetched += 1;
+            if (items.length >= maxItems) break;
+          }
+          skippedDuplicates += segmentInterSegmentDuplicates;
+
+          const segmentPagePatch = {
+            ...pageState,
+            next_page: segmentMode === "exploration"
+              ? segmentData.next_page
+              : 1,
+            last_page_ingested: segmentData.last_page_fetched,
+            last_start_page: segmentData.start_page,
+            last_country_used: segmentData.country_used,
+          };
+          nextSegmentPages[key] = segmentPagePatch;
+          segmentsProcessed.push({
+            key,
+            label,
+            country: segmentData.country_used,
+            params: paramsForFetch,
+            search_params: paramsForFetch,
+            start_page: segmentData.start_page,
+            last_page_ingested: segmentData.last_page_fetched,
+            next_page: segmentData.next_page,
+            raw_fetched: segmentData.raw_fetched,
+            fetched: segmentFetched,
+            skipped_duplicates: segmentData.skipped_duplicates +
+              segmentInterSegmentDuplicates,
+          });
+        }
+
+        const processedCount = segmentsProcessed.length;
+        nextSegmentIndexAfterRun = processedCount >= segmentCount
+          ? 0
+          : (currentSegmentIndex + processedCount) % segmentCount;
+        const nextConfiguredSegment =
+          rotationSegments[nextSegmentIndexAfterRun] ?? {};
+        nextSegmentKeyAfterRun =
+          typeof nextConfiguredSegment.key === "string" &&
+              nextConfiguredSegment.key.trim()
+            ? nextConfiguredSegment.key.trim()
+            : typeof nextConfiguredSegment.segment_key === "string" &&
+                nextConfiguredSegment.segment_key.trim()
+            ? nextConfiguredSegment.segment_key.trim()
+            : "adzuna_default";
+
+        data = {
+          list_url: listUrl,
+          parsed: items.length,
+          items,
+          raw_fetched: rawFetched,
+          skipped_duplicates: skippedDuplicates,
+          total_available: totalAvailable,
+          country_used: countryUsed,
+          fallback_used: fallbackUsed,
+          start_page: firstStartPage,
+          last_page_fetched: lastPageFetched,
+          next_page: lastNextPage,
+        };
+      } else {
+        data = await fetchAdzunaItems({
+          appId,
+          appKey,
+          searchUrlTemplate,
+          defaultCountry: segmentDefaultCountry,
+          fallbackCountry: segmentFallbackCountry,
+          defaultParams,
+          limit: maxItems,
+          maxPages: effectiveMaxPages,
+          resultsPerPage: pageSize,
+          startPage,
+        });
+        nextSegmentPages[segmentKey] = {
+          ...currentSegmentPageState,
+          next_page: sortMode === "exploration" ? data.next_page : 1,
+          last_page_ingested: data.last_page_fetched,
+          last_start_page: data.start_page,
+          last_country_used: data.country_used,
+        };
+        segmentsProcessed = [{
+          key: segmentKey,
+          label: segmentLabel,
+          country: data.country_used,
+          params: defaultParams,
+          search_params: defaultParams,
+          start_page: data.start_page,
+          last_page_ingested: data.last_page_fetched,
+          next_page: data.next_page,
+          raw_fetched: data.raw_fetched,
+          fetched: data.items.length,
+          skipped_duplicates: data.skipped_duplicates,
+        }];
+      }
       const offerFreshnessMetrics = computeOfferFreshnessMetrics(data.items);
 
       if (dry_run) {
+        const meta = {
+          ...adzunaMetaBase,
+          start_page: data.start_page,
+          last_page_ingested: data.last_page_fetched,
+          next_page: data.next_page,
+          country_used: data.country_used,
+          fallback_used: data.fallback_used,
+          total_available: data.total_available,
+          total_segments_processed: segmentsProcessed.length,
+          segments_processed: segmentsProcessed,
+          next_segment_index: nextSegmentIndexAfterRun,
+          next_segment_key: nextSegmentKeyAfterRun,
+          raw_fetched: data.raw_fetched,
+          fetched: data.items.length,
+          inserted: 0,
+          updated: 0,
+          skipped_duplicates: data.skipped_duplicates,
+          rotation_new_count: 0,
+          rotation_seen_count: 0,
+          rotation_new_ratio: null,
+          rotation_seen_ratio: null,
+          upsert_chunk_count: Math.ceil(data.items.length / upsertChunkSize),
+          ...offerFreshnessMetrics,
+        };
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
           finished_at: new Date().toISOString(),
           status: "success",
@@ -1647,11 +2030,13 @@ Deno.serve(async (req) => {
           fetched_count: data.items.length,
           inserted_count: 0,
           updated_count: 0,
+          meta,
         });
         return json({
           ok: true,
           source_code,
           limit: maxItems,
+          meta,
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
@@ -1663,6 +2048,8 @@ Deno.serve(async (req) => {
           start_page: data.start_page,
           next_page: data.next_page,
           last_page_fetched: data.last_page_fetched,
+          raw_fetched: data.raw_fetched,
+          skipped_duplicates: data.skipped_duplicates,
           ...offerFreshnessMetrics,
           sample: data.items.slice(0, 3),
         });
@@ -1767,23 +2154,58 @@ Deno.serve(async (req) => {
 
       let inserted = 0;
       let updated = 0;
+      let upsertChunkCount = 0;
       try {
-        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows));
+        const upsertResult = await upsertJobsWithStats(supabase, rows, {
+          batchSize: upsertChunkSize,
+        });
+        inserted = upsertResult.inserted;
+        updated = upsertResult.updated;
+        upsertChunkCount = upsertResult.upsertChunkCount;
       } catch (upErr) {
-        const err = upErr as Error;
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        const chunkSuffix = err.chunkIndex ? `_chunk_${err.chunkIndex}` : "";
+        const meta = {
+          ...adzunaMetaBase,
+          start_page: data.start_page,
+          last_page_ingested: data.last_page_fetched,
+          next_page: data.next_page,
+          country_used: data.country_used,
+          fallback_used: data.fallback_used,
+          total_available: data.total_available,
+          total_segments_processed: segmentsProcessed.length,
+          segments_processed: segmentsProcessed,
+          next_segment_index: nextSegmentIndexAfterRun,
+          next_segment_key: nextSegmentKeyAfterRun,
+          raw_fetched: data.raw_fetched,
+          fetched: rows.length,
+          inserted: err.inserted,
+          updated: err.updated,
+          skipped_duplicates: data.skipped_duplicates,
+          rotation_new_count: err.inserted,
+          rotation_seen_count: err.updated,
+          rotation_new_ratio: null,
+          rotation_seen_ratio: null,
+          upsert_chunk_count: Math.ceil(rows.length / upsertChunkSize),
+          ...offerFreshnessMetrics,
+        };
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
           finished_at: new Date().toISOString(),
           status: "failed",
           ok: false,
-          error: `jobs_upsert_failed: ${err.message}`,
+          error: `jobs_upsert_failed${chunkSuffix}: ${err.message}`,
           fetched_count: rows.length,
-          inserted_count: 0,
-          updated_count: 0,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+          meta,
         });
         return json({
           ok: false,
-          error: "jobs_upsert_failed",
+          error: `jobs_upsert_failed${chunkSuffix}`,
           message: err.message,
+          meta,
         }, 500);
       }
 
@@ -1795,15 +2217,39 @@ Deno.serve(async (req) => {
       const rotationSeenRatio = rotationBase > 0
         ? Number((updated / rotationBase).toFixed(4))
         : null;
+      const processedSegmentKeys = new Set(
+        segmentsProcessed
+          .map((segment) => typeof segment.key === "string" ? segment.key : "")
+          .filter(Boolean),
+      );
+      const runtimeSegmentPages = Object.fromEntries(
+        Object.entries(nextSegmentPages).map(([key, value]) => [
+          key,
+          processedSegmentKeys.has(key)
+            ? { ...asPlainObject(value), last_finished_at: finishedAt }
+            : value,
+        ]),
+      );
       const nextRuntimeState = {
         ...runtimeState,
         next_page: sortMode === "exploration" ? data.next_page : 1,
+        current_segment_index: nextSegmentIndexAfterRun,
+        current_segment_key: nextSegmentKeyAfterRun,
+        segment_pages: runtimeSegmentPages,
         last_page_ingested: data.last_page_fetched,
         last_start_page: data.start_page,
+        last_segment_index: currentSegmentIndex,
+        last_segment_key: segmentKey,
+        last_segment_label: segmentLabel,
+        last_segments_processed: segmentsProcessed,
+        next_segment_index: nextSegmentIndexAfterRun,
+        next_segment_key: nextSegmentKeyAfterRun,
         last_country_used: data.country_used,
         last_sort_mode: sortMode,
         last_limit: maxItems,
         last_parsed: data.parsed,
+        last_raw_fetched: data.raw_fetched,
+        last_skipped_duplicates: data.skipped_duplicates,
         last_total_available: data.total_available,
         last_finished_at: finishedAt,
         last_offer_freshness_metrics: offerFreshnessMetrics,
@@ -1814,6 +2260,30 @@ Deno.serve(async (req) => {
           seen_ratio: rotationSeenRatio,
         },
       };
+      const meta = {
+        ...adzunaMetaBase,
+        start_page: data.start_page,
+        last_page_ingested: data.last_page_fetched,
+        next_page: data.next_page,
+        country_used: data.country_used,
+        fallback_used: data.fallback_used,
+        total_available: data.total_available,
+        total_segments_processed: segmentsProcessed.length,
+        segments_processed: segmentsProcessed,
+        next_segment_index: nextSegmentIndexAfterRun,
+        next_segment_key: nextSegmentKeyAfterRun,
+        raw_fetched: data.raw_fetched,
+        fetched: rows.length,
+        inserted,
+        updated,
+        skipped_duplicates: data.skipped_duplicates,
+        rotation_new_count: inserted,
+        rotation_seen_count: updated,
+        rotation_new_ratio: rotationNewRatio,
+        rotation_seen_ratio: rotationSeenRatio,
+        upsert_chunk_count: upsertChunkCount,
+        ...offerFreshnessMetrics,
+      };
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
         finished_at: finishedAt,
         status: "success",
@@ -1821,6 +2291,7 @@ Deno.serve(async (req) => {
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+        meta,
       });
       await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
         last_checked_at: finishedAt,
@@ -1828,6 +2299,8 @@ Deno.serve(async (req) => {
         last_success_at: finishedAt,
         ingest_config: {
           ...baseIngestConfig,
+          current_segment_index: nextSegmentIndexAfterRun,
+          segment_key: nextSegmentKeyAfterRun,
           sort_mode: sortMode,
           runtime_state: nextRuntimeState,
         },
@@ -1840,6 +2313,7 @@ Deno.serve(async (req) => {
         ok: true,
         source_code,
         limit: maxItems,
+        meta,
         dry_run: false,
         status: "adzuna_api_upserted",
         parsed: data.parsed,
@@ -1850,6 +2324,8 @@ Deno.serve(async (req) => {
         start_page: data.start_page,
         next_page: data.next_page,
         last_page_fetched: data.last_page_fetched,
+        raw_fetched: data.raw_fetched,
+        skipped_duplicates: data.skipped_duplicates,
         ...offerFreshnessMetrics,
         rotation_new_count: inserted,
         rotation_seen_count: updated,

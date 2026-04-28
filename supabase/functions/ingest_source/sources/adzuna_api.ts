@@ -486,8 +486,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   const countryCandidates = uniqueStrings([primaryCountry, secondaryCountry])
     .map((value) => normalizeCountryCode(value))
     .filter((value): value is string => Boolean(value));
-  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 200));
-  const maxPages = Math.max(1, Math.min(Math.trunc(options.maxPages ?? 1), 5));
+  const totalLimit = Math.max(1, Math.min(Math.trunc(options.limit), 1000));
+  const maxPages = Math.max(1, Math.min(Math.trunc(options.maxPages ?? 1), 20));
   const pageSize = Math.max(
     1,
     Math.min(Math.trunc(options.resultsPerPage ?? 10), 50),
@@ -514,6 +514,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   let fallbackUsed = false;
   let lastPageFetched: number | null = null;
   let nextPage = startPage;
+  let rawFetched = 0;
+  let skippedDuplicates = 0;
 
   for (
     let candidateIndex = 0;
@@ -522,12 +524,15 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
   ) {
     const countryCode = countryCandidates[candidateIndex];
     const items: AdzunaApiItem[] = [];
+    const seenExternalIds = new Set<string>();
     let lastUrl = finalUrl;
     let candidateTotal: number | null = null;
     let hadSuccess = false;
     let candidateLastPageFetched: number | null = null;
     let candidateNextPage = startPage;
     let exhausted = false;
+    let candidateRawFetched = 0;
+    let candidateSkippedDuplicates = 0;
 
     try {
       for (
@@ -561,8 +566,19 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
         }
 
         for (const entry of pageItems) {
+          candidateRawFetched += 1;
           const mapped = mapAdzunaItem(entry, countryCode);
-          if (mapped) items.push(mapped);
+          if (mapped) {
+            const dedupeKey = mapped.external_id?.trim();
+            if (dedupeKey) {
+              if (seenExternalIds.has(dedupeKey)) {
+                candidateSkippedDuplicates += 1;
+                continue;
+              }
+              seenExternalIds.add(dedupeKey);
+            }
+            items.push(mapped);
+          }
           if (items.length >= totalLimit) break;
         }
 
@@ -590,6 +606,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     fallbackUsed = candidateIndex > 0;
     lastPageFetched = candidateLastPageFetched;
     nextPage = exhausted ? 1 : candidateNextPage;
+    rawFetched = candidateRawFetched;
+    skippedDuplicates = candidateSkippedDuplicates;
 
     if (
       items.length > 0 || candidateIndex === countryCandidates.length - 1 ||
@@ -603,6 +621,8 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     list_url: finalUrl,
     parsed: finalItems.length,
     items: finalItems,
+    raw_fetched: rawFetched,
+    skipped_duplicates: skippedDuplicates,
     total_available: totalAvailable,
     country_used: countryUsed,
     fallback_used: fallbackUsed,
