@@ -1026,6 +1026,10 @@ export default function JobRadarFeedPage() {
   const displayedLimited = isPreview ? displayed.slice(0, FEED_PREVIEW_LIMIT) : displayed;
   const showGateOnDisplayed = isPreview && displayed.length > FEED_PREVIEW_LIMIT;
   const showNoPreciseMatchState = matchMode === "strict" && forYouCount === 0 && exploreCount > 0;
+  const forYouPillLabel =
+    forYouCount === 0 && exploreCount > 0
+      ? "Personnalisation en cours"
+      : getJobRadarShadowPillLabel(shadowMeta, forYouCount);
   const hasCvContext = cvKeywords.length > 0 || cvExp != null;
   const feedAdvisorMode = useMemo(() => {
     if (busy || matchMode !== "strict" || alerts.length === 0 || forYouCount === 0) return null;
@@ -1143,7 +1147,7 @@ export default function JobRadarFeedPage() {
                 {displayed.length > 1 ? "s" : ""}
               </span>
               <span className="jr-pillHero jr-pillStrong">
-                {getJobRadarShadowPillLabel(shadowMeta, forYouCount)}
+                {forYouPillLabel}
               </span>
             </div>
           </div>
