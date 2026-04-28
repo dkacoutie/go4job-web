@@ -467,10 +467,10 @@ export default function JobRadarFeedPage() {
   const FEED_PREVIEW_LIMIT = 4;
   const FEED_GATE_MESSAGE = "Débloque l’accès complet aux offres pour voir plus d’opportunités adaptées à ton profil.";
   const OFFER_GATE_MESSAGE =
-    "Cette offre correspond à ton profil. Active ton pass pour voir le détail complet et débloquer toutes tes offres.";
+    "Cette offre correspond à ton profil. Active ton pass pour voir l’offre complète et débloquer toutes tes offres.";
   const OFFER_GATE_BENEFITS = [
     "Accès complet à toutes tes offres",
-    "Détail complet de chaque opportunité",
+    "Offre complète pour chaque opportunité",
     "Sauvegarde et suivi de tes candidatures",
     "Alertes personnalisées",
   ] as const;
@@ -1025,6 +1025,7 @@ export default function JobRadarFeedPage() {
   const displayed = matchMode === "strict" ? forYouRows : visibleFeedBuckets.explore;
   const displayedLimited = isPreview ? displayed.slice(0, FEED_PREVIEW_LIMIT) : displayed;
   const showGateOnDisplayed = isPreview && displayed.length > FEED_PREVIEW_LIMIT;
+  const showNoPreciseMatchState = matchMode === "strict" && forYouCount === 0 && exploreCount > 0;
   const hasCvContext = cvKeywords.length > 0 || cvExp != null;
   const feedAdvisorMode = useMemo(() => {
     if (busy || matchMode !== "strict" || alerts.length === 0 || forYouCount === 0) return null;
@@ -1180,10 +1181,14 @@ export default function JobRadarFeedPage() {
                     trackJobRadarEvent("match_mode_select", { mode: "strict", forYouCount, exploreCount });
                   }}
                   disabled={busy || forYouCount === 0}
-                  title={forYouCount === 0 ? "Aucune offre pour l’instant" : "Offres les plus pertinentes pour toi"}
+                  title={
+                    forYouCount === 0
+                      ? "Aucun match précis pour l’instant"
+                      : "Offres les plus pertinentes pour toi"
+                  }
                   aria-pressed={matchMode === "strict"}
                 >
-                  Pour toi ({forYouCount})
+                  {forYouCount === 0 ? "Pour toi" : `Pour toi (${forYouCount})`}
                 </button>
               )}
 
@@ -1283,7 +1288,7 @@ export default function JobRadarFeedPage() {
           <div style={{ marginTop: 12 }}>
             <NextStepCard
               title="Astuce JobRadar"
-              message="Sauvegarde les offres intéressantes dans “À postuler” pour les retrouver plus tard."
+              message="Sauvegarde les offres intéressantes pour les retrouver plus tard."
               primaryAction={{ label: "Compris", onClick: () => setShowTip(false) }}
               tone="info"
             />
@@ -1387,7 +1392,22 @@ export default function JobRadarFeedPage() {
             tone="info"
           />
         ) : displayed.length === 0 ? (
-          shadowUi.profileMode === "alerts_only" ? (
+          showNoPreciseMatchState ? (
+            <EmptyState
+              title="Aucun match précis pour l’instant"
+              description="Essaie d’élargir tes critères ou consulte toutes les offres."
+              primaryAction={{
+                label: "Consulter toutes les offres",
+                onClick: () => {
+                  setHasUserSelectedMode(true);
+                  setMatchMode("large");
+                  scrollToResults();
+                },
+              }}
+              secondaryAction={{ label: "Élargir mes critères", to: "/jobradar/profile" }}
+              tone="info"
+            />
+          ) : shadowUi.profileMode === "alerts_only" ? (
             <EmptyState
               title="Tes alertes ne suffisent pas encore pour construire de vrais matchs"
               description="On n’a rien trouvé de suffisamment propre à afficher pour l’instant. Définis un rôle cible pour améliorer la précision."
@@ -1490,7 +1510,7 @@ export default function JobRadarFeedPage() {
                     </div>
 
                     <div className="jr-whyBox">
-                      <div className="jr-whyTitle">Pourquoi pour toi</div>
+                      <div className="jr-whyTitle">Pourquoi cette offre ?</div>
                       <ul className="jr-whyList">
                         {whyReasons.map((reason) => (
                           <li key={reason}>{reason}</li>
@@ -1507,10 +1527,10 @@ export default function JobRadarFeedPage() {
                           addToApplications(job.id);
                         }}
                         disabled={isAdding}
-                        title="Ajouter dans Mes candidatures (À postuler)"
+                        title="Sauvegarder dans Mes candidatures (À postuler)"
                         type="button"
                       >
-                        {isAdding ? "Ajout…" : "Ajouter"}
+                        {isAdding ? "Sauvegarde…" : "Sauvegarder"}
                       </button>
 
                       <div className="jr-footerActions">
@@ -1522,7 +1542,7 @@ export default function JobRadarFeedPage() {
                           }}
                           type="button"
                         >
-                          Détail →
+                          Voir l’offre →
                         </button>
 
                         <button
@@ -1536,7 +1556,7 @@ export default function JobRadarFeedPage() {
                           title="Masquer cette offre"
                           type="button"
                         >
-                          {isDismissing ? "…" : "Décliner"}
+                          {isDismissing ? "…" : "Pas intéressé"}
                         </button>
                       </div>
                     </div>
