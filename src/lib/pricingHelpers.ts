@@ -33,16 +33,17 @@ export const PRICING_PRICE_NOTE = "Paiement unique, sans renouvellement automati
 export const PRICING_MODEL_TITLE = "Une tarification claire, pens\u00e9e pour durer";
 export const PRICING_MODEL_TEXT =
   "Choisis la dur\u00e9e qui correspond \u00e0 ton rythme : l'acc\u00e8s est complet d\u00e8s l'activation, avec paiement s\u00e9curis\u00e9 et sans renouvellement automatique.";
-export const PRICING_BILLING_MESSAGE = "Montants factur\u00e9s en FCFA (XOF).";
+export const PRICING_BILLING_MESSAGE =
+  "Paiement en FCFA (XOF). Les \u00e9quivalents EUR/USD sont indicatifs.";
 export const PRICING_INDICATIVE_MESSAGE =
-  "Les \u00e9quivalents en \u20ac et $ sont affich\u00e9s \u00e0 titre indicatif selon le taux de change.";
+  "Si tu paies avec une carte internationale, ta banque peut convertir le montant dans ta devise.";
 export const PRICING_CONVERSION_MESSAGE =
-  "La conversion finale est appliqu\u00e9e automatiquement par votre banque ou votre moyen de paiement, si n\u00e9cessaire.";
+  "Paiement s\u00e9curis\u00e9 par carte ou Mobile Money, en une seule fois et sans renouvellement automatique.";
 
 export const PRICING_REASSURANCE_POINTS = [
-  "Paiement s\u00e9curis\u00e9 par carte et Mobile Money",
-  "Acc\u00e8s activ\u00e9 d\u00e8s confirmation du paiement",
-  "Tarification claire, sans renouvellement automatique",
+  "Paiement s\u00e9curis\u00e9 par carte ou Mobile Money",
+  "Ton pass est activ\u00e9 apr\u00e8s paiement",
+  "Paiement unique, sans renouvellement automatique",
 ];
 
 export const ACCEPTED_PAYMENT_METHODS: PaymentMethodBadge[] = [

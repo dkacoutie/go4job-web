@@ -210,12 +210,15 @@ export default function PricingPlansBlock({
       await paymentMarket.setPreference(market);
       setInfoMsg(
         market === "eur"
-          ? "Preference EUR enregistree. Le checkout EUR arrive bientot ; le paiement actuel reste en XOF."
-          : "Preference XOF enregistree."
+          ? "Ton choix EUR est enregistré pour l'affichage. Le paiement en ligne reste facturé en FCFA (XOF)."
+          : "Ton choix XOF est enregistré."
       );
       setErrorMsg(null);
     } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : "Impossible d'enregistrer la preference.");
+      console.error("[JobRadar] payment preference save failed", error);
+      setErrorMsg(
+        "Impossible d'enregistrer ta préférence pour l'instant. Tu peux continuer : le paiement reste en FCFA (XOF)."
+      );
     }
   };
 

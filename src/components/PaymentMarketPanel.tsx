@@ -1,5 +1,8 @@
 import { type PaymentMarket, type PaymentMarketResolution } from "../lib/paymentMarket";
 
+const PAYMENT_PREFERENCE_ERROR_MESSAGE =
+  "Impossible d'enregistrer ta préférence pour l'instant. Tu peux continuer : le paiement reste en FCFA (XOF).";
+
 type PaymentMarketPanelProps = {
   resolution: PaymentMarketResolution;
   loading: boolean;
@@ -12,16 +15,16 @@ type PaymentMarketPanelProps = {
 function sourceLabel(source: PaymentMarketResolution["source"]) {
   switch (source) {
     case "payment_preference":
-      return "selon ta preference enregistree";
+      return "selon ton choix enregistré";
     case "last_successful_payment":
-      return "selon ton dernier paiement confirme";
+      return "selon ton dernier paiement confirmé";
     case "country_code":
       return "selon ton pays de profil";
     case "geoip_locale":
       return "selon ta localisation et la langue du navigateur";
     case "xof_default":
     default:
-      return "par defaut";
+      return "par défaut";
   }
 }
 
@@ -35,25 +38,28 @@ export default function PaymentMarketPanel({
 }: PaymentMarketPanelProps) {
   const isBusy = loading || savingPreference;
   const titleLabel =
-    resolution.market === "eur" ? "Preference de paiement : EUR" : "XOF recommande";
+    resolution.market === "eur" ? "Affichage préféré : EUR" : "Affichage préféré : XOF";
 
   return (
-    <section className="payment-market-panel" aria-label="Marche paiement">
+    <section className="payment-market-panel" aria-label="Devise préférée">
       <div className="payment-market-panel__head">
         <div>
-          <div className="payment-market-panel__eyebrow">Marche paiement</div>
+          <div className="payment-market-panel__eyebrow">Devise préférée</div>
           <div className="payment-market-panel__title">{titleLabel}</div>
         </div>
         <div className="payment-market-panel__source">{sourceLabel(resolution.source)}</div>
       </div>
 
       <p className="payment-market-panel__body">
-        JobRadar prepare un routing multi-marche. Le checkout actif reste aujourd'hui disponible en{" "}
-        <strong>{resolution.checkout.active_currency}</strong> via{" "}
-        <strong>{resolution.checkout.active_provider_code}</strong>.
+        Tu peux choisir ta devise préférée pour l'affichage. Aujourd'hui, le paiement en ligne se fait en{" "}
+        <strong>FCFA (XOF)</strong>.
+      </p>
+      <p className="payment-market-panel__note">
+        Si tu paies avec une carte internationale, ta banque peut convertir le montant dans ta devise.
+        Les montants en EUR/USD sont indicatifs.
       </p>
 
-      <div className="payment-market-panel__choices" role="group" aria-label="Choisir un marche">
+      <div className="payment-market-panel__choices" role="group" aria-label="Choisir une devise d'affichage">
         <button
           type="button"
           className={`payment-market-panel__choice ${resolution.market === "eur" ? "is-active" : ""}`}
@@ -74,17 +80,17 @@ export default function PaymentMarketPanel({
 
       <p className="payment-market-panel__note">
         {resolution.market === "eur"
-          ? "Votre preference EUR est enregistree. Pour le moment, le paiement en ligne reste facture en FCFA via notre checkout actuel."
-          : "Le checkout actuel reste aligne sur le parcours XOF existant."}
+          ? "Ton choix EUR est enregistré pour l'affichage. Le paiement en ligne reste facturé en FCFA (XOF)."
+          : "Ton affichage reste aligné sur le paiement en FCFA (XOF)."}
       </p>
 
       {!canPersistPreference && (
         <p className="payment-market-panel__note">
-          Ta selection est gardee pour cette session. Connecte-toi pour l'enregistrer sur ton profil.
+          Ta sélection est gardée pour cette session. Connecte-toi pour l'enregistrer sur ton profil.
         </p>
       )}
 
-      {error && <div className="pricing-error">Erreur : {error}</div>}
+      {error && <div className="pricing-error">{PAYMENT_PREFERENCE_ERROR_MESSAGE}</div>}
     </section>
   );
 }
