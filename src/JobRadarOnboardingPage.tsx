@@ -85,12 +85,12 @@ const BEFORE_PURCHASE_STEPS: Array<Exclude<JobRadarOnboardingStep, "done" | "com
 
 const STEP_HELPER_TEXT: Record<Exclude<JobRadarOnboardingStep, "done">, string> = {
   profile: "Réponse rapide, modifiable plus tard.",
-  preferences: "JobRadar prépare une base utile que tu peux affiner librement.",
-  preview: "Un premier aperçu concret avant de passer au plan complet.",
+  preferences: "JobRadar prépare ton profil de recherche, que tu peux ajuster librement.",
+  preview: "Un premier aperçu concret avant de passer à l’accès complet.",
   unlock: "Activation simple, sans perte de progression.",
   "complete-profile": "Derniers réglages avant des offres plus précises.",
   cv: "Un import maintenant rend les offres plus précises ensuite.",
-  alerts: "Tes alertes finales complètent maintenant le radar.",
+  alerts: "Tes alertes complètent ta recherche.",
 };
 
 function normalizeText(input: string) {
@@ -300,14 +300,14 @@ function buildPreviewLocationReason(job: PreviewJob, kind: PreviewCardKind) {
 
   if (remote.includes("remote")) {
     return kind === "match"
-      ? "Le mode teletravail reste coherent avec ce que tu recherches."
+      ? "Le mode teletravail correspond a ce que tu recherches."
       : "Le teletravail rend cette piste plus simple a explorer.";
   }
 
   if (remote.includes("hybrid") || remote.includes("hybride")) {
     return kind === "match"
-      ? "Le mode de travail reste coherent avec tes preferences."
-      : "Le mode de travail reste compatible avec tes preferences.";
+      ? "Le mode de travail correspond a ce que tu recherches."
+      : "Le mode de travail reste compatible avec tes criteres.";
   }
 
   if (location) {
@@ -332,22 +332,22 @@ function buildPreviewEmploymentReason(job: PreviewJob, employmentTypes: Employme
     {
       type: "contract",
       tests: [" cdd ", "contract", "mission", "fixed term", "consultant"],
-      reason: "Le format mission reste compatible avec tes preferences.",
+      reason: "Le format mission reste compatible avec tes criteres.",
     },
     {
       type: "internship",
       tests: ["stage", "internship", "intern ", "alternance", "trainee"],
-      reason: "Le format reste coherent avec le type d'opportunites que tu peux viser.",
+      reason: "Le format correspond au type d'opportunites que tu peux viser.",
     },
     {
       type: "freelance",
       tests: ["freelance", "contractor", "consultant independant"],
-      reason: "Le format freelance reste coherent avec ton cap actuel.",
+      reason: "Le format freelance correspond a ton cap actuel.",
     },
     {
       type: "part-time",
       tests: ["part time", "part-time", "temps partiel"],
-      reason: "Le rythme du poste semble compatible avec tes preferences.",
+      reason: "Le rythme du poste semble compatible avec tes criteres.",
     },
   ];
 
@@ -453,7 +453,7 @@ function buildPreviewReasons(
   if (matchedCvSignal && params.hasCv) {
     add(
       params.kind === "match"
-        ? "Ton profil renforce deja la coherence de cette offre."
+        ? "Ton profil rend cette offre plus interessante pour toi."
         : "Ton profil donne deja un peu plus de poids a cette piste."
     );
   }
@@ -473,8 +473,8 @@ function buildPreviewReasons(
   if (!reasons.length) {
     add(
       params.kind === "match"
-        ? "Cette offre parait globalement coherente avec ton objectif."
-        : "Cette piste peut valoir le detour pendant que ton radar se precise."
+        ? "Cette offre parait globalement proche de ton objectif."
+        : "Cette piste peut valoir le detour pendant que ta recherche se precise."
     );
   }
 
@@ -691,8 +691,8 @@ export default function JobRadarOnboardingPage() {
         eyebrow: "Premiers matchs",
         title: "Ces offres semblent deja bien alignees avec ton projet.",
         body:
-          "On voit deja une bonne coherence entre le metier vise, tes preferences et les opportunites qui remontent. En continuant, JobRadar pourra elargir et affiner cette selection.",
-        chips: ["Metier coherent", "Preferences prises en compte", "Plus d'offres apres activation"],
+          "On voit deja une bonne correspondance entre le metier vise, tes informations et les opportunites qui remontent. En continuant, JobRadar pourra elargir et rendre cette selection plus utile.",
+        chips: ["Metier cible pris en compte", "Informations prises en compte", "Plus d'offres apres activation"],
         emptyTitle: "On affine encore la premiere selection.",
         emptyBody:
           "Ton cap est clair, mais il n'y a pas encore assez d'offres solides a montrer maintenant. Enrichis ton profil pour debloquer des resultats plus convaincants.",
@@ -703,11 +703,11 @@ export default function JobRadarOnboardingPage() {
       eyebrow: "Opportunites proches",
       title: "Voici quelques opportunites proches pour demarrer.",
       body:
-        "Ton profil donne deja une direction, mais il manque encore assez de signaux pour afficher des matchs vraiment cibles. Ajoute ton CV, active tes alertes et affine tes preferences pour obtenir des resultats plus precis.",
-      chips: ["Ajoute ton CV", "Active tes alertes", "Affiner tes preferences"],
+        "Ton profil donne deja une direction, mais il manque encore assez d'informations pour afficher des offres vraiment ciblees. Ajoute ton CV, active tes alertes et ajuste tes criteres pour obtenir des resultats plus precis.",
+      chips: ["Ajoute ton CV", "Active tes alertes", "Ajuste tes criteres"],
       emptyTitle: "Le ciblage demarre, mais reste encore leger.",
       emptyBody:
-        "Complete ton profil, ajoute ton CV et precise tes preferences pour faire remonter des offres plus credibles des la prochaine etape.",
+        "Complete ton profil, ajoute ton CV et precise tes criteres pour faire remonter des offres plus utiles des la prochaine etape.",
     };
   }, [previewMode]);
   const preferencesAdvisor = useMemo(() => getJobRadarAdvisorCopy({ key: "onboarding-preferences" }), []);
@@ -833,16 +833,17 @@ export default function JobRadarOnboardingPage() {
 
   const stepMeta = JOBRADAR_FLOW_STEPS.find((item) => item.key === currentStep)!;
   const currentStepNumber = JOBRADAR_FLOW_STEPS.findIndex((item) => item.key === currentStep) + 1;
-  const phaseLabel = stepMeta.phase === "before_purchase" ? "Avant accès complet" : "Finalisation";
+  const phaseLabel = stepMeta.phase === "before_purchase" ? "Personnalisation de tes offres" : "Finalisation";
   const profileStep = (
     <Panel>
       <div className="jrOnbFormGrid">
         <label className="jrOnbField">
           Poste recherché
-          <input className="jrOnbInput" value={desiredRole} onChange={(e) => setDesiredRole(e.target.value)} placeholder="Ex : Data Analyst" />
+          <input className="jrOnbInput" value={desiredRole} onChange={(e) => setDesiredRole(e.target.value)} placeholder="Ex. assistant comptable, commercial, développeur, chauffeur…" />
+          <small className="jrOnbFieldHint">Écris simplement le métier ou le poste que tu veux trouver.</small>
         </label>
         <label className="jrOnbField">
-          Pays / zone
+          Dans quel pays ou quelle zone veux-tu chercher ?
           <select className="jrOnbInput" value={countryCodes[0] ?? ""} onChange={(e) => setCountryCodes(e.target.value ? [e.target.value] : [])}>
             <option value="">Choisir une zone</option>
             {ONBOARDING_COUNTRY_OPTIONS.map((option) => (
@@ -851,10 +852,11 @@ export default function JobRadarOnboardingPage() {
               </option>
             ))}
           </select>
-          <small className="jrOnbFieldHint">Choisis « Tous pays / toutes zones » si tu veux rester ouvert géographiquement.</small>
+          <small className="jrOnbFieldHint">Tu peux choisir ton pays, l’Europe, l’Afrique ou les offres à distance selon ton objectif.</small>
         </label>
         <div className="jrOnbField">
-          Niveau d'expérience
+          Quel est ton niveau d’expérience ?
+          <small className="jrOnbFieldHint">Cela aide JobRadar à éviter les offres trop juniors ou trop avancées.</small>
           <div className="jrOnbChoices">
             {EXPERIENCE_LEVEL_OPTIONS.map((option) => (
               <button key={option.value} type="button" className={`jrOnbChoice ${experienceLevel === option.value ? "is-active" : ""}`} onClick={() => setExperienceLevel(option.value)}>
@@ -865,7 +867,8 @@ export default function JobRadarOnboardingPage() {
           </div>
         </div>
         <div className="jrOnbField">
-          Type de poste
+          Quel type de poste veux-tu ?
+          <small className="jrOnbFieldHint">CDI, CDD, stage, freelance, remote… choisis ce qui correspond à ta recherche.</small>
           <div className="jrOnbPills">
             {EMPLOYMENT_TYPE_OPTIONS.map((option) => {
               const active = employmentTypes.includes(option.value);
@@ -1038,7 +1041,7 @@ export default function JobRadarOnboardingPage() {
       <div className="jrOnbDrafts__header">
         <div>
           <div className="jrOnbDrafts__eyebrow">Alertes préparées</div>
-          <h2>Deux alertes déjà prêtes pour ton radar</h2>
+          <h2>Deux alertes déjà prêtes pour ta recherche</h2>
         </div>
         <p>Tu peux les garder telles quelles, ajuster leur fréquence, ou en retirer une si elle t'intéresse moins.</p>
       </div>
@@ -1107,7 +1110,7 @@ export default function JobRadarOnboardingPage() {
                   }
                 : onboarding.hasCv
                 ? {
-                    label: previewAdvisor.ctaLabel ?? "Ajuster mes préférences",
+                    label: previewAdvisor.ctaLabel ?? "Ajuster mes critères",
                     onClick: () => setSearchParams({ step: "preferences" }),
                   }
                 : {
@@ -1167,7 +1170,7 @@ export default function JobRadarOnboardingPage() {
               <p>{previewContent.emptyBody}</p>
               <div className="jrOnbValuePanel__chips">
                 <span>Offres actives uniquement</span>
-                <span>Offres mieux adaptées à ton profil et à tes préférences</span>
+                <span>Offres mieux adaptées à ton profil et à tes critères</span>
                 <span>Alertes prêtes dès activation</span>
               </div>
             </div>
@@ -1180,7 +1183,7 @@ export default function JobRadarOnboardingPage() {
           Débloquer toutes les offres
         </button>
         <button className="btn btnGhost" type="button" onClick={() => setSearchParams({ step: "preferences" })}>
-          Ajuster mes préférences
+          Ajuster mes critères
         </button>
       </div>
     </Panel>
@@ -1198,7 +1201,7 @@ export default function JobRadarOnboardingPage() {
         </div>
         <div className="jrOnbBenefitCard">
           <strong>Sélection plus précise</strong>
-          <span>Profil, CV et préférences permettent une sélection plus précise.</span>
+          <span>Profil, CV et critères permettent une sélection plus précise.</span>
         </div>
       </div>
       <PricingPlansBlock

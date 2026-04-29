@@ -84,16 +84,17 @@ export type JobRadarFlowStep = {
 export const JOBRADAR_FLOW_STEPS: JobRadarFlowStep[] = [
   {
     key: "profile",
-    label: "Profil",
+    label: "Quel poste recherches-tu ?",
     eyebrow: "Étape 1",
-    description: "Définis rapidement le rôle visé pour personnaliser les premières offres.",
+    description:
+      "Indique le poste que tu vises. JobRadar s’en servira pour te montrer des offres plus adaptées. Tu pourras modifier ce choix plus tard.",
     phase: "before_purchase",
   },
   {
     key: "preferences",
-    label: "Préférences",
+    label: "Critères",
     eyebrow: "Étape 2",
-    description: "Affûte tes critères avec une base intelligente, sans transformer l'expérience en formulaire administratif.",
+    description: "Ajoute quelques détails pour construire ton profil de recherche, sans long formulaire.",
     phase: "before_purchase",
   },
   {
@@ -107,7 +108,7 @@ export const JOBRADAR_FLOW_STEPS: JobRadarFlowStep[] = [
     key: "unlock",
     label: "Débloquer",
     eyebrow: "Étape 4",
-    description: "Active le pass pour ouvrir l'ensemble du radar et des recommandations.",
+    description: "Active le pass pour ouvrir l’accès complet aux offres et aux recommandations.",
     phase: "before_purchase",
   },
   {
@@ -128,7 +129,7 @@ export const JOBRADAR_FLOW_STEPS: JobRadarFlowStep[] = [
     key: "alerts",
     label: "Alertes",
     eyebrow: "Étape 7",
-    description: "Active tes alertes pour passer d'un radar passif à un radar utile chaque jour.",
+    description: "Active tes alertes pour recevoir des offres utiles plus régulièrement.",
     phase: "after_purchase",
   },
 ];
@@ -157,7 +158,7 @@ export const EXPERIENCE_LEVEL_OPTIONS: Array<{ value: ExperienceLevel; label: st
   { value: "junior", label: "Junior", hint: "1 à 3 ans d'expérience." },
   { value: "intermediate", label: "Intermédiaire", hint: "3 à 6 ans, déjà autonome." },
   { value: "senior", label: "Senior", hint: "6 ans et plus, expertise confirmée." },
-  { value: "executive", label: "Lead / Manager", hint: "Management, pilotage, vision transverse." },
+  { value: "executive", label: "Lead / Manager", hint: "Management, coordination d’équipe ou responsabilité de projet." },
 ];
 
 export const EMPLOYMENT_TYPE_OPTIONS: Array<{ value: EmploymentType; label: string }> = [

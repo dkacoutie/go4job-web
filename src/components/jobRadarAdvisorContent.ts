@@ -22,8 +22,8 @@ export function getJobRadarAdvisorCopy(preset: JobRadarAdvisorPreset): JobRadarA
     case "onboarding-preferences":
       return {
         eyebrow: DEFAULT_EYEBROW,
-        title: "Bon debut : ton radar devient plus pertinent.",
-        description: "JobRadar a deja prepare une base utile pour toi. Tu peux la garder telle quelle ou l'ajuster en quelques secondes.",
+        title: "Bon debut : ta recherche devient plus precise.",
+        description: "JobRadar a deja prepare un profil de recherche utile pour toi. Tu peux le garder tel quel ou l'ajuster en quelques secondes.",
         ctaLabel: "Voir mes offres",
         tone: "focus",
       };
@@ -43,9 +43,9 @@ export function getJobRadarAdvisorCopy(preset: JobRadarAdvisorPreset): JobRadarA
         eyebrow: DEFAULT_EYEBROW,
         title: "Ces offres sont proches de ton objectif.",
         description: preset.hasCv
-          ? "Tu as deja une base utile. Quelques ajustements de preferences peuvent maintenant faire ressortir les offres les plus adaptees."
-          : "Tu as deja une base utile. Ajoute ton CV pour obtenir des offres mieux ciblees.",
-        ctaLabel: preset.hasCv ? "Ajuster mes preferences" : "Ajouter mon CV",
+          ? "Tu as deja un profil de recherche utile. Quelques ajustements peuvent maintenant faire ressortir les offres les plus adaptees."
+          : "Tu as deja un profil de recherche utile. Ajoute ton CV pour obtenir des offres mieux ciblees.",
+        ctaLabel: preset.hasCv ? "Ajuster mes criteres" : "Ajouter mon CV",
         tone: "focus",
       };
 
