@@ -178,12 +178,17 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
             </>
           )}
 
-          <nav className="site-footer__col" aria-label="Legal">
-            <div className="site-footer__title">Legal</div>
+          <nav className="site-footer__col" aria-label="Légal">
+            <div className="site-footer__title">Légal</div>
             <ul className="site-footer__list">
               <li>
+                <Link className="site-footer__link" to="/legal">
+                  Mentions légales
+                </Link>
+              </li>
+              <li>
                 <Link className="site-footer__link" to="/terms">
-                  Conditions d'utilisation
+                  Conditions d'utilisation et de vente
                 </Link>
               </li>
               <li>
@@ -192,17 +197,15 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                 </Link>
               </li>
               <li>
+                <Link className="site-footer__link" to="/refund-policy">
+                  Politique de remboursement
+                </Link>
+              </li>
+              <li>
                 <Link className="site-footer__link" to="/contact">
                   Contact
                 </Link>
               </li>
-              {isPublic && (
-                <li>
-                  <Link className="site-footer__link" to="/auth">
-                    Connexion
-                  </Link>
-                </li>
-              )}
             </ul>
           </nav>
         </div>

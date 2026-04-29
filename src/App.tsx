@@ -24,6 +24,8 @@ import ThanksPage from "./ThanksPage";
 import PrivacyPage from "./PrivacyPage";
 import TermsPage from "./TermsPage";
 import ContactPage from "./ContactPage";
+import LegalPage from "./LegalPage";
+import RefundPolicyPage from "./RefundPolicyPage";
 import LandingPage from "./LandingPage";
 import LandingAnalyticsTracker from "./components/LandingAnalyticsTracker";
 import MetaPixelTracker from "./components/MetaPixelTracker";
@@ -158,6 +160,8 @@ export default function App() {
                 <Route path="/thanks" element={<ThanksPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/legal" element={<LegalPage />} />
+                <Route path="/refund-policy" element={<RefundPolicyPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route
                   path="/devenir-partenaire"
