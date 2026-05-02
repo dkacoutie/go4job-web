@@ -51,12 +51,8 @@ export default function PaymentMarketPanel({
       </div>
 
       <p className="payment-market-panel__body">
-        Tu peux choisir ta devise préférée pour l'affichage. Aujourd'hui, le paiement en ligne se fait en{" "}
-        <strong>FCFA (XOF)</strong>.
-      </p>
-      <p className="payment-market-panel__note">
-        Si tu paies avec une carte internationale, ta banque peut convertir le montant dans ta devise.
-        Les montants en EUR/USD sont indicatifs.
+        Tu peux choisir ta devise préférée pour l'affichage. Le paiement en ligne reste facturé en{" "}
+        <strong>FCFA (XOF)</strong>. Les montants en EUR/USD sont indicatifs.
       </p>
 
       <div className="payment-market-panel__choices" role="group" aria-label="Choisir une devise d'affichage">

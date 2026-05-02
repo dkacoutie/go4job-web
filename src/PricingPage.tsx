@@ -12,9 +12,6 @@ import { usePass } from "./lib/usePass";
 import {
   FEATURED_PLAN_CODE,
   PRICING_ACCESS_MESSAGE,
-  PRICING_BILLING_MESSAGE,
-  PRICING_CONVERSION_MESSAGE,
-  PRICING_INDICATIVE_MESSAGE,
   PRICING_MODEL_TEXT,
   PRICING_MODEL_TITLE,
   PRICING_PRICE_NOTE,
@@ -439,33 +436,6 @@ export default function PricingPage() {
           </div>
         )}
 
-        <section className="pricing-model" aria-label="Tarification JobRadar">
-          <div className="pricing-model__title">{PRICING_MODEL_TITLE}</div>
-          <p className="pricing-model__text">{PRICING_MODEL_TEXT}</p>
-        </section>
-
-        <section className="pricing-transparency" aria-label="Transparence tarifaire">
-          <p className="pricing-transparency__title">{PRICING_BILLING_MESSAGE}</p>
-          <p className="pricing-transparency__body">{PRICING_INDICATIVE_MESSAGE}</p>
-          <p className="pricing-transparency__fine">{PRICING_CONVERSION_MESSAGE}</p>
-        </section>
-
-        <section className="pricing-help" aria-label="Besoin d'aide avant achat">
-          <div className="pricing-help__content">
-            <p className="pricing-help__title">Une question avant d’activer ton accès ?</p>
-            <p className="pricing-help__text">
-              On peut te répondre sur l'abonnement, le paiement ou l'accès avant ton achat.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="pricing-help__cta"
-            onClick={() => navigate("/contact?from=pricing")}
-          >
-            Nous contacter
-          </button>
-        </section>
-
         {loading ? (
           <div className="pricing-loading">Chargement...</div>
         ) : (
@@ -591,6 +561,27 @@ export default function PricingPage() {
             </section>
           </>
         )}
+
+        <section className="pricing-model" aria-label="Tarification JobRadar">
+          <div className="pricing-model__title">{PRICING_MODEL_TITLE}</div>
+          <p className="pricing-model__text">{PRICING_MODEL_TEXT}</p>
+        </section>
+
+        <section className="pricing-help" aria-label="Besoin d'aide avant achat">
+          <div className="pricing-help__content">
+            <p className="pricing-help__title">Une question avant d’activer ton accès ?</p>
+            <p className="pricing-help__text">
+              On peut te répondre sur l'abonnement, le paiement ou l'accès avant ton achat.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="pricing-help__cta"
+            onClick={() => navigate("/contact?from=pricing")}
+          >
+            Nous contacter
+          </button>
+        </section>
 
         <section className="pricing-pass">
           <div className="pricing-pass__header">
