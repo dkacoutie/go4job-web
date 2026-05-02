@@ -84,6 +84,7 @@ function renderLayout(params: {
   bodyHtml: string;
   primaryHref: string;
   primaryLabel: string;
+  postCtaHtml?: string;
   secondaryHref?: string;
   secondaryLabel?: string;
   unsubscribeUrl: string;
@@ -114,8 +115,8 @@ function renderLayout(params: {
   const headerContent = modernVisual
     ? `<table role="presentation" cellspacing="0" cellpadding="0" border="0">
                   <tr>
-                    <td width="46" valign="middle" style="width:46px;padding:0 12px 0 0;">
-                      <img src="${escapeAttr(params.headerLogoUrl ?? "")}" width="40" height="40" alt="Go4Job" style="display:block;width:40px;height:40px;border:0;outline:none;text-decoration:none;border-radius:8px;">
+                    <td width="54" valign="middle" style="width:54px;padding:0 12px 0 0;">
+                      <img src="${escapeAttr(params.headerLogoUrl ?? "")}" width="48" height="48" alt="Go4Job" style="display:block;width:48px;height:48px;border:0;outline:none;text-decoration:none;border-radius:9px;">
                     </td>
                     <td valign="middle" style="padding:0;">
                       <div style="font-size:24px;line-height:1.15;font-weight:800;color:#0b1420;letter-spacing:0;">
@@ -173,6 +174,7 @@ function renderLayout(params: {
                   </tr>
                 </table>
                 ${secondary}
+                ${params.postCtaHtml ?? ""}
               </td>
             </tr>
             <tr>
@@ -194,9 +196,6 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;background:#f8fbfc;border:1px solid #dce8ed;border-radius:12px;">
         <tr>
           <td style="padding:15px 16px;">
-            <p style="margin:0 0 4px;font-size:12px;line-height:1.4;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0;">
-              Poste recherché
-            </p>
             <p style="margin:0;font-size:15px;line-height:1.6;color:#25313b;">
               Tu avais indiqué rechercher : <strong style="color:#0b1420;">${escapeHtml(variables.poste_recherche)}</strong>.
             </p>
@@ -233,10 +232,8 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
         </tr>
       </table>
       ${roleLine}
-      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
-        Depuis ta tentative d'activation, JobRadar a évolué pour mieux repérer les offres pertinentes,
-        avec des opportunités en Afrique, en Europe et à distance.
-      </p>
+      `,
+    postCtaHtml: `
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
         Si tu as rencontré un problème ou si quelque chose n'était pas clair, tu peux simplement répondre à cet email.
         Ton retour nous aidera vraiment à améliorer JobRadar.
@@ -262,9 +259,10 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
   const text = `Bonjour,
 
 Tu avais commencé à activer ton accès JobRadar, mais l'activation ne semble pas être allée au bout.
+77 000+ offres référencées
+Afrique • Europe • À distance
+Matching selon ta recherche
 ${roleText}
-Depuis, JobRadar a beaucoup évolué : plus de 77 000 offres d'emploi sont maintenant référencées, avec des opportunités en Afrique, en Europe et à distance.
-
 Tu peux reprendre ici :
 ${variables.pricing_url}
 
