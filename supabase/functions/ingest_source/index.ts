@@ -961,7 +961,7 @@ Deno.serve(async (req) => {
         typeof jobSource.ingest_config?.search_query === "string"
           ? jobSource.ingest_config.search_query
           : null;
-      const maxPages = Math.max(
+      const configuredMaxPages = Math.max(
         1,
         Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 1)),
       );
@@ -969,12 +969,26 @@ Deno.serve(async (req) => {
         0,
         Math.trunc(Number(jobSource.ingest_config?.offset ?? 0)),
       );
+      const requestedLimit = hasRequestedLimit && Number.isFinite(limit)
+        ? Math.max(1, Math.min(100, Math.trunc(limit)))
+        : 20;
+      const rawConfiguredLimit = Number(jobSource.ingest_config?.limit);
       const configuredLimit = Math.max(
         1,
-        Math.min(20, Number(jobSource.ingest_config?.limit ?? 5)),
+        Math.min(
+          100,
+          Number.isFinite(rawConfiguredLimit)
+            ? rawConfiguredLimit
+            : requestedLimit,
+        ),
       );
-      const requestedLimit = Math.max(1, Math.min(20, limit));
-      const maxItems = Math.min(configuredLimit, requestedLimit);
+      const maxItems = hasRequestedLimit
+        ? requestedLimit
+        : Math.max(requestedLimit, configuredLimit);
+      const maxPages = Math.min(
+        5,
+        Math.max(configuredMaxPages, Math.ceil(maxItems / 20)),
+      );
 
       const runId = await createRun(
         supabaseUrl,
@@ -1005,10 +1019,16 @@ Deno.serve(async (req) => {
           ok: true,
           source_code,
           limit: maxItems,
+          requested_limit: requestedLimit,
+          effective_limit: maxItems,
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
           parsed: data.parsed,
+          inserted: 0,
+          updated: 0,
+          upserted: 0,
+          skipped: 0,
           sample: data.items.slice(0, 3),
         });
       }
@@ -1133,12 +1153,15 @@ Deno.serve(async (req) => {
         ok: true,
         source_code,
         limit: maxItems,
+        requested_limit: requestedLimit,
+        effective_limit: maxItems,
         dry_run: false,
         status: "himalayas_api_upserted",
         parsed: data.parsed,
         inserted,
         updated,
         upserted: rows.length,
+        skipped: 0,
       });
     }
 
