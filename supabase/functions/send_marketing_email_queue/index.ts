@@ -1,0 +1,903 @@
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import {
+  createClient,
+  type SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import {
+  isMarketingEmailKey,
+  renderMarketingEmail,
+  type MarketingEmailKey,
+} from "../_shared/marketingEmails/templates.ts";
+
+type SendMarketingEmailQueueBody = {
+  dry_run?: boolean | null;
+  limit?: number | null;
+};
+
+type QueueItem = {
+  id: string;
+  user_id: string | null;
+  email: string;
+  sequence_key: string;
+  step_key: string;
+  template_key: string;
+  segment_key: string | null;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  metadata: Record<string, unknown> | null;
+};
+
+type EmailLogPayload = {
+  user_id?: string | null;
+  email: string;
+  email_normalized: string;
+  segment: string;
+  email_key: string;
+  template_version?: string | null;
+  subject?: string | null;
+  dry_run: boolean;
+  status: "queued" | "sent" | "skipped" | "failed";
+  resend_message_id?: string | null;
+  sent_at?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+type ExistingEmailLog = {
+  id: string;
+  status: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type ReservedEmailLog = {
+  id: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type ResponseItem = {
+  queue_id: string;
+  email: string;
+  sequence_key: string;
+  step_key: string;
+  action: string;
+  reason: string;
+};
+
+type ResendResult = {
+  ok: boolean;
+  resendEmailId: string | null;
+  status: number | null;
+  code: string;
+  message: string;
+  temporary: boolean;
+};
+
+type InsertedUnsubscribeToken = {
+  token: string;
+};
+
+const MAX_LIMIT = 10;
+const LOCKED_BY = "send_marketing_email_queue_v1";
+const REQUEST_TIMEOUT_MS = 15_000;
+const UNSUBSCRIBE_BASE_URL =
+  "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/email_unsubscribe";
+
+const TEMPLATE_KEY_TO_SEGMENT: Record<MarketingEmailKey, string> = {
+  payment_attempt_no_success_email_1: "payment_attempt_no_success",
+  interested_no_payment_attempt_email_1: "interested_no_payment_attempt",
+  buyer_feedback_email_1: "buyer_feedback",
+};
+
+const VALID_SEGMENTS = new Set([
+  "payment_attempt_no_success",
+  "interested_no_payment_attempt",
+  "buyer_feedback",
+  "incomplete_onboarding",
+  "expired_pass",
+  "former_buyer",
+  "job_alert",
+]);
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "content-type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+function cleanSecret(value: string | undefined | null): string {
+  let v = (value ?? "").trim();
+  v = v.replace(/^['"]|['"]$/g, "");
+  if (v.toLowerCase().startsWith("bearer ")) {
+    v = v.slice(7).trim();
+  }
+  return v;
+}
+
+function isAuthorized(req: Request) {
+  const cronSecret = cleanSecret(Deno.env.get("CRON_SECRET"));
+  if (!cronSecret) {
+    return { ok: false, status: 500, error: "server_misconfigured" };
+  }
+
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  const cronHeader = (req.headers.get("x-cron-secret") ?? "").trim();
+
+  if (bearer === cronSecret || cronHeader === cronSecret) {
+    return { ok: true, status: 200, error: null };
+  }
+
+  return { ok: false, status: 401, error: "unauthorized" };
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function maskEmail(email: string) {
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return "***";
+  const start = localPart.slice(0, 2);
+  const end = localPart.length > 4 ? localPart.slice(-1) : "";
+  return `${start}${"*".repeat(Math.max(3, localPart.length - start.length - end.length))}${end}@${domain}`;
+}
+
+function parseLimit(value: number) {
+  return Math.min(Math.max(Math.trunc(value), 1), MAX_LIMIT);
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function logEmailKey(item: QueueItem) {
+  return `${item.sequence_key}:${item.step_key}`;
+}
+
+function segmentFor(item: QueueItem) {
+  const fromQueue = (item.segment_key ?? "").trim();
+  if (VALID_SEGMENTS.has(fromQueue)) return fromQueue;
+  if (isMarketingEmailKey(item.template_key)) {
+    return TEMPLATE_KEY_TO_SEGMENT[item.template_key];
+  }
+  return "job_alert";
+}
+
+function metadataString(item: QueueItem, key: string) {
+  return asString(item.metadata?.[key]);
+}
+
+function buildResponseItem(
+  item: QueueItem,
+  action: string,
+  reason: string,
+): ResponseItem {
+  return {
+    queue_id: item.id,
+    email: maskEmail(item.email),
+    sequence_key: item.sequence_key,
+    step_key: item.step_key,
+    action,
+    reason,
+  };
+}
+
+function isTemporaryResendStatus(status: number) {
+  return status === 429 || status >= 500;
+}
+
+function isPermanentResendStatus(status: number) {
+  return status === 400 || status === 422;
+}
+
+function ensureUnsubscribeFooter(html: string, text: string, unsubscribeUrl: string) {
+  const htmlHasLink = html.includes(unsubscribeUrl);
+  const textHasLink = text.includes(unsubscribeUrl);
+
+  return {
+    html: htmlHasLink
+      ? html
+      : `${html}<p style="font-size:12px;color:#64748b;">Se desinscrire : <a href="${unsubscribeUrl}">${unsubscribeUrl}</a></p>`,
+    text: textHasLink
+      ? text
+      : `${text}\n\nSe desinscrire : ${unsubscribeUrl}`,
+  };
+}
+
+async function fetchQueueItems(supabase: SupabaseClient, limit: number) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("marketing_email_queue")
+    .select(
+      [
+        "id",
+        "user_id",
+        "email",
+        "sequence_key",
+        "step_key",
+        "template_key",
+        "segment_key",
+        "status",
+        "attempts",
+        "max_attempts",
+        "metadata",
+      ].join(","),
+    )
+    .eq("status", "queued")
+    .lte("scheduled_for", now)
+    .order("priority", { ascending: true })
+    .order("scheduled_for", { ascending: true })
+    .limit(limit * 3)
+    .returns<QueueItem[]>();
+
+  if (error) throw new Error(`queue_select_failed:${error.message}`);
+  return (data ?? [])
+    .filter((item) => item.attempts < item.max_attempts)
+    .slice(0, limit);
+}
+
+async function fetchSuppression(supabase: SupabaseClient, emailNormalized: string) {
+  const { data, error } = await supabase
+    .from("email_suppressions")
+    .select("reason, source")
+    .eq("email_normalized", emailNormalized)
+    .maybeSingle<{ reason: string; source: string | null }>();
+
+  if (error) throw new Error(`suppression_lookup_failed:${error.message}`);
+  return data;
+}
+
+async function hasSentLog(
+  supabase: SupabaseClient,
+  emailNormalized: string,
+  emailKey: string,
+) {
+  const { data, error } = await supabase
+    .from("email_logs")
+    .select("id")
+    .eq("email_normalized", emailNormalized)
+    .eq("email_key", emailKey)
+    .eq("status", "sent")
+    .maybeSingle<{ id: string }>();
+
+  if (error) throw new Error(`sent_log_lookup_failed:${error.message}`);
+  return Boolean(data?.id);
+}
+
+async function fetchExistingEmailLog(
+  supabase: SupabaseClient,
+  emailNormalized: string,
+  emailKey: string,
+) {
+  const { data, error } = await supabase
+    .from("email_logs")
+    .select("id, status, metadata")
+    .eq("email_normalized", emailNormalized)
+    .eq("email_key", emailKey)
+    .maybeSingle<ExistingEmailLog>();
+
+  if (error) throw new Error(`email_log_lookup_failed:${error.message}`);
+  return data;
+}
+
+async function insertSkippedEmailLogIfAbsent(
+  supabase: SupabaseClient,
+  payload: EmailLogPayload,
+) {
+  const { error } = await supabase.from("email_logs").insert(payload);
+
+  if (!error) return { inserted: true, reason: "inserted" };
+
+  if (error.code === "23505") {
+    await fetchExistingEmailLog(
+      supabase,
+      payload.email_normalized,
+      payload.email_key,
+    );
+    return { inserted: false, reason: "existing_log_preserved" };
+  }
+
+  throw new Error(`email_log_insert_failed:${error.message}`);
+}
+
+async function reserveEmailLog(
+  supabase: SupabaseClient,
+  payload: EmailLogPayload,
+) {
+  const { data, error } = await supabase
+    .from("email_logs")
+    .insert(payload)
+    .select("id, metadata")
+    .single<ReservedEmailLog>();
+
+  if (!error && data?.id) {
+    return { reserved: true, log: data, existing: null };
+  }
+
+  if (error?.code === "23505") {
+    const existing = await fetchExistingEmailLog(
+      supabase,
+      payload.email_normalized,
+      payload.email_key,
+    );
+    return { reserved: false, log: null, existing };
+  }
+
+  throw new Error(`email_log_reserve_failed:${error?.message ?? "missing_log_id"}`);
+}
+
+async function updateReservedEmailLog(
+  supabase: SupabaseClient,
+  logId: string,
+  payload: Partial<EmailLogPayload>,
+) {
+  const { error } = await supabase
+    .from("email_logs")
+    .update(payload)
+    .eq("id", logId)
+    .neq("status", "sent");
+
+  if (error) throw new Error(`email_log_update_failed:${error.message}`);
+}
+
+async function failReservedEmailLogIfPossible(
+  supabase: SupabaseClient,
+  log: ReservedEmailLog | null,
+  details: {
+    errorCode: string;
+    errorMessage: string;
+    queueId: string;
+    sequenceKey: string;
+    stepKey: string;
+    templateKey: string;
+  },
+) {
+  if (!log?.id) return;
+
+  try {
+    await updateReservedEmailLog(supabase, log.id, {
+      status: "failed",
+      metadata: {
+        ...(log.metadata ?? {}),
+        queue_id: details.queueId,
+        sequence_key: details.sequenceKey,
+        step_key: details.stepKey,
+        template_key: details.templateKey,
+        provider: "resend",
+        error_code: details.errorCode,
+        error_message: details.errorMessage,
+      },
+    });
+  } catch {
+    // A best-effort failure update must never overwrite a sent log or hide the original failure.
+  }
+}
+
+async function lockQueueItem(supabase: SupabaseClient, item: QueueItem) {
+  const { data, error } = await supabase
+    .from("marketing_email_queue")
+    .update({
+      status: "locked",
+      locked_at: new Date().toISOString(),
+      locked_by: LOCKED_BY,
+      attempts: item.attempts + 1,
+      last_error: null,
+    })
+    .eq("id", item.id)
+    .eq("status", "queued")
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (error) throw new Error(`queue_lock_failed:${error.message}`);
+  return Boolean(data?.id);
+}
+
+async function markQueueSent(
+  supabase: SupabaseClient,
+  item: QueueItem,
+  resendEmailId: string | null,
+) {
+  const { error } = await supabase
+    .from("marketing_email_queue")
+    .update({
+      status: "sent",
+      provider: "resend",
+      provider_message_id: resendEmailId,
+      sent_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+    })
+    .eq("id", item.id)
+    .eq("status", "locked");
+
+  if (error) throw new Error(`queue_sent_update_failed:${error.message}`);
+}
+
+async function markQueueSkipped(
+  supabase: SupabaseClient,
+  item: QueueItem,
+  reason: string,
+) {
+  const { error } = await supabase
+    .from("marketing_email_queue")
+    .update({
+      status: "skipped",
+      locked_at: null,
+      locked_by: null,
+      last_error: reason,
+    })
+    .eq("id", item.id)
+    .in("status", ["queued", "locked"]);
+
+  if (error) throw new Error(`queue_skipped_update_failed:${error.message}`);
+}
+
+async function markQueueFailed(
+  supabase: SupabaseClient,
+  item: QueueItem,
+  reason: string,
+) {
+  const { error } = await supabase
+    .from("marketing_email_queue")
+    .update({
+      status: "failed",
+      locked_at: null,
+      locked_by: null,
+      last_error: reason,
+    })
+    .eq("id", item.id)
+    .eq("status", "locked");
+
+  if (error) throw new Error(`queue_failed_update_failed:${error.message}`);
+}
+
+async function createUnsubscribeUrl(supabase: SupabaseClient, item: QueueItem) {
+  const emailNormalized = normalizeEmail(item.email);
+  const segment = segmentFor(item);
+
+  const { data, error } = await supabase
+    .from("email_unsubscribe_tokens")
+    .insert({
+      user_id: item.user_id,
+      email: item.email,
+      email_normalized: emailNormalized,
+      email_key: logEmailKey(item),
+      segment,
+    })
+    .select("token")
+    .single<InsertedUnsubscribeToken>();
+
+  if (error || !data?.token) {
+    throw new Error(`unsubscribe_token_insert_failed:${error?.message ?? "missing_token"}`);
+  }
+
+  return `${UNSUBSCRIBE_BASE_URL}?token=${encodeURIComponent(data.token)}`;
+}
+
+async function sendWithResend(payload: Record<string, unknown>, resendKey: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    let data: Record<string, unknown> = {};
+    try {
+      data = await resp.json();
+    } catch {
+      data = {};
+    }
+
+    const resendEmailId = typeof data.id === "string" ? data.id : null;
+    const message = typeof data.message === "string" ? data.message : `resend_status_${resp.status}`;
+
+    if (resp.ok) {
+      return {
+        ok: true,
+        resendEmailId,
+        status: resp.status,
+        code: "accepted",
+        message,
+        temporary: false,
+      } satisfies ResendResult;
+    }
+
+    return {
+      ok: false,
+      resendEmailId,
+      status: resp.status,
+      code: isTemporaryResendStatus(resp.status)
+        ? "temporary_failed"
+        : isPermanentResendStatus(resp.status)
+        ? "failed"
+        : "resend_rejected",
+      message,
+      temporary: isTemporaryResendStatus(resp.status),
+    } satisfies ResendResult;
+  } catch (error) {
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    return {
+      ok: false,
+      resendEmailId: null,
+      status: null,
+      code: aborted ? "timeout_uncertain" : "network_uncertain",
+      message: aborted ? "resend_timeout" : "resend_network_error",
+      temporary: true,
+    } satisfies ResendResult;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function inspectItem(supabase: SupabaseClient, item: QueueItem) {
+  const emailNormalized = normalizeEmail(item.email);
+  const emailKey = logEmailKey(item);
+
+  if (!isMarketingEmailKey(item.template_key)) {
+    return { action: "skipped", reason: "unknown_template_key" };
+  }
+
+  const suppression = await fetchSuppression(supabase, emailNormalized);
+  if (suppression) {
+    return { action: "skipped", reason: suppression.reason || "suppressed" };
+  }
+
+  if (await hasSentLog(supabase, emailNormalized, emailKey)) {
+    return { action: "skipped", reason: "already_sent" };
+  }
+
+  return { action: "send", reason: "eligible" };
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return json(405, { ok: false, error: "method_not_allowed" });
+  }
+
+  const auth = isAuthorized(req);
+  if (!auth.ok) {
+    return json(auth.status, { ok: false, error: auth.error });
+  }
+
+  let body: SendMarketingEmailQueueBody;
+  try {
+    body = (await req.json()) as SendMarketingEmailQueueBody;
+  } catch {
+    return json(400, { ok: false, error: "invalid_json" });
+  }
+
+  if (typeof body.dry_run !== "boolean") {
+    return json(400, { ok: false, error: "dry_run_required" });
+  }
+
+  if (typeof body.limit !== "number" || !Number.isFinite(body.limit)) {
+    return json(400, { ok: false, error: "limit_required" });
+  }
+
+  const dryRun = body.dry_run;
+  const limitRequested = body.limit;
+  const limitApplied = parseLimit(limitRequested);
+
+  if (!dryRun && limitApplied !== 1) {
+    return json(400, {
+      ok: false,
+      error: "real_send_limit_one_required",
+      message: "V1 only allows dry_run=false with limit=1.",
+    });
+  }
+
+  const supabaseUrl = cleanSecret(Deno.env.get("SUPABASE_URL"));
+  const serviceRoleKey = cleanSecret(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json(500, { ok: false, error: "server_misconfigured" });
+  }
+
+  const resendKey = cleanSecret(Deno.env.get("RESEND_API_KEY"));
+  const resendFrom = cleanSecret(Deno.env.get("RESEND_FROM"));
+  const resendReplyTo = cleanSecret(Deno.env.get("RESEND_REPLY_TO"));
+
+  if (!dryRun && (!resendKey || !resendFrom)) {
+    return json(500, {
+      ok: false,
+      error: "needs_resend_config",
+      message: "RESEND_API_KEY and RESEND_FROM are required for real sends.",
+    });
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+
+  const items: ResponseItem[] = [];
+  let wouldSendCount = 0;
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  try {
+    const queueItems = await fetchQueueItems(supabase, limitApplied);
+
+    for (const item of queueItems) {
+      const emailNormalized = normalizeEmail(item.email);
+      const emailKey = logEmailKey(item);
+      const segment = segmentFor(item);
+      const inspection = await inspectItem(supabase, item);
+
+      if (inspection.action !== "send") {
+        skippedCount += 1;
+        items.push(buildResponseItem(item, inspection.action, inspection.reason));
+
+        if (!dryRun) {
+          await markQueueSkipped(supabase, item, inspection.reason);
+          await insertSkippedEmailLogIfAbsent(supabase, {
+            user_id: item.user_id,
+            email: item.email,
+            email_normalized: emailNormalized,
+            segment,
+            email_key: emailKey,
+            dry_run: false,
+            status: "skipped",
+            resend_message_id: null,
+            metadata: {
+              queue_id: item.id,
+              sequence_key: item.sequence_key,
+              step_key: item.step_key,
+              template_key: item.template_key,
+              reason: inspection.reason,
+            },
+          });
+        }
+        continue;
+      }
+
+      wouldSendCount += 1;
+
+      if (dryRun) {
+        items.push(buildResponseItem(item, "would_send", "eligible"));
+        continue;
+      }
+
+      const locked = await lockQueueItem(supabase, item);
+      if (!locked) {
+        skippedCount += 1;
+        items.push(buildResponseItem(item, "skipped", "lock_not_acquired"));
+        continue;
+      }
+
+      // V1 has no automatic retry loop. Locked/failed queue rows and reserved logs
+      // must be monitored manually before any later retry worker is introduced.
+      let reservedLog: ReservedEmailLog | null = null;
+      try {
+        if (await hasSentLog(supabase, emailNormalized, emailKey)) {
+          skippedCount += 1;
+          await markQueueSkipped(supabase, item, "already_sent");
+          items.push(buildResponseItem(item, "skipped", "already_sent"));
+          continue;
+        }
+
+        const suppression = await fetchSuppression(supabase, emailNormalized);
+        if (suppression) {
+          skippedCount += 1;
+          await markQueueSkipped(supabase, item, suppression.reason || "suppressed");
+          await insertSkippedEmailLogIfAbsent(supabase, {
+            user_id: item.user_id,
+            email: item.email,
+            email_normalized: emailNormalized,
+            segment,
+            email_key: emailKey,
+            dry_run: false,
+            status: "skipped",
+            resend_message_id: null,
+            metadata: {
+              queue_id: item.id,
+              sequence_key: item.sequence_key,
+              step_key: item.step_key,
+              template_key: item.template_key,
+              reason: suppression.reason || "suppressed",
+              suppression_source: suppression.source,
+            },
+          });
+          items.push(buildResponseItem(item, "skipped", suppression.reason || "suppressed"));
+          continue;
+        }
+
+        const unsubscribeUrl = await createUnsubscribeUrl(supabase, item);
+        const rendered = renderMarketingEmail(item.template_key, {
+          email: item.email,
+          poste_recherche: metadataString(item, "poste_recherche") || null,
+          unsubscribe_url: unsubscribeUrl,
+          app_url: metadataString(item, "app_url") || null,
+          pricing_url: metadataString(item, "pricing_url") || null,
+          feed_url: metadataString(item, "feed_url") || null,
+        });
+        const withFooter = ensureUnsubscribeFooter(
+          rendered.html,
+          rendered.text,
+          unsubscribeUrl,
+        );
+
+        const resendPayload: Record<string, unknown> = {
+          from: resendFrom,
+          to: item.email,
+          subject: rendered.subject,
+          html: withFooter.html,
+          text: withFooter.text,
+          headers: {
+            "List-Unsubscribe": `<${unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+          tags: [
+            { name: "source", value: "send_marketing_email_queue" },
+            { name: "sequence_key", value: item.sequence_key },
+            { name: "step_key", value: item.step_key },
+            { name: "template_key", value: item.template_key },
+          ],
+        };
+
+        if (resendReplyTo) {
+          resendPayload.reply_to = resendReplyTo;
+        }
+
+        const reservation = await reserveEmailLog(supabase, {
+          user_id: item.user_id,
+          email: item.email,
+          email_normalized: emailNormalized,
+          segment,
+          email_key: emailKey,
+          dry_run: false,
+          status: "queued",
+          resend_message_id: null,
+          metadata: {
+            queue_id: item.id,
+            sequence_key: item.sequence_key,
+            step_key: item.step_key,
+            template_key: item.template_key,
+            provider: "resend",
+            reason: "reserved_before_send",
+          },
+        });
+
+        if (!reservation.reserved) {
+          const reason = reservation.existing?.status === "sent"
+            ? "already_sent"
+            : "email_log_already_reserved";
+          skippedCount += 1;
+          await markQueueSkipped(supabase, item, reason);
+          items.push(buildResponseItem(item, "skipped", reason));
+          continue;
+        }
+
+        reservedLog = reservation.log;
+        if (!reservedLog) {
+          throw new Error("email_log_reserve_missing");
+        }
+
+        const resendResult = await sendWithResend(resendPayload, resendKey);
+
+        if (resendResult.ok) {
+          sentCount += 1;
+          const now = new Date().toISOString();
+          await updateReservedEmailLog(supabase, reservedLog.id, {
+            template_version: rendered.template_version,
+            subject: rendered.subject,
+            status: "sent",
+            resend_message_id: resendResult.resendEmailId,
+            sent_at: now,
+            metadata: {
+              ...(reservedLog.metadata ?? {}),
+              queue_id: item.id,
+              sequence_key: item.sequence_key,
+              step_key: item.step_key,
+              template_key: item.template_key,
+              unsubscribe_url: unsubscribeUrl,
+              provider: "resend",
+              reason: "accepted",
+            },
+          });
+          await markQueueSent(supabase, item, resendResult.resendEmailId);
+          items.push(buildResponseItem(item, "sent", "accepted"));
+          continue;
+        }
+
+        failedCount += 1;
+        await updateReservedEmailLog(supabase, reservedLog.id, {
+          template_version: rendered.template_version,
+          subject: rendered.subject,
+          status: "failed",
+          resend_message_id: resendResult.resendEmailId,
+          metadata: {
+            ...(reservedLog.metadata ?? {}),
+            queue_id: item.id,
+            sequence_key: item.sequence_key,
+            step_key: item.step_key,
+            template_key: item.template_key,
+            provider: "resend",
+            error_code: resendResult.code,
+            error_message: resendResult.message,
+            resend_status: resendResult.status,
+            temporary: resendResult.temporary,
+          },
+        });
+
+        const queueFailureReason = resendResult.temporary
+          ? "temporary_failed_requires_manual_review"
+          : resendResult.code;
+        await markQueueFailed(supabase, item, queueFailureReason);
+
+        items.push(buildResponseItem(item, "failed", queueFailureReason));
+      } catch (error) {
+        failedCount += 1;
+        const reason = error instanceof Error ? error.message : "unknown_error";
+        if (reservedLog) {
+          await failReservedEmailLogIfPossible(supabase, reservedLog, {
+            errorCode: "worker_exception_after_reservation",
+            errorMessage: reason,
+            queueId: item.id,
+            sequenceKey: item.sequence_key,
+            stepKey: item.step_key,
+            templateKey: item.template_key,
+          });
+        }
+        await markQueueFailed(
+          supabase,
+          item,
+          reservedLog ? "worker_exception_after_reservation" : reason,
+        );
+        items.push(buildResponseItem(item, "failed", reason));
+      }
+    }
+
+    return json(200, {
+      ok: true,
+      dry_run: dryRun,
+      limit_requested: limitRequested,
+      limit_applied: limitApplied,
+      selected_count: queueItems.length,
+      would_send_count: wouldSendCount,
+      sent_count: sentCount,
+      skipped_count: skippedCount,
+      failed_count: failedCount,
+      items,
+    });
+  } catch (error) {
+    return json(500, {
+      ok: false,
+      dry_run: dryRun,
+      limit_requested: limitRequested,
+      limit_applied: limitApplied,
+      selected_count: 0,
+      would_send_count: wouldSendCount,
+      sent_count: sentCount,
+      skipped_count: skippedCount,
+      failed_count: failedCount + 1,
+      items,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+});
