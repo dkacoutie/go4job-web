@@ -57,8 +57,8 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
           <section className="site-footer__brand" aria-label="Go4Job">
             <div className="site-footer__logoText">Go4Job</div>
             <p className="site-footer__desc">
-              JobRadar - alertes et suivi de candidatures pour les chercheurs d’emploi.
-              Simple, rapide, et fiable.
+              JobRadar - alertes et suivi de candidatures pour les chercheurs d'emploi.
+              Simple, rapide et fiable.
             </p>
 
             <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">
@@ -124,8 +124,8 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
             </>
           ) : (
             <>
-              <nav className="site-footer__col" aria-label="Fonctionnalites">
-                <div className="site-footer__title">Fonctionnalites</div>
+              <nav className="site-footer__col" aria-label="Fonctionnalités">
+                <div className="site-footer__title">Fonctionnalités</div>
                 <ul className="site-footer__list">
                   <li>
                     <Link className="site-footer__link" to="/jobradar/feed">
@@ -210,16 +210,14 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
           </nav>
         </div>
 
-        <div className="site-footer__bottom" aria-label="Informations legales">
+        <div className="site-footer__bottom" aria-label="Informations légales">
           <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
 
           <div className="site-footer__copy">
             Contact: <strong>contact@go4jobapp.com</strong>
           </div>
 
-          <div className="site-footer__note">
-            Plateforme de recherche d'emploi assistée par l'IA.
-          </div>
+          <div className="site-footer__note">Plateforme de recherche d'emploi assistée par l'IA.</div>
         </div>
       </div>
     </footer>

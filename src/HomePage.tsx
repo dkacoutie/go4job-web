@@ -33,7 +33,6 @@ export default function HomePage() {
     return profile.full_name?.trim() ? "OK" : "À compléter";
   }, [profile]);
 
-  // Si pas connecté → /auth
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
   }, [loading, session, navigate]);
@@ -56,7 +55,6 @@ export default function HomePage() {
       setAppsLoading(true);
       setAlertsLoading(true);
 
-      // 1) Profil
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("user_id, full_name, phone, location, headline")
@@ -71,13 +69,12 @@ export default function HomePage() {
         return;
       }
 
-      // si profil inexistant → le créer
       if (!prof) {
         const { data: created, error: upsertErr } = await supabase
           .from("profiles")
           .upsert(
             { user_id: userId, full_name: null, phone: null, location: null, headline: null },
-            { onConflict: "user_id" }
+            { onConflict: "user_id" },
           )
           .select("user_id, full_name, phone, location, headline")
           .single();
@@ -97,7 +94,6 @@ export default function HomePage() {
 
       setProfileLoading(false);
 
-      // 2) Compteur candidatures
       const { count: cApps, error: appsErr } = await supabase
         .from("applications")
         .select("*", { count: "exact", head: true })
@@ -107,7 +103,6 @@ export default function HomePage() {
       setAppsCount(cApps ?? 0);
       setAppsLoading(false);
 
-      // 3) Compteur alertes
       const { count: cAlerts, error: alertsErr } = await supabase
         .from("alerts")
         .select("*", { count: "exact", head: true })
@@ -117,7 +112,6 @@ export default function HomePage() {
       setAlertsCount(cAlerts ?? 0);
       setAlertsLoading(false);
 
-      // 4) CV actif (via edge function)
       try {
         const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
           body: { action: "get_active" },
@@ -156,27 +150,21 @@ export default function HomePage() {
     <div className="home-shell">
       <main className="home-main">
         <section className="heroCard">
-          <h1 className="heroTitle">Bienvenue 👋</h1>
+          <h1 className="heroTitle">Bienvenue</h1>
           <p className="heroSub">
-            Tu es connecté en tant que <b>{session?.user.email ?? "—"}</b>.
+            Tu es connecté en tant que <b>{session?.user.email ?? "-"}</b>.
             <br />
             Prochaine étape : construire ton profil et suivre tes candidatures.
           </p>
         </section>
 
-        {errorMsg && (
-          <div className="home-error">
-            Erreur : {errorMsg}
-          </div>
-        )}
+        {errorMsg && <div className="home-error">Erreur : {errorMsg}</div>}
 
         <section className="onboard-card">
           <div className="onboard-head">
             <div>
               <div className="onboard-title">Commencer ici</div>
-              <div className="onboard-sub">
-                Plus ton profil est complet, meilleurs sont tes matchs.
-              </div>
+              <div className="onboard-sub">Plus ton profil est complet, meilleurs sont tes matchs.</div>
             </div>
             <button className="btn btnGhost btnPill" type="button" onClick={() => navigate("/jobradar/feed")}>
               Explorer les offres
@@ -240,12 +228,12 @@ export default function HomePage() {
 
           <div className="card" {...makeCardProps("/jobradar/applications")} aria-label="Ouvrir mes candidatures">
             <div className="cardTitle">Candidatures</div>
-            <p className="cardValue">{appsLoading ? "…" : appsCount}</p>
+            <p className="cardValue">{appsLoading ? "..." : appsCount}</p>
           </div>
 
           <div className="card" {...makeCardProps("/jobradar/alerts")} aria-label="Ouvrir mes alertes">
             <div className="cardTitle">Alertes</div>
-            <p className="cardValue">{alertsLoading ? "…" : alertsCount}</p>
+            <p className="cardValue">{alertsLoading ? "..." : alertsCount}</p>
           </div>
         </section>
       </main>

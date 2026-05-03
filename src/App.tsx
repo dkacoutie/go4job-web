@@ -239,9 +239,11 @@ export default function App() {
                 <Route
                   path="/admin/sources"
                   element={
-                    <LazyRoute>
-                      <AdminSourcesPage />
-                    </LazyRoute>
+                    <AdminRoute>
+                      <LazyRoute>
+                        <AdminSourcesPage />
+                      </LazyRoute>
+                    </AdminRoute>
                   }
                 />
                 <Route
