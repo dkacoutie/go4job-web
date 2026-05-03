@@ -46,6 +46,7 @@ const DEFAULT_STEP_KEY = "email_1";
 const DEFAULT_TEMPLATE_KEY = "payment_attempt_no_success_email_1";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
+const CANDIDATE_BATCH_SIZE = 100;
 
 const ALLOWED_SEGMENTS = new Set([
   "payment_attempt_no_success",
@@ -232,101 +233,133 @@ serve(async (req) => {
   });
 
   try {
-    let query = supabase
-      .from("jobradar_marketing_reactivation_candidates")
-      .select(
-        [
-          "user_id",
-          "email",
-          "email_normalized",
-          "registered_at",
-          "poste_recherche",
-          "total_payment_attempts",
-          "last_payment_attempt_at",
-          "payment_statuses",
-          "segment",
-          "suggested_email_key",
-        ].join(","),
-      )
-      .eq("suggested_email_key", templateKey)
-      .order("registered_at", { ascending: true, nullsFirst: false })
-      .limit(limit);
-
-    if (segmentKey) {
-      query = query.eq("segment", segmentKey);
-    }
-
-    const { data: candidates, error: candidatesError } = await query
-      .returns<Candidate[]>();
-
-    if (candidatesError) {
-      return json(500, {
-        ok: false,
-        error: "candidate_lookup_failed",
-        message: candidatesError.message,
-      });
-    }
-
-    const normalizedCandidates = (candidates ?? [])
-      .map((candidate) => ({
-        ...candidate,
-        email: (candidate.email ?? "").trim(),
-        email_normalized: normalizeEmail(
-          candidate.email_normalized || candidate.email || "",
-        ),
-      }))
-      .filter((candidate) => candidate.email && candidate.email_normalized);
-
-    const uniqueEmails = Array.from(
-      new Set(normalizedCandidates.map((candidate) => candidate.email_normalized)),
-    );
-
-    const [suppressedEmails, duplicateEmails] = await Promise.all([
-      fetchSuppressedEmails(supabase, uniqueEmails),
-      fetchDuplicateEmails(supabase, uniqueEmails, sequenceKey, stepKey),
-    ]);
-
     let skippedSuppressedCount = 0;
     let skippedDuplicateCount = 0;
+    let skippedInvalidEmailCount = 0;
+    let candidatesChecked = 0;
 
     const queueRows: QueueRow[] = [];
     const seenInRequest = new Set<string>();
 
-    for (const candidate of normalizedCandidates) {
-      const emailNormalized = candidate.email_normalized;
+    for (let from = 0; queueRows.length < limit; from += CANDIDATE_BATCH_SIZE) {
+      const to = from + CANDIDATE_BATCH_SIZE - 1;
+      let query = supabase
+        .from("jobradar_marketing_reactivation_candidates")
+        .select(
+          [
+            "user_id",
+            "email",
+            "email_normalized",
+            "registered_at",
+            "poste_recherche",
+            "total_payment_attempts",
+            "last_payment_attempt_at",
+            "payment_statuses",
+            "segment",
+            "suggested_email_key",
+          ].join(","),
+        )
+        .eq("suggested_email_key", templateKey)
+        .order("registered_at", { ascending: true, nullsFirst: false })
+        .range(from, to);
 
-      if (suppressedEmails.has(emailNormalized)) {
-        skippedSuppressedCount += 1;
-        continue;
+      if (segmentKey) {
+        query = query.eq("segment", segmentKey);
       }
 
-      if (duplicateEmails.has(emailNormalized) || seenInRequest.has(emailNormalized)) {
-        skippedDuplicateCount += 1;
-        continue;
+      const { data: candidates, error: candidatesError } = await query
+        .returns<Candidate[]>();
+
+      if (candidatesError) {
+        return json(500, {
+          ok: false,
+          error: "candidate_lookup_failed",
+          message: candidatesError.message,
+        });
       }
 
-      seenInRequest.add(emailNormalized);
-      queueRows.push({
-        user_id: candidate.user_id,
-        email: emailNormalized,
-        sequence_key: sequenceKey,
-        step_key: stepKey,
-        template_key: templateKey,
-        segment_key: candidate.segment,
-        status: "queued",
-        priority: 100,
-        metadata: {
-          source: "enqueue_marketing_lifecycle_emails",
-          candidate_email: candidate.email,
-          email_normalized: emailNormalized,
-          registered_at: candidate.registered_at,
-          poste_recherche: candidate.poste_recherche,
-          total_payment_attempts: candidate.total_payment_attempts ?? 0,
-          last_payment_attempt_at: candidate.last_payment_attempt_at,
-          payment_statuses: candidate.payment_statuses ?? [],
-          suggested_email_key: candidate.suggested_email_key,
-        },
-      });
+      const rawCandidates = candidates ?? [];
+
+      if (rawCandidates.length === 0) {
+        break;
+      }
+
+      const normalizedCandidates = rawCandidates
+        .map((candidate) => ({
+          ...candidate,
+          email: (candidate.email ?? "").trim(),
+          email_normalized: normalizeEmail(
+            candidate.email_normalized || candidate.email || "",
+          ),
+        }));
+
+      const uniqueEmails = Array.from(
+        new Set(
+          normalizedCandidates
+            .map((candidate) => candidate.email_normalized)
+            .filter(Boolean),
+        ),
+      );
+
+      const [suppressedEmails, duplicateEmails] = await Promise.all([
+        fetchSuppressedEmails(supabase, uniqueEmails),
+        fetchDuplicateEmails(supabase, uniqueEmails, sequenceKey, stepKey),
+      ]);
+
+      for (const candidate of normalizedCandidates) {
+        if (queueRows.length >= limit) {
+          break;
+        }
+
+        candidatesChecked += 1;
+
+        const emailNormalized = candidate.email_normalized;
+
+        if (!candidate.email || !emailNormalized) {
+          skippedInvalidEmailCount += 1;
+          continue;
+        }
+
+        if (suppressedEmails.has(emailNormalized)) {
+          skippedSuppressedCount += 1;
+          continue;
+        }
+
+        if (
+          duplicateEmails.has(emailNormalized) ||
+          seenInRequest.has(emailNormalized)
+        ) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        seenInRequest.add(emailNormalized);
+        queueRows.push({
+          user_id: candidate.user_id,
+          email: emailNormalized,
+          sequence_key: sequenceKey,
+          step_key: stepKey,
+          template_key: templateKey,
+          segment_key: candidate.segment,
+          status: "queued",
+          priority: 100,
+          metadata: {
+            source: "enqueue_marketing_lifecycle_emails",
+            candidate_email: candidate.email,
+            email_normalized: emailNormalized,
+            registered_at: candidate.registered_at,
+            poste_recherche: candidate.poste_recherche,
+            total_payment_attempts: candidate.total_payment_attempts ?? 0,
+            last_payment_attempt_at: candidate.last_payment_attempt_at,
+            payment_statuses: candidate.payment_statuses ?? [],
+            suggested_email_key: candidate.suggested_email_key,
+          },
+        });
+      }
+
+      if (rawCandidates.length < CANDIDATE_BATCH_SIZE) {
+        break;
+      }
     }
 
     let enqueuedCount = 0;
@@ -356,7 +389,8 @@ serve(async (req) => {
           enqueued_count: enqueuedCount,
           skipped_suppressed_count: skippedSuppressedCount,
           skipped_duplicate_count: skippedDuplicateCount,
-          candidates_checked: normalizedCandidates.length,
+          skipped_invalid_email_count: skippedInvalidEmailCount,
+          candidates_checked: candidatesChecked,
           sample: sampleRows(queueRows),
         });
       }
@@ -369,7 +403,8 @@ serve(async (req) => {
       enqueued_count: enqueuedCount,
       skipped_suppressed_count: skippedSuppressedCount,
       skipped_duplicate_count: skippedDuplicateCount,
-      candidates_checked: normalizedCandidates.length,
+      skipped_invalid_email_count: skippedInvalidEmailCount,
+      candidates_checked: candidatesChecked,
       sample: sampleRows(queueRows),
       message: dryRun
         ? "Dry-run only. No marketing emails were queued or sent."
