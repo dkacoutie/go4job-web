@@ -14,57 +14,27 @@ type UnsubscribeTokenRow = {
 
 const APP_URL = "https://jobradar.go4jobapp.com";
 
-const corsHeaders = {
+const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function renderHtmlPage(
+function textResponse(
+  status: number,
   title: string,
   message: string,
-  variant: "success" | "error" = "success",
 ) {
-  const accent = variant === "success" ? "#0b5ed7" : "#b42318";
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    headers.set(key, value);
+  }
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  headers.set("X-Content-Type-Options", "nosniff");
 
-  return `<!doctype html>
-<html lang="fr">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${escapeHtml(title)}</title>
-  </head>
-  <body style="margin:0;background:#f4f7fb;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-    <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
-      <section style="width:100%;max-width:560px;background:#ffffff;border:1px solid #e5eaf2;border-radius:12px;padding:28px;">
-        <p style="margin:0 0 14px;font-size:16px;font-weight:700;color:#0b1420;">Go4Job / JobRadar</p>
-        <h1 style="margin:0 0 14px;font-size:24px;line-height:1.3;color:${accent};">${escapeHtml(title)}</h1>
-        <p style="margin:0 0 22px;font-size:15px;line-height:1.7;color:#374151;">${escapeHtml(message)}</p>
-        <a href="${APP_URL}" style="display:inline-block;background:#0b5ed7;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;border-radius:8px;padding:12px 16px;">
-          Retourner sur JobRadar
-        </a>
-      </section>
-    </main>
-  </body>
-</html>`;
-}
-
-function htmlResponse(status: number, html: string) {
-  return new Response(html, {
+  return new Response(`${title}\n\n${message}`, {
     status,
-    headers: {
-      ...corsHeaders,
-      "content-type": "text/html; charset=utf-8",
-    },
+    headers,
   });
 }
 
@@ -91,13 +61,10 @@ serve(async (req) => {
   }
 
   if (req.method !== "GET" && req.method !== "POST") {
-    return htmlResponse(
+    return textResponse(
       405,
-      renderHtmlPage(
-        "Méthode non autorisée",
-        "Ce lien de désinscription doit être ouvert depuis l'email reçu.",
-        "error",
-      ),
+      "M\u00e9thode non autoris\u00e9e",
+      "Ce lien de d\u00e9sinscription doit \u00eatre ouvert depuis l'email re\u00e7u.",
     );
   }
 
@@ -105,13 +72,10 @@ serve(async (req) => {
   const token = (url.searchParams.get("token") ?? "").trim();
 
   if (!token || !isUuid(token)) {
-    return htmlResponse(
+    return textResponse(
       400,
-      renderHtmlPage(
-        "Lien invalide",
-        "Ce lien de désinscription est invalide ou expiré.",
-        "error",
-      ),
+      "Lien invalide",
+      "Ce lien de d\u00e9sinscription est invalide ou expir\u00e9.",
     );
   }
 
@@ -119,13 +83,10 @@ serve(async (req) => {
   const serviceRoleKey = cleanEnv(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return htmlResponse(
+    return textResponse(
       500,
-      renderHtmlPage(
-        "Erreur temporaire",
-        "La désinscription ne peut pas être finalisée pour le moment.",
-        "error",
-      ),
+      "Erreur temporaire",
+      "La d\u00e9sinscription ne peut pas \u00eatre finalis\u00e9e pour le moment.",
     );
   }
 
@@ -140,13 +101,10 @@ serve(async (req) => {
     .maybeSingle<UnsubscribeTokenRow>();
 
   if (tokenError || !unsubscribeToken) {
-    return htmlResponse(
+    return textResponse(
       404,
-      renderHtmlPage(
-        "Lien invalide",
-        "Ce lien de désinscription est invalide ou expiré.",
-        "error",
-      ),
+      "Lien invalide",
+      "Ce lien de d\u00e9sinscription est invalide ou expir\u00e9.",
     );
   }
 
@@ -176,13 +134,10 @@ serve(async (req) => {
     );
 
   if (suppressionError) {
-    return htmlResponse(
+    return textResponse(
       500,
-      renderHtmlPage(
-        "Erreur temporaire",
-        "La désinscription ne peut pas être finalisée pour le moment.",
-        "error",
-      ),
+      "Erreur temporaire",
+      "La d\u00e9sinscription ne peut pas \u00eatre finalis\u00e9e pour le moment.",
     );
   }
 
@@ -205,16 +160,13 @@ serve(async (req) => {
 
   const maskedEmail = maskEmail(email);
   const message = maskedEmail
-    ? `Tu es bien désinscrit(e) des emails JobRadar pour ${maskedEmail}.`
-    : "Tu es bien désinscrit(e) des emails JobRadar.";
+    ? `Tu es bien d\u00e9sinscrit(e) des emails JobRadar pour ${maskedEmail}.\nTu peux fermer cette page.`
+    : "Tu es bien d\u00e9sinscrit(e) des emails JobRadar.\nTu peux fermer cette page.";
 
-  return htmlResponse(
+  return textResponse(
     200,
-    renderHtmlPage(
-      "désinscription confirmée",
-      message,
-      "success",
-    ),
+    "D\u00e9sinscription confirm\u00e9e",
+    message,
   );
 });
 
