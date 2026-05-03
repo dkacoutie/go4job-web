@@ -51,6 +51,17 @@ $body=@{ dry_run=$true; limit=1 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/send_marketing_email_queue" -Headers @{ "x-cron-secret"=$secret; "Content-Type"="application/json" } -Body $body
 ```
 
+## Note technique — sélection des candidats enqueue
+
+Depuis le correctif `91dc2bb` (`fix: skip duplicates before enqueue limit`), le paramètre `limit` de `enqueue_marketing_lifecycle_emails` doit être compris comme le nombre maximum de vrais candidats éligibles à préparer, après filtrage des doublons, suppressions et emails invalides.
+
+- `limit=1` doit désormais chercher 1 candidat réellement éligible, même si les premiers candidats bruts sont déjà couverts.
+- Le dry-run reste obligatoire avant toute mise en queue réelle.
+- La mise en queue réelle reste protégée par `dry_run=false`, `allow_enqueue=true` et `confirm="ENQUEUE_MARKETING_LIFECYCLE_EMAILS"`.
+- Cette correction ne change pas la règle principale : aucun cron, envois manuels uniquement, worker d'envoi réel uniquement avec `dry_run=false` et `limit=1`.
+
+Validation distante réalisée après déploiement du correctif : dry-run `limit=1`, `would_enqueue_count=1`, `enqueued_count=0`, `skipped_duplicate_count=2`, `candidates_checked=3`. Aucune ligne `queued`, `locked` ou `failed` créée pendant ce test ; aucun email envoyé ; aucun cron activé.
+
 ## Envoi réel limit=1
 
 L'envoi réel V1 est autorisé uniquement avec `dry_run=false` et `limit=1`.
