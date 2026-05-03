@@ -260,23 +260,6 @@ async function fetchSuppression(supabase: SupabaseClient, emailNormalized: strin
   return data;
 }
 
-async function hasSentLog(
-  supabase: SupabaseClient,
-  emailNormalized: string,
-  emailKey: string,
-) {
-  const { data, error } = await supabase
-    .from("email_logs")
-    .select("id")
-    .eq("email_normalized", emailNormalized)
-    .eq("email_key", emailKey)
-    .eq("status", "sent")
-    .maybeSingle<{ id: string }>();
-
-  if (error) throw new Error(`sent_log_lookup_failed:${error.message}`);
-  return Boolean(data?.id);
-}
-
 async function fetchExistingEmailLog(
   supabase: SupabaseClient,
   emailNormalized: string,
@@ -291,6 +274,19 @@ async function fetchExistingEmailLog(
 
   if (error) throw new Error(`email_log_lookup_failed:${error.message}`);
   return data;
+}
+
+function reasonForExistingEmailLog(status: string) {
+  if (["sent", "delivered", "opened", "clicked"].includes(status)) {
+    return "already_sent";
+  }
+  if (status === "unsubscribed") return "already_unsubscribed";
+  if (status === "bounced") return "already_bounced";
+  if (status === "complained") return "already_complained";
+  if (status === "queued") return "email_log_already_reserved";
+  if (status === "failed") return "previous_failed_requires_manual_review";
+  if (status === "skipped") return "already_skipped";
+  return "email_log_already_exists";
 }
 
 async function insertSkippedEmailLogIfAbsent(
@@ -564,8 +560,12 @@ async function inspectItem(supabase: SupabaseClient, item: QueueItem) {
     return { action: "skipped", reason: suppression.reason || "suppressed" };
   }
 
-  if (await hasSentLog(supabase, emailNormalized, emailKey)) {
-    return { action: "skipped", reason: "already_sent" };
+  const existingLog = await fetchExistingEmailLog(supabase, emailNormalized, emailKey);
+  if (existingLog) {
+    return {
+      action: "skipped",
+      reason: reasonForExistingEmailLog(existingLog.status),
+    };
   }
 
   return { action: "send", reason: "eligible" };
@@ -694,10 +694,16 @@ serve(async (req) => {
       // must be monitored manually before any later retry worker is introduced.
       let reservedLog: ReservedEmailLog | null = null;
       try {
-        if (await hasSentLog(supabase, emailNormalized, emailKey)) {
+        const existingLogBeforeReservation = await fetchExistingEmailLog(
+          supabase,
+          emailNormalized,
+          emailKey,
+        );
+        if (existingLogBeforeReservation) {
+          const reason = reasonForExistingEmailLog(existingLogBeforeReservation.status);
           skippedCount += 1;
-          await markQueueSkipped(supabase, item, "already_sent");
-          items.push(buildResponseItem(item, "skipped", "already_sent"));
+          await markQueueSkipped(supabase, item, reason);
+          items.push(buildResponseItem(item, "skipped", reason));
           continue;
         }
 
