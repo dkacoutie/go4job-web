@@ -4,6 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { fetchAejItems } from "./sources/aej_html.ts";
 import { fetchAdzunaItems } from "./sources/adzuna_api.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
+import { fetchEmploiCiPortalItems } from "./sources/emploi_ci_portal.ts";
 import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
@@ -769,6 +770,33 @@ Deno.serve(async (req) => {
         parsed: data.parsed,
         inserted,
         updated,
+      });
+    }
+
+    if (source_code === "emploi_ci__dup__17d5574e") {
+      if (!dry_run) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "emploi_ci_portal_draft_dry_run_only",
+        }, 409);
+      }
+
+      const data = await fetchEmploiCiPortalItems(limit);
+
+      return json({
+        ok: true,
+        source_code,
+        limit,
+        dry_run: true,
+        status: "dry_run_parsed",
+        list_url: data.list_url,
+        pages_fetched: data.pages_fetched,
+        parsed: data.parsed,
+        skipped_quality_count: data.skipped_quality_count,
+        stopped_reason: data.stopped_reason,
+        sample: data.sample,
       });
     }
 
