@@ -17,7 +17,7 @@ export type EmploiCiPortalItem = {
 
 const BASE_URL = "https://www.emploi.ci";
 const FIRST_PAGE_URL = `${BASE_URL}/recherche-jobs-cote-ivoire`;
-const DEFAULT_MAX_PAGES = 10;
+const DEFAULT_MAX_PAGES = 15;
 const FETCH_DELAY_MS = 1000;
 const PAGE_TIMEOUT_MS = 30000;
 const QUALITY_BLOCKLIST = [
