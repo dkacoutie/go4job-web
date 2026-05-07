@@ -637,10 +637,11 @@ Deno.serve(async (req) => {
     const jobSource = jobSourceArr?.[0] ?? null;
 
     if (source_code === "emploi_ci") {
+      const job_source_id = "ed25b64d-ace6-4296-8985-46702d58785d";
       const runId = dry_run ? null : await createRun(
         supabaseUrl,
         serviceKey,
-        "ed25b64d-ace6-4296-8985-46702d58785d",
+        job_source_id,
         "ingest",
       );
       currentRunId = runId;
@@ -670,8 +671,6 @@ Deno.serve(async (req) => {
       }
 
       // job_source_id (fixed seed for this source)
-      const job_source_id = "ed25b64d-ace6-4296-8985-46702d58785d";
-
       const now = new Date().toISOString();
       const jobsBase = `${supabaseUrl}/rest/v1/jobs`;
 
@@ -752,13 +751,20 @@ Deno.serve(async (req) => {
         }
       }
 
+      const finishedAt = new Date().toISOString();
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         status: "success",
         ok: true,
         fetched_count: data.items.length,
         inserted_count: inserted,
         updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, job_source_id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
       });
 
       return json({
@@ -907,13 +913,20 @@ Deno.serve(async (req) => {
         }, 500);
       }
 
+      const finishedAt = new Date().toISOString();
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         status: "success",
         ok: true,
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
       });
 
       return json({
