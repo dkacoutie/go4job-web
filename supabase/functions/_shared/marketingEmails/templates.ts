@@ -219,13 +219,13 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
           <td style="padding:17px 18px;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
               <tr>
-                <td style="padding:0 0 8px;font-size:15px;line-height:1.5;color:#1f2937;font-weight:700;">77 000+ offres référencées</td>
+                <td style="padding:0 0 8px;font-size:15px;line-height:1.5;color:#1f2937;font-weight:700;">Offres mises à jour en continu</td>
               </tr>
               <tr>
-                <td style="padding:0 0 8px;font-size:14px;line-height:1.5;color:#374151;">Afrique • Europe • À distance</td>
+                <td style="padding:0 0 8px;font-size:14px;line-height:1.5;color:#374151;">Filtrées selon ton profil</td>
               </tr>
               <tr>
-                <td style="padding:0;font-size:14px;line-height:1.5;color:#374151;">Matching selon ta recherche</td>
+                <td style="padding:0;font-size:14px;line-height:1.5;color:#374151;">Moins de recherche, plus de candidatures</td>
               </tr>
             </table>
           </td>
@@ -259,9 +259,9 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
   const text = `Bonjour,
 
 Tu avais commencé à activer ton accès JobRadar, mais l'activation ne semble pas être allée au bout.
-77 000+ offres référencées
-Afrique • Europe • À distance
-Matching selon ta recherche
+Offres mises à jour en continu
+Filtrées selon ton profil
+Moins de recherche, plus de candidatures
 ${roleText}
 Tu peux reprendre ici :
 ${variables.pricing_url}
@@ -291,7 +291,8 @@ function interestedNoPaymentAttempt(variables: NormalizedMarketingEmailVariables
       </p>`,
     bodyHtml: `
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
-        La plateforme référence maintenant plus de 77 000 offres et continue d'améliorer le matching.
+        JobRadar filtre pour toi : moins de recherche, plus d'offres utiles.
+        Le flux est mis à jour en continu, selon ton profil et tes critères.
       </p>
       <p style="margin:0;font-size:15px;line-height:1.7;color:#374151;">
         Tu peux revenir explorer les offres ou activer un accès quand ce sera le bon moment.
@@ -307,7 +308,8 @@ function interestedNoPaymentAttempt(variables: NormalizedMarketingEmailVariables
 
 Tu avais montré de l'intérêt pour JobRadar${role}.
 
-La plateforme référence maintenant plus de 77 000 offres et continue d'améliorer le matching.
+JobRadar filtre pour toi : moins de recherche, plus d'offres utiles.
+Le flux est mis à jour en continu, selon ton profil et tes critères.
 
 Tu peux revenir explorer les offres ici :
 ${variables.feed_url}
