@@ -636,7 +636,7 @@ Deno.serve(async (req) => {
     const jobSource = jobSourceArr?.[0] ?? null;
 
     if (source_code === "emploi_ci") {
-      const runId = await createRun(
+      const runId = dry_run ? null : await createRun(
         supabaseUrl,
         serviceKey,
         "ed25b64d-ace6-4296-8985-46702d58785d",
@@ -661,7 +661,9 @@ Deno.serve(async (req) => {
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
+          pages_fetched: data.pages_fetched,
           parsed: data.parsed,
+          stopped_reason: data.stopped_reason,
           sample: data.sample,
         });
       }
@@ -687,37 +689,37 @@ Deno.serve(async (req) => {
         const exists = found?.length ? found[0].id : null;
         const identity = await buildCrossSourceJobIdentity({
           title: it.title,
-          companyName: null,
+          companyName: it.company_name,
           location: it.location,
-          sourceUrl: it.url,
-          applyUrl: it.url,
+          sourceUrl: it.source_url,
+          applyUrl: it.apply_url,
         });
 
         const baseRow = {
           job_source_id,
           external_id,
           title: it.title,
-          company_name: null,
+          company_name: it.company_name,
           location: it.location,
           country: it.country,
           remote_type: null,
-          contract_type: null,
+          contract_type: it.contract_type,
           seniority: null,
           salary_min: null,
           salary_max: null,
           salary_currency: null,
           salary_period: null,
           description_html: null,
-          description_text: null,
-          apply_url: it.url,
-          source_url: it.url,
+          description_text: it.description_text,
+          apply_url: it.apply_url,
+          source_url: it.source_url,
           canonical_url: identity.canonicalUrl,
           dedupe_identity_key: identity.dedupeIdentityKey,
           cross_source_fingerprint: identity.crossSourceFingerprint,
           tags: [],
-          posted_at: null,
-          published_at: null,
-          expires_at: null,
+          posted_at: it.published_at,
+          published_at: it.published_at,
+          expires_at: it.expires_at,
           updated_at: now,
           last_seen_at: now,
           is_active: true,
@@ -727,7 +729,7 @@ Deno.serve(async (req) => {
             source_code: "emploi_ci",
             provider: "educarriere",
             fetched_from: data.list_url,
-            original_url: it.url,
+            original_url: it.source_url,
           },
         };
 
