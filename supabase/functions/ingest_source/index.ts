@@ -774,29 +774,160 @@ Deno.serve(async (req) => {
     }
 
     if (source_code === "emploi_ci__dup__17d5574e") {
-      if (!dry_run) {
+      if (dry_run) {
+        const data = await fetchEmploiCiPortalItems(limit);
+
+        return json({
+          ok: true,
+          source_code,
+          limit,
+          dry_run: true,
+          status: "dry_run_parsed",
+          list_url: data.list_url,
+          pages_fetched: data.pages_fetched,
+          parsed: data.parsed,
+          skipped_quality_count: data.skipped_quality_count,
+          stopped_reason: data.stopped_reason,
+          sample: data.sample,
+        });
+      }
+
+      if (
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_EMPLOI_CI_PORTAL"
+      ) {
         return json({
           ok: false,
           source_code,
           dry_run: false,
-          error: "emploi_ci_portal_draft_dry_run_only",
+          error: "emploi_ci_portal_import_requires_confirmation",
         }, 409);
       }
 
-      const data = await fetchEmploiCiPortalItems(limit);
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const importLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+      const data = await fetchEmploiCiPortalItems(importLimit);
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const now = new Date().toISOString();
+      const rows = [];
+
+      for (const it of data.items) {
+        const title = (it.title || "Offre d'emploi").trim();
+        const companyName = it.company_name ?? null;
+        const location = it.location ?? jobSource.region ?? null;
+        const sourceUrl = normalizeOptionalUrl(it.source_url);
+        const applyUrl = normalizeOptionalUrl(it.apply_url) ?? sourceUrl;
+        const identity = await buildCrossSourceJobIdentity({
+          title,
+          companyName,
+          location,
+          sourceUrl,
+          applyUrl,
+        });
+        const jobType = detectJobType(title, it.description_text ?? "");
+
+        rows.push({
+          job_source_id: jobSource.id,
+          external_id: it.external_id,
+          title,
+          company_name: companyName,
+          location,
+          country: it.country,
+          remote_type: null,
+          contract_type: it.contract_type ?? null,
+          seniority: null,
+          salary_min: null,
+          salary_max: null,
+          salary_currency: null,
+          salary_period: null,
+          description_html: null,
+          description_text: it.description_text ?? null,
+          apply_url: applyUrl,
+          source_url: sourceUrl,
+          canonical_url: identity.canonicalUrl,
+          dedupe_identity_key: identity.dedupeIdentityKey,
+          cross_source_fingerprint: identity.crossSourceFingerprint,
+          tags: it.tags ?? [],
+          posted_at: it.published_at,
+          published_at: it.published_at,
+          expires_at: it.expires_at ?? null,
+          scraped_at: now,
+          updated_at: now,
+          last_seen_at: now,
+          is_active: true,
+          is_expired: false,
+          job_status: "active",
+          job_type: jobType,
+          job_json: {
+            source_code,
+            provider: "emploi_ci_portal",
+            fetched_from: data.list_url,
+            original_url: it.source_url,
+            quality_filtered: {
+              skipped_quality_count: data.skipped_quality_count,
+            },
+          },
+        });
+      }
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
 
       return json({
         ok: true,
         source_code,
-        limit,
-        dry_run: true,
-        status: "dry_run_parsed",
-        list_url: data.list_url,
-        pages_fetched: data.pages_fetched,
+        limit: importLimit,
+        dry_run: false,
+        status: "emploi_ci_portal_upserted",
         parsed: data.parsed,
+        inserted,
+        updated,
         skipped_quality_count: data.skipped_quality_count,
+        pages_fetched: data.pages_fetched,
         stopped_reason: data.stopped_reason,
-        sample: data.sample,
       });
     }
 
