@@ -808,7 +808,7 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_not_found" }, 404);
       }
 
-      const importLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+      const importLimit = Math.max(1, Math.min(Math.trunc(limit), 400));
       const runId = await createRun(
         supabaseUrl,
         serviceKey,
