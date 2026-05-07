@@ -990,6 +990,14 @@
   color: #0b4cc2;
 }
 
+.jr-offerPaywallModal__reassurance {
+  margin: 0 0 16px;
+  color: rgba(15, 23, 42, 0.68);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .jr-offerPaywallModal__actions {
   display: flex;
   flex-direction: column;
@@ -1136,6 +1144,11 @@
     margin-bottom: 14px;
     gap: 7px;
     font-size: 13px;
+  }
+
+  .jr-offerPaywallModal__reassurance {
+    margin-bottom: 14px;
+    font-size: 12.5px;
   }
 }
 
