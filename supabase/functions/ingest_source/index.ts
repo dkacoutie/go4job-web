@@ -5,6 +5,7 @@ import { fetchAejItems } from "./sources/aej_html.ts";
 import { fetchAdzunaItems } from "./sources/adzuna_api.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
 import { fetchEmploiCiPortalItems } from "./sources/emploi_ci_portal.ts";
+import { fetchEmploiMaPortalItems } from "./sources/emploi_ma_portal.ts";
 import { fetchEmploiSenegalPortalItems } from "./sources/emploisenegal_portal.ts";
 import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
@@ -661,6 +662,38 @@ Deno.serve(async (req) => {
           error: "emploisenegal_portal_import_requires_confirmation",
         }, 409);
       }
+    }
+
+    if (source_code === "emploi_ma_portal") {
+      // Morocco pilot is dry-run only: no job_sources lookup, no runs, no DB writes.
+      if (!dry_run) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "emploi_ma_portal_import_disabled_dry_run_only",
+        }, 409);
+      }
+
+      const pilotLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+      const data = await fetchEmploiMaPortalItems(pilotLimit, {
+        maxPages: 2,
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        limit: pilotLimit,
+        dry_run: true,
+        status: "dry_run_parsed",
+        list_url: data.list_url,
+        pages_fetched: data.pages_fetched,
+        parsed: data.parsed,
+        skipped_quality_count: data.skipped_quality_count,
+        suspicious_signal_count: data.suspicious_signal_count,
+        stopped_reason: data.stopped_reason,
+        sample: data.sample.slice(0, 3),
+      });
     }
 
     const supabaseUrl = mustEnv("SUPABASE_URL");
