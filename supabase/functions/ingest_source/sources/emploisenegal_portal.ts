@@ -13,6 +13,7 @@ export type EmploiSenegalPortalItem = {
   contract_type: string | null;
   description_text: string | null;
   tags: string[];
+  suspicious_terms: string[];
 };
 
 const BASE_URL = "https://www.emploisenegal.com";
@@ -90,7 +91,7 @@ function normalizeForSignal(value: string) {
     .toLowerCase();
 }
 
-function countSuspiciousSignals(item: {
+function detectSuspiciousTerms(item: {
   title: string;
   company_name: string | null;
   description_text: string | null;
@@ -98,9 +99,9 @@ function countSuspiciousSignals(item: {
   const haystack = normalizeForSignal(
     `${item.title} ${item.company_name ?? ""} ${item.description_text ?? ""}`,
   );
-  return SUSPICIOUS_TERMS.some((term) =>
+  return SUSPICIOUS_TERMS.filter((term) =>
     haystack.includes(normalizeForSignal(term))
-  ) ? 1 : 0;
+  );
 }
 
 function extractAttr(html: string, attr: string) {
@@ -218,7 +219,8 @@ async function parseOffersFromHtml(html: string) {
       company_name: companyName,
       description_text: descriptionText,
     };
-    suspiciousSignalCount += countSuspiciousSignals(candidate);
+    const suspiciousTerms = detectSuspiciousTerms(candidate);
+    if (suspiciousTerms.length > 0) suspiciousSignalCount++;
 
     items.push({
       external_id: await buildExternalId({
@@ -238,6 +240,7 @@ async function parseOffersFromHtml(html: string) {
       contract_type: contractType,
       description_text: descriptionText,
       tags: extractTags(rawTags),
+      suspicious_terms: suspiciousTerms,
     });
   }
 
