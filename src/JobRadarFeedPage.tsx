@@ -531,6 +531,7 @@ export default function JobRadarFeedPage() {
   const TOP_MATCH_MIN = 70;
   const TOP_MATCH_DQ_MIN = 0.6;
   const MIN_FOR_YOU = 25;
+  const FOR_YOU_TAB_MIN_COUNT = 3;
   const [onlyVeryRelevant, setOnlyVeryRelevant] = useState(false);
   const [showTopMatchHelp, setShowTopMatchHelp] = useState(false);
 
@@ -1111,13 +1112,19 @@ export default function JobRadarFeedPage() {
   const forYouCount = visibleFeedBuckets.for_you.length;
   const exploreCount = visibleFeedBuckets.explore.length;
   const shadowUi = useMemo(() => buildJobRadarShadowUi(shadowMeta, topCount), [shadowMeta, topCount]);
-  const displayed = matchMode === "strict" ? forYouRows : visibleFeedBuckets.explore;
+  const hasSearchQuery = normalizeSearchText(q).length > 0;
+  const showForYouTab = forYouCount >= FOR_YOU_TAB_MIN_COUNT;
+  const showModeTabs = showForYouTab || exploreCount > 0;
+  const exploreTabLabel = hasSearchQuery ? "Résultats disponibles" : shadowUi.largeTabLabel;
+  const effectiveMatchMode = showForYouTab && matchMode === "strict" ? "strict" : "large";
+  const displayed = effectiveMatchMode === "strict" ? forYouRows : visibleFeedBuckets.explore;
   const displayedLimited = isPreview ? displayed.slice(0, FEED_PREVIEW_LIMIT) : displayed;
   const showGateOnDisplayed = isPreview && displayed.length > FEED_PREVIEW_LIMIT;
-  const showNoPreciseMatchState = matchMode === "strict" && forYouCount === 0 && exploreCount > 0;
+  const showNoSearchResultsState = hasSearchQuery && exploreCount === 0 && forYouCount === 0;
+  const showNoPreciseMatchState = effectiveMatchMode === "strict" && forYouCount === 0 && exploreCount > 0;
   const forYouPillLabel =
-    forYouCount === 0 && exploreCount > 0
-      ? "Personnalisation en cours"
+    exploreCount > 0 && forYouCount < FOR_YOU_TAB_MIN_COUNT
+      ? "Résultats disponibles"
       : getJobRadarShadowPillLabel(shadowMeta, forYouCount);
   const hasCvContext = cvKeywords.length > 0 || cvExp != null;
   const feedAdvisorMode = useMemo(() => {
@@ -1146,11 +1153,11 @@ export default function JobRadarFeedPage() {
   useEffect(() => {
     if (hasUserSelectedMode) return;
     const nextMode =
-      shadowUi.showStrictTab && shadowUi.preferredMode === "strict" && forYouCount > 0
+      showForYouTab && shadowUi.showStrictTab && shadowUi.preferredMode === "strict"
         ? "strict"
         : "large";
     setMatchMode((prev) => (prev === nextMode ? prev : nextMode));
-  }, [shadowUi.showStrictTab, shadowUi.preferredMode, hasUserSelectedMode, matchMode, forYouCount]);
+  }, [shadowUi.showStrictTab, shadowUi.preferredMode, hasUserSelectedMode, matchMode, showForYouTab]);
 
   const closeOfferUnlockModal = useCallback(() => {
     setOfferUnlockModal(null);
@@ -1269,10 +1276,11 @@ export default function JobRadarFeedPage() {
               ) : null}
             </div>
 
+            {showModeTabs && (
             <div className="jr-modeToggle" role="tablist" aria-label="Mode de tri des offres">
-              {shadowUi.showStrictTab && (
+              {shadowUi.showStrictTab && showForYouTab && (
                 <button
-                  className={matchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                  className={effectiveMatchMode === "strict" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                   type="button"
                   onClick={() => {
                     setHasUserSelectedMode(true);
@@ -1280,19 +1288,15 @@ export default function JobRadarFeedPage() {
                     trackJobRadarEvent("match_mode_select", { mode: "strict", forYouCount, exploreCount });
                   }}
                   disabled={busy || forYouCount === 0}
-                  title={
-                    forYouCount === 0
-                      ? "Aucun match précis pour l’instant"
-                      : "Offres les plus pertinentes pour toi"
-                  }
-                  aria-pressed={matchMode === "strict"}
+                  title="Offres les plus pertinentes pour toi"
+                  aria-pressed={effectiveMatchMode === "strict"}
                 >
-                  {forYouCount === 0 ? "Pour toi" : `Pour toi (${forYouCount})`}
+                  Pour toi ({forYouCount})
                 </button>
               )}
 
               <button
-                className={matchMode === "large" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
+                className={effectiveMatchMode === "large" ? "jrBtn jrBtnPrimary" : "jrBtn jrBtnGhost"}
                 type="button"
                 onClick={() => {
                   setHasUserSelectedMode(true);
@@ -1301,11 +1305,12 @@ export default function JobRadarFeedPage() {
                 }}
                 disabled={busy}
                 title="Explorer les offres du moment"
-                aria-pressed={matchMode === "large"}
+                aria-pressed={effectiveMatchMode === "large"}
               >
-                {shadowUi.largeTabLabel} ({exploreCount})
+                {exploreTabLabel} ({exploreCount})
               </button>
             </div>
+            )}
 
             <button className="jrBtn jrBtnOutline" onClick={load} disabled={busy} type="button">
               {busy ? "Chargement…" : "Rafraîchir"}
@@ -1497,7 +1502,15 @@ export default function JobRadarFeedPage() {
             tone="info"
           />
         ) : displayed.length === 0 ? (
-          showNoPreciseMatchState ? (
+          showNoSearchResultsState ? (
+            <EmptyState
+              title="Aucune offre trouvée pour cette recherche"
+              description="Essaie un autre mot-clé ou élargis tes critères."
+              primaryAction={{ label: "Effacer la recherche", onClick: () => setQ("") }}
+              secondaryAction={{ label: "Recharger les offres", onClick: () => load() }}
+              tone="info"
+            />
+          ) : showNoPreciseMatchState ? (
             <EmptyState
               title="Aucun match précis pour l’instant"
               description="Essaie d’élargir tes critères ou consulte toutes les offres."
