@@ -19,6 +19,8 @@ import {
   buildGeoPreferences,
   buildJobHay,
   computeJobMatchScore,
+  normalizeSearchText,
+  resolveCountrySearchQuery,
   type GeoRemoteBreakdown,
   type DataQualityBreakdown,
   type MatchWhySummary,
@@ -458,6 +460,36 @@ function isRemoteLike(value: string) {
   );
 }
 
+const JOB_SELECT_FIELDS = `
+  id,
+  title,
+  company_name,
+  location,
+  country,
+  remote_type,
+  job_family,
+  published_at,
+  posted_at,
+  scraped_at,
+  created_at,
+  updated_at,
+  tags,
+  job_skills,
+  required_skills,
+  optional_skills,
+  experience_years_min,
+  experience_years_max,
+  description:description_text
+`;
+
+function sanitizeJobSearchTerm(value: string) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[%(),"'`]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -513,6 +545,8 @@ export default function JobRadarFeedPage() {
   const { pushToast } = useToast();
 
   const PAGE_SIZE = 30;
+  const SEARCH_LIMIT = 150;
+  const TEXT_SEARCH_MIN_LENGTH = 2;
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -610,29 +644,7 @@ export default function JobRadarFeedPage() {
   const fetchJobsRange = useCallback(async (from: number, to: number) => {
     const { data, error } = await supabase
       .from("jobs")
-      .select(
-        `
-        id,
-        title,
-        company_name,
-        location,
-        country,
-        remote_type,
-        job_family,
-        published_at,
-        posted_at,
-        scraped_at,
-        created_at,
-        updated_at,
-        tags,
-        job_skills,
-        required_skills,
-        optional_skills,
-        experience_years_min,
-        experience_years_max,
-        description:description_text
-      `
-      )
+      .select(JOB_SELECT_FIELDS)
       .eq("is_active", true)
       .eq("is_expired", false)
       .in("job_status", ["active", "stale"])
@@ -642,6 +654,40 @@ export default function JobRadarFeedPage() {
       .order("created_at", { ascending: false, nullsFirst: false })
       .range(from, to);
 
+    if (error) throw error;
+    return (data ?? []) as JobRow[];
+  }, []);
+
+  const fetchJobsSearch = useCallback(async (rawQuery: string) => {
+    const countryCode = resolveCountrySearchQuery(rawQuery);
+    let query = supabase
+      .from("jobs")
+      .select(JOB_SELECT_FIELDS)
+      .eq("is_active", true)
+      .eq("is_expired", false)
+      .in("job_status", ["active", "stale"])
+      .or("quality_status.eq.ok,quality_status.is.null");
+
+    if (countryCode) {
+      query = query.eq("country", countryCode);
+    } else {
+      const safeTerm = sanitizeJobSearchTerm(rawQuery);
+      if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
+      query = query.or(
+        [
+          `title.ilike.%${safeTerm}%`,
+          `company_name.ilike.%${safeTerm}%`,
+          `location.ilike.%${safeTerm}%`,
+          `country.ilike.%${safeTerm}%`,
+        ].join(",")
+      );
+    }
+
+    const { data, error } = await query
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .order("scraped_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(SEARCH_LIMIT);
     if (error) throw error;
     return (data ?? []) as JobRow[];
   }, []);
@@ -798,6 +844,40 @@ export default function JobRadarFeedPage() {
   }, [loading, session, userId, load]);
 
   useEffect(() => {
+    if (!userId || loading || busy) return;
+
+    const rawQuery = q;
+    const normalizedQuery = normalizeSearchText(rawQuery);
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setErrorMsg(null);
+      setLoadingMore(true);
+
+      try {
+        const nextJobs = normalizedQuery
+          ? await fetchJobsSearch(rawQuery)
+          : await fetchJobsRange(0, PAGE_SIZE - 1);
+
+        if (cancelled) return;
+
+        setJobs(nextJobs);
+        setPageFrom(nextJobs.length);
+        setHasMore(normalizedQuery ? false : nextJobs.length === PAGE_SIZE);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+      } finally {
+        if (!cancelled) setLoadingMore(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [q, userId, loading, busy, fetchJobsRange, fetchJobsSearch]);
+
+  useEffect(() => {
     if (matchMode !== "strict" || !onlyVeryRelevant) {
       setShowTopMatchHelp(false);
     }
@@ -878,7 +958,7 @@ export default function JobRadarFeedPage() {
     const kwCount = kwAlerts.length + kwCv.length;
     const effectiveExp = cvExp ?? (profileExp != null ? { min: profileExp, max: profileExp } : null);
 
-    const qCanon = norm(canonicalizeText(q));
+    const qCanon = normalizeSearchText(canonicalizeText(q));
 
     const baseRows = jobs
       .map((job): MatchRow | null => {

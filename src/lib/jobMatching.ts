@@ -981,6 +981,16 @@ function norm(s: string) {
   return (s ?? "").toLowerCase().trim();
 }
 
+export function normalizeSearchText(input: string) {
+  return (input ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeText(input: string) {
   return (input ?? "")
     .normalize("NFD")
@@ -1006,6 +1016,50 @@ function stripRoleNoise(input: string) {
 
 function uniq(arr: string[]) {
   return Array.from(new Set(arr));
+}
+
+const COUNTRY_ALIAS_MAP: Record<string, string[]> = {
+  CI: ["ci", "côte d’ivoire", "côte d'ivoire", "cote d ivoire", "cote ivoire", "ivory coast"],
+  SN: ["sn", "sénégal", "senegal"],
+  FR: ["fr", "france"],
+  GB: ["gb", "uk", "united kingdom", "royaume uni", "angleterre"],
+  US: ["us", "usa", "united states", "états-unis", "etats unis"],
+  CA: ["ca", "canada"],
+  BE: ["be", "belgique", "belgium"],
+  CH: ["ch", "suisse", "switzerland"],
+  DE: ["de", "allemagne", "germany"],
+  MA: ["ma", "maroc", "morocco"],
+  TN: ["tn", "tunisie", "tunisia"],
+  DZ: ["dz", "algérie", "algerie", "algeria"],
+  CM: ["cm", "cameroun", "cameroon"],
+  BJ: ["bj", "bénin", "benin"],
+  TG: ["tg", "togo"],
+  BF: ["bf", "burkina", "burkina faso"],
+  ML: ["ml", "mali"],
+  NE: ["ne", "niger"],
+  GN: ["gn", "guinée", "guinee", "guinea"],
+  GH: ["gh", "ghana"],
+  NG: ["ng", "nigeria"],
+  KE: ["ke", "kenya"],
+  RW: ["rw", "rwanda"],
+  ZA: ["za", "afrique du sud", "south africa"],
+};
+
+const COUNTRY_ALIAS_INDEX = new Map<string, string>();
+for (const [code, aliases] of Object.entries(COUNTRY_ALIAS_MAP)) {
+  for (const alias of aliases) {
+    COUNTRY_ALIAS_INDEX.set(normalizeSearchText(alias), code);
+  }
+}
+
+export function getCountryAliases(countryCode: string | null | undefined): string[] {
+  const raw = (countryCode ?? "").trim();
+  const code = raw.length === 2 ? raw.toUpperCase() : resolveCountrySearchQuery(raw);
+  return code ? COUNTRY_ALIAS_MAP[code] ?? [] : [];
+}
+
+export function resolveCountrySearchQuery(q: string): string | null {
+  return COUNTRY_ALIAS_INDEX.get(normalizeSearchText(q)) ?? null;
 }
 
 function sum(nums: number[]) {
@@ -1346,6 +1400,7 @@ export function buildJobHay(job: JobLike): string {
       job.company_name,
       job.location,
       job.country,
+      ...getCountryAliases(job.country),
       job.remote_type,
       job.description,
       job.job_family,

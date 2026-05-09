@@ -529,6 +529,46 @@ function uniq(items: string[]): string[] {
   return out;
 }
 
+const COUNTRY_ALIAS_MAP: Record<string, string[]> = {
+  CI: ["ci", "côte d’ivoire", "côte d'ivoire", "cote d ivoire", "cote ivoire", "ivory coast"],
+  SN: ["sn", "sénégal", "senegal"],
+  FR: ["fr", "france"],
+  GB: ["gb", "uk", "united kingdom", "royaume uni", "angleterre"],
+  US: ["us", "usa", "united states", "états-unis", "etats unis"],
+  CA: ["ca", "canada"],
+  BE: ["be", "belgique", "belgium"],
+  CH: ["ch", "suisse", "switzerland"],
+  DE: ["de", "allemagne", "germany"],
+  MA: ["ma", "maroc", "morocco"],
+  TN: ["tn", "tunisie", "tunisia"],
+  DZ: ["dz", "algérie", "algerie", "algeria"],
+  CM: ["cm", "cameroun", "cameroon"],
+  BJ: ["bj", "bénin", "benin"],
+  TG: ["tg", "togo"],
+  BF: ["bf", "burkina", "burkina faso"],
+  ML: ["ml", "mali"],
+  NE: ["ne", "niger"],
+  GN: ["gn", "guinée", "guinee", "guinea"],
+  GH: ["gh", "ghana"],
+  NG: ["ng", "nigeria"],
+  KE: ["ke", "kenya"],
+  RW: ["rw", "rwanda"],
+  ZA: ["za", "afrique du sud", "south africa"],
+};
+
+const COUNTRY_ALIAS_INDEX = new Map<string, string>();
+for (const [code, aliases] of Object.entries(COUNTRY_ALIAS_MAP)) {
+  for (const alias of aliases) {
+    COUNTRY_ALIAS_INDEX.set(normalizeText(alias), code);
+  }
+}
+
+function getCountryAliases(countryValue: string | null | undefined): string[] {
+  const raw = cleanString(countryValue);
+  const code = normalizeCountryCode(raw) ?? COUNTRY_ALIAS_INDEX.get(normalizeText(raw)) ?? null;
+  return code ? COUNTRY_ALIAS_MAP[code] ?? [] : [];
+}
+
 function uniqNormalized(items: string[]): string[] {
   return uniq(items.map((item) => normalizeText(canonicalizeText(item))));
 }
@@ -644,6 +684,7 @@ function buildJobHay(job: CandidateJob): string {
       job.company_name,
       job.location,
       job.country,
+      ...getCountryAliases(job.country),
       job.remote_type,
       job.job_family,
       pickJobDescription(job),
