@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
 import {
@@ -545,11 +545,13 @@ export default function JobRadarFeedPage() {
   const { pushToast } = useToast();
 
   const PAGE_SIZE = 30;
-  const SEARCH_LIMIT = 150;
+  const SEARCH_LIMIT = 80;
   const TEXT_SEARCH_MIN_LENGTH = 2;
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const lastServerSearchQueryRef = useRef("");
   const feedBackendShadowFlag = (import.meta.env.VITE_JOBRADAR_FEED_BACKEND_SHADOW ?? "").trim() === "1";
 
   const [offerUnlockModal, setOfferUnlockModal] = useState<{ title: string } | null>(null);
@@ -848,10 +850,12 @@ export default function JobRadarFeedPage() {
 
     const rawQuery = q;
     const normalizedQuery = normalizeSearchText(rawQuery);
+    if (!normalizedQuery && !lastServerSearchQueryRef.current) return;
+
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setErrorMsg(null);
-      setLoadingMore(true);
+      setSearchBusy(Boolean(normalizedQuery));
 
       try {
         const nextJobs = normalizedQuery
@@ -863,17 +867,19 @@ export default function JobRadarFeedPage() {
         setJobs(nextJobs);
         setPageFrom(nextJobs.length);
         setHasMore(normalizedQuery ? false : nextJobs.length === PAGE_SIZE);
+        lastServerSearchQueryRef.current = normalizedQuery;
       } catch (e: unknown) {
         if (cancelled) return;
         setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
       } finally {
-        if (!cancelled) setLoadingMore(false);
+        if (!cancelled) setSearchBusy(false);
       }
-    }, 250);
+    }, 400);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      setSearchBusy(false);
     };
   }, [q, userId, loading, busy, fetchJobsRange, fetchJobsSearch]);
 
@@ -1213,6 +1219,7 @@ export default function JobRadarFeedPage() {
       </button>
     </div>
   );
+  const hasServerSearchQuery = normalizeSearchText(q).length > 0;
 
   return (
     <div className="jr-shell">
@@ -1308,6 +1315,12 @@ export default function JobRadarFeedPage() {
           <div className="jr-subline">
             {getJobRadarShadowSubline(shadowMeta, matchMode)}
           </div>
+
+          {hasServerSearchQuery && searchBusy && (
+            <div className="jr-subline" aria-live="polite">
+              Recherche en cours…
+            </div>
+          )}
 
           {matchMode === "strict" && shadowUi.showOnlyVeryRelevantToggle && (
             <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
