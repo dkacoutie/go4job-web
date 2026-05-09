@@ -482,6 +482,8 @@ const JOB_SELECT_FIELDS = `
   description:description_text
 `;
 
+const TEXT_SEARCH_MIN_LENGTH = 2;
+
 function sanitizeJobSearchTerm(value: string) {
   return (value ?? "")
     .toLowerCase()
@@ -515,25 +517,46 @@ const JOB_SEARCH_STOPWORDS = new Set([
   "at",
 ]);
 
+const JOB_SEARCH_BROAD_TOKENS = new Set([
+  "dakar",
+  "international",
+  "manager",
+  "assistant",
+  "agent",
+  "responsable",
+  "commercial",
+  "senegal",
+]);
+
 function buildJobSearchTokens(rawQuery: string) {
   const normalized = normalizeSearchText(canonicalizeText(rawQuery));
   if (!normalized) return [];
-  return uniq(normalized.split(" ").filter((token) => token.length >= 2 && !JOB_SEARCH_STOPWORDS.has(token))).slice(0, 5);
+  return uniq(normalized.split(" ").filter((token) => token.length >= 2 && !JOB_SEARCH_STOPWORDS.has(token))).slice(0, 6);
+}
+
+function buildServerSearchTerms(rawQuery: string) {
+  const safeTerm = sanitizeJobSearchTerm(rawQuery);
+  const tokens = buildJobSearchTokens(rawQuery);
+  const importantTokens = tokens.filter((token) => !JOB_SEARCH_BROAD_TOKENS.has(token));
+  const fallbackTokens = tokens.filter((token) => JOB_SEARCH_BROAD_TOKENS.has(token));
+  return uniq([safeTerm, ...importantTokens, ...fallbackTokens]).filter((term) => term.length >= TEXT_SEARCH_MIN_LENGTH).slice(0, 6);
+}
+
+function buildNormalizedJobSearchHay(job: JobRow) {
+  return normalizeSearchText(canonicalizeText(buildJobHay(job)));
 }
 
 function jobMatchesSearchQuery(job: JobRow, rawQuery: string) {
   const qCanon = normalizeSearchText(canonicalizeText(rawQuery));
   if (!qCanon) return true;
 
-  const hay = buildJobHay(job);
+  const hay = buildNormalizedJobSearchHay(job);
   if (hay.includes(qCanon)) return true;
 
   const tokens = buildJobSearchTokens(rawQuery);
   if (tokens.length <= 1) return false;
 
-  const matchedCount = tokens.filter((token) => hay.includes(token)).length;
-  const minMatches = tokens.length <= 3 ? tokens.length : Math.max(3, Math.ceil(tokens.length * 0.75));
-  return matchedCount >= minMatches;
+  return tokens.every((token) => hay.includes(token));
 }
 
 export default function JobRadarFeedPage() {
@@ -593,7 +616,6 @@ export default function JobRadarFeedPage() {
 
   const PAGE_SIZE = 30;
   const SEARCH_LIMIT = 80;
-  const TEXT_SEARCH_MIN_LENGTH = 2;
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -722,8 +744,7 @@ export default function JobRadarFeedPage() {
     } else {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
       if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
-      const tokens = buildJobSearchTokens(rawQuery);
-      const serverTerms = uniq([safeTerm, ...tokens]).slice(0, 6);
+      const serverTerms = buildServerSearchTerms(rawQuery);
       const results: JobRow[] = [];
 
       for (const term of serverTerms) {
