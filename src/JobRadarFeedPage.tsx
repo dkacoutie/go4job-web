@@ -490,6 +490,52 @@ function sanitizeJobSearchTerm(value: string) {
     .trim();
 }
 
+const JOB_SEARCH_STOPWORDS = new Set([
+  "de",
+  "des",
+  "du",
+  "la",
+  "le",
+  "les",
+  "un",
+  "une",
+  "et",
+  "en",
+  "a",
+  "au",
+  "aux",
+  "pour",
+  "avec",
+  "the",
+  "and",
+  "for",
+  "with",
+  "in",
+  "on",
+  "at",
+]);
+
+function buildJobSearchTokens(rawQuery: string) {
+  const normalized = normalizeSearchText(canonicalizeText(rawQuery));
+  if (!normalized) return [];
+  return uniq(normalized.split(" ").filter((token) => token.length >= 2 && !JOB_SEARCH_STOPWORDS.has(token))).slice(0, 5);
+}
+
+function jobMatchesSearchQuery(job: JobRow, rawQuery: string) {
+  const qCanon = normalizeSearchText(canonicalizeText(rawQuery));
+  if (!qCanon) return true;
+
+  const hay = buildJobHay(job);
+  if (hay.includes(qCanon)) return true;
+
+  const tokens = buildJobSearchTokens(rawQuery);
+  if (tokens.length <= 1) return false;
+
+  const matchedCount = tokens.filter((token) => hay.includes(token)).length;
+  const minMatches = tokens.length <= 3 ? tokens.length : Math.max(3, Math.ceil(tokens.length * 0.75));
+  return matchedCount >= minMatches;
+}
+
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -676,14 +722,35 @@ export default function JobRadarFeedPage() {
     } else {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
       if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
-      query = query.or(
-        [
-          `title.ilike.%${safeTerm}%`,
-          `company_name.ilike.%${safeTerm}%`,
-          `location.ilike.%${safeTerm}%`,
-          `country.ilike.%${safeTerm}%`,
-        ].join(",")
-      );
+      const tokens = buildJobSearchTokens(rawQuery);
+      const serverTerms = uniq([safeTerm, ...tokens]).slice(0, 6);
+      const results: JobRow[] = [];
+
+      for (const term of serverTerms) {
+        const { data, error } = await supabase
+          .from("jobs")
+          .select(JOB_SELECT_FIELDS)
+          .eq("is_active", true)
+          .eq("is_expired", false)
+          .in("job_status", ["active", "stale"])
+          .or("quality_status.eq.ok,quality_status.is.null")
+          .or(
+            [
+              `title.ilike.%${term}%`,
+              `company_name.ilike.%${term}%`,
+              `location.ilike.%${term}%`,
+              `country.ilike.%${term}%`,
+            ].join(",")
+          )
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .order("scraped_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false, nullsFirst: false })
+          .limit(SEARCH_LIMIT);
+        if (error) throw error;
+        results.push(...((data ?? []) as JobRow[]));
+      }
+
+      return mergeUniqueById([], results).filter((job) => jobMatchesSearchQuery(job, rawQuery)).slice(0, SEARCH_LIMIT);
     }
 
     const { data, error } = await query
@@ -965,12 +1032,10 @@ export default function JobRadarFeedPage() {
     const kwCount = kwAlerts.length + kwCv.length;
     const effectiveExp = cvExp ?? (profileExp != null ? { min: profileExp, max: profileExp } : null);
 
-    const qCanon = normalizeSearchText(canonicalizeText(q));
-
     const baseRows = jobs
       .map((job): MatchRow | null => {
         const hay = buildJobHay(job);
-        if (qCanon && !hay.includes(qCanon)) return null;
+        if (!jobMatchesSearchQuery(job, q)) return null;
 
         const scored = computeJobMatchScore({
           job,
