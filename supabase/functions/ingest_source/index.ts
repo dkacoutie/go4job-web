@@ -630,15 +630,20 @@ Deno.serve(async (req) => {
     if (source_code === "emploisenegal_portal") {
       // Senegal pilot dry-run stays read-only: no job_sources lookup, no runs, no DB writes.
       if (dry_run) {
-        const pilotLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+        const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+        const pilotLimit = toBoundedInt(limit, 30, 1, 100);
+        const pilotMaxPages = toBoundedInt(body?.max_pages, 10, 1, 10);
         const data = await fetchEmploiSenegalPortalItems(pilotLimit, {
-          maxPages: 2,
+          maxPages: pilotMaxPages,
         });
 
         return json({
           ok: true,
           source_code,
+          requested_limit: requestedLimit,
+          effective_limit: pilotLimit,
           limit: pilotLimit,
+          max_pages_used: data.max_pages_used,
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
@@ -712,7 +717,9 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_not_found" }, 404);
       }
 
-      const importLimit = Math.max(1, Math.min(Math.trunc(limit), 50));
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      const importLimit = toBoundedInt(limit, 30, 1, 50);
+      const importMaxPages = toBoundedInt(body?.max_pages, 10, 1, 10);
       const runId = await createRun(
         supabaseUrl,
         serviceKey,
@@ -721,7 +728,7 @@ Deno.serve(async (req) => {
       );
       currentRunId = runId;
       const data = await fetchEmploiSenegalPortalItems(importLimit, {
-        maxPages: 2,
+        maxPages: importMaxPages,
       });
       const importableItems = data.items.filter((it) =>
         (it.suspicious_terms ?? []).length === 0
@@ -837,7 +844,10 @@ Deno.serve(async (req) => {
       return json({
         ok: true,
         source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
         limit: importLimit,
+        max_pages_used: data.max_pages_used,
         dry_run: false,
         status: "emploisenegal_portal_upserted",
         parsed: data.parsed,
@@ -1592,7 +1602,9 @@ Deno.serve(async (req) => {
         ? asPlainObject(ingestConfig.search_params)
         : {};
       const runtimeState = asPlainObject(ingestConfig.runtime_state);
-      const rotationSegments = Array.isArray(ingestConfig.rotation_segments)
+      const rotationSegments: Record<string, unknown>[] = Array.isArray(
+          ingestConfig.rotation_segments,
+        )
         ? ingestConfig.rotation_segments
           .map((segment) => asPlainObject(segment))
           .filter((segment) => Object.keys(segment).length > 0)

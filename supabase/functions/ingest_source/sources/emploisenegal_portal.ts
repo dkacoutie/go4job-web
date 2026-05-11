@@ -18,7 +18,7 @@ export type EmploiSenegalPortalItem = {
 
 const BASE_URL = "https://www.emploisenegal.com";
 const FIRST_PAGE_URL = `${BASE_URL}/recherche-jobs-senegal`;
-const DEFAULT_MAX_PAGES = 2;
+const DEFAULT_MAX_PAGES = 10;
 const FETCH_DELAY_MS = 750;
 const PAGE_TIMEOUT_MS = 30000;
 const SUSPICIOUS_TERMS = [
@@ -282,11 +282,13 @@ export async function fetchEmploiSenegalPortalItems(
   limit = 30,
   options?: { maxPages?: number },
 ) {
-  const capped = Math.max(1, Math.min(Math.trunc(limit), 100));
-  let maxPages = Math.max(1, Math.min(
+  const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 30;
+  const capped = Math.max(1, Math.min(requestedLimit, 100));
+  const configuredMaxPages = Math.max(1, Math.min(
     Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES),
     DEFAULT_MAX_PAGES,
   ));
+  let maxPages = configuredMaxPages;
   const items: EmploiSenegalPortalItem[] = [];
   const seen = new Set<string>();
   let pagesFetched = 0;
@@ -337,6 +339,9 @@ export async function fetchEmploiSenegalPortalItems(
 
   return {
     list_url: FIRST_PAGE_URL,
+    requested_limit: requestedLimit,
+    effective_limit: capped,
+    max_pages_used: maxPages,
     pages_fetched: pagesFetched,
     parsed: items.length,
     skipped_quality_count: 0,

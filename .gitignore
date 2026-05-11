@@ -47,3 +47,5 @@ coverage
 .env.*
 !.env.example
 
+
+tmp/
