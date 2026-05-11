@@ -11,6 +11,13 @@ import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
+import { fetchMyJobMagRssItems } from "./sources/myjobmag_rss.ts";
+import { fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
+import { fetchJobWebGhanaPortalItems } from "./sources/jobwebghana_portal.ts";
+import { fetchHotNigerianJobsPortalItems } from "./sources/hotnigerianjobs_portal.ts";
+import { fetchNovojobPortalItems } from "./sources/novojob_portal.ts";
+import { fetchGoAfricaOnlineCiPortalItems } from "./sources/goafricaonline_ci_portal.ts";
+import { fetchJobbermanPortalItems } from "./sources/jobberman_portal.ts";
 import {
   buildCrossSourceJobIdentity,
   canonicalizeJobUrl,
@@ -277,6 +284,42 @@ function toStringArray(value: unknown): string[] {
   return raw
     .map((entry) => typeof entry === "string" ? entry.trim() : "")
     .filter(Boolean);
+}
+
+function commercialDryRunResponse(data: {
+  source_code: string;
+  source_family: string;
+  dry_run: true;
+  detected_country: string | null;
+  list_url: string;
+  parsed_count: number;
+  fetched_count: number;
+  feeds_fetched: number;
+  pages_fetched: number;
+  skipped_quality_count: number;
+  stopped_reason: string;
+  sample_jobs: unknown[];
+  meta: Record<string, unknown>;
+}) {
+  return {
+    ok: true,
+    source_code: data.source_code,
+    dry_run: true,
+    status: "dry_run_parsed",
+    source_family: data.source_family,
+    detected_country: data.detected_country,
+    list_url: data.list_url,
+    parsed: data.parsed_count,
+    parsed_count: data.parsed_count,
+    fetched_count: data.fetched_count,
+    feeds_fetched: data.feeds_fetched,
+    pages_fetched: data.pages_fetched,
+    skipped_quality_count: data.skipped_quality_count,
+    stopped_reason: data.stopped_reason,
+    sample: data.sample_jobs.slice(0, 3),
+    sample_jobs: data.sample_jobs.slice(0, 5),
+    meta: data.meta,
+  };
 }
 
 function normalizeAdzunaSortMode(value: unknown): "freshness" | "exploration" {
@@ -770,6 +813,66 @@ Deno.serve(async (req) => {
           request_body: data.meta.request_body,
         },
       });
+    }
+
+    const commercialDryRunLimit = toBoundedInt(limit, 50, 1, 100);
+    if (
+      [
+        "myjobmag_ng_rss",
+        "myjobmag_gh_rss",
+        "ngojobs_africa_rss",
+        "jobwebghana_portal",
+        "hotnigerianjobs_portal",
+        "novojob_portal",
+        "goafricaonline_ci_portal",
+        "jobberman_ng_portal",
+        "jobberman_gh_portal",
+      ].includes(source_code)
+    ) {
+      if (!dry_run) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: `${source_code}_import_disabled_dry_run_only`,
+        }, 409);
+      }
+
+      if (source_code === "myjobmag_ng_rss" || source_code === "myjobmag_gh_rss") {
+        return json(commercialDryRunResponse(await fetchMyJobMagRssItems(source_code, {
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "ngojobs_africa_rss") {
+        return json(commercialDryRunResponse(await fetchNgoJobsAfricaRssItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "jobwebghana_portal") {
+        return json(commercialDryRunResponse(await fetchJobWebGhanaPortalItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "hotnigerianjobs_portal") {
+        return json(commercialDryRunResponse(await fetchHotNigerianJobsPortalItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "novojob_portal") {
+        return json(commercialDryRunResponse(await fetchNovojobPortalItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "goafricaonline_ci_portal") {
+        return json(commercialDryRunResponse(await fetchGoAfricaOnlineCiPortalItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (source_code === "jobberman_ng_portal" || source_code === "jobberman_gh_portal") {
+        return json(commercialDryRunResponse(await fetchJobbermanPortalItems(source_code, {
+          limit: commercialDryRunLimit,
+        })));
+      }
     }
 
     const supabaseUrl = mustEnv("SUPABASE_URL");

@@ -1,0 +1,392 @@
+export type CommercialSourceJob = {
+  external_id: string;
+  title: string;
+  company_name: string | null;
+  country: string | null;
+  location: string | null;
+  source_url: string;
+  apply_url: string;
+  published_at: string | null;
+  expires_at: string | null;
+  description_text: string | null;
+  tags: string[];
+  payload: Record<string, unknown>;
+};
+
+export type CommercialSourceResult = {
+  ok: boolean;
+  source_code: string;
+  source_family: string;
+  dry_run: true;
+  detected_country: string | null;
+  list_url: string;
+  parsed_count: number;
+  fetched_count: number;
+  feeds_fetched: number;
+  pages_fetched: number;
+  skipped_quality_count: number;
+  stopped_reason: string;
+  sample_jobs: CommercialSourceJob[];
+  items: CommercialSourceJob[];
+  meta: Record<string, unknown>;
+};
+
+export type CommercialSourceConfig = {
+  sourceCode: string;
+  sourceFamily: string;
+  baseUrl: string;
+  startUrls?: string[];
+  feedUrls?: string[];
+  sitemapUrls?: string[];
+  country: string;
+  maxItems?: number;
+  maxPages?: number;
+  htmlOnly?: boolean;
+  rssOnly?: boolean;
+  linkInclude?: string;
+  jobUrlIncludes?: string[];
+  excludeUrlIncludes?: string[];
+};
+
+const USER_AGENT = "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)";
+const PAGE_TIMEOUT_MS = 15000;
+const QUALITY_TERMS = [
+  "betting",
+  "casino",
+  "gambling",
+  "1xbet",
+  "melbet",
+  "crypto",
+  "mlm",
+  "parrainage",
+  "revenus passifs",
+  "trading miracle",
+  "whatsapp only",
+  "whatsapp-only",
+];
+
+function cleanText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&rsquo;/gi, "'")
+    .replace(/&eacute;/gi, "e")
+    .replace(/&Eacute;/g, "E")
+    .replace(/&egrave;/gi, "e")
+    .replace(/&agrave;/gi, "a")
+    .replace(/&ocirc;/gi, "o")
+    .replace(/&ccedil;/gi, "c")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<\/?[^>]+(>|$)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function absUrl(baseUrl: string, href: string) {
+  if (!href) return "";
+  if (href.startsWith("http://") || href.startsWith("https://")) return href;
+  return `${baseUrl}${href.startsWith("/") ? "" : "/"}${href}`;
+}
+
+function normalizeSignal(value: string) {
+  return cleanText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function isQualityBlocked(job: { title: string; source_url: string; description_text?: string | null }) {
+  if (!job.title || !job.source_url) return true;
+  const haystack = normalizeSignal(`${job.title} ${job.description_text ?? ""}`);
+  return QUALITY_TERMS.some((term) => haystack.includes(normalizeSignal(term)));
+}
+
+function safeIsoDate(value: string | null) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function isExpired(expiresAt: string | null) {
+  return expiresAt ? Date.parse(expiresAt) < Date.now() : false;
+}
+
+async function fetchText(url: string) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort("page_timeout"), PAGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "user-agent": USER_AGENT,
+        "accept": "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml,*/*;q=0.8",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    return {
+      ok: res.ok,
+      status: res.status,
+      contentType: res.headers.get("content-type") ?? "",
+      finalUrl: res.url,
+      text,
+      blocked: isBlocked(res.status, text),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isBlocked(status: number, text: string) {
+  if ([401, 403, 429].includes(status)) return true;
+  const plain = cleanText(text).toLowerCase();
+  return ["cloudflare", "captcha", "checking your browser", "login required", "access denied"].some((term) =>
+    plain.includes(term)
+  );
+}
+
+function tagValue(xml: string, tag: string) {
+  return cleanText(xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] ?? "");
+}
+
+function linkFromItem(xml: string) {
+  return tagValue(xml, "link") ||
+    cleanText(xml.match(/<link\b[^>]*href=["']([^"']+)["']/i)?.[1] ?? "");
+}
+
+function parseFeed(xml: string, config: CommercialSourceConfig) {
+  const blocks = [
+    ...Array.from(xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)).map((m) => m[0]),
+    ...Array.from(xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)).map((m) => m[0]),
+  ];
+  return blocks.map((block, index) => {
+    const sourceUrl = linkFromItem(block);
+    if (!isJobUrl(sourceUrl, config)) return null;
+    const title = tagValue(block, "title");
+    const publishedAt = safeIsoDate(tagValue(block, "pubDate") || tagValue(block, "published") || tagValue(block, "updated"));
+    const expiresAt = safeIsoDate(tagValue(block, "expires") || tagValue(block, "expirationDate"));
+    const description = tagValue(block, "description") || tagValue(block, "summary");
+    return buildJob(config, {
+      title,
+      sourceUrl,
+      publishedAt,
+      expiresAt,
+      description,
+      index,
+      payload: { source_kind: "feed" },
+    });
+  }).filter((job): job is CommercialSourceJob => Boolean(job));
+}
+
+function parseSitemap(xml: string, config: CommercialSourceConfig) {
+  return Array.from(xml.matchAll(/<loc>([\s\S]*?)<\/loc>/gi))
+    .map((match, index) => {
+      const sourceUrl = cleanText(match[1]);
+      if (!isJobUrl(sourceUrl, config)) return null;
+      return buildJob(config, {
+        title: titleFromUrl(sourceUrl),
+        sourceUrl,
+        publishedAt: null,
+        expiresAt: null,
+        description: null,
+        index,
+        payload: { source_kind: "sitemap" },
+      });
+    })
+    .filter((job): job is CommercialSourceJob => Boolean(job));
+}
+
+function titleFromUrl(url: string) {
+  const segment = url.split("?")[0]?.split("/").filter(Boolean).pop() ?? "";
+  return cleanText(segment.replace(/[-_]+/g, " "));
+}
+
+function parseHtml(html: string, config: CommercialSourceConfig, pageUrl: string) {
+  const links = Array.from(html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi));
+  const seen = new Set<string>();
+  const jobs: CommercialSourceJob[] = [];
+  for (const [index, match] of links.entries()) {
+    const href = absUrl(config.baseUrl, match[1] ?? "");
+    if (!href || seen.has(href)) continue;
+    if (!isJobUrl(href, config)) continue;
+    const title = cleanText(match[2]);
+    if (!title || title.length < 5 || title.length > 180) continue;
+    seen.add(href);
+    jobs.push(buildJob(config, {
+      title,
+      sourceUrl: href,
+      publishedAt: null,
+      expiresAt: null,
+      description: null,
+      index,
+      payload: { source_kind: "html", page_url: pageUrl },
+    }));
+  }
+  return jobs;
+}
+
+function isJobUrl(url: string, config: CommercialSourceConfig) {
+  if (!url) return false;
+  if (config.linkInclude && !url.includes(config.linkInclude)) return false;
+  const lowerUrl = url.toLowerCase();
+  if ((config.excludeUrlIncludes ?? []).some((pattern) => lowerUrl.includes(pattern.toLowerCase()))) {
+    return false;
+  }
+  return (config.jobUrlIncludes ?? [config.linkInclude ?? config.baseUrl]).some((pattern) =>
+    lowerUrl.includes(pattern.toLowerCase())
+  );
+}
+
+function buildJob(
+  config: CommercialSourceConfig,
+  input: {
+    title: string;
+    sourceUrl: string;
+    publishedAt: string | null;
+    expiresAt: string | null;
+    description: string | null;
+    index: number;
+    payload: Record<string, unknown>;
+  },
+): CommercialSourceJob {
+  return {
+    external_id: `${config.sourceCode}:${input.sourceUrl || input.index}`,
+    title: input.title,
+    company_name: null,
+    country: config.country,
+    location: config.country,
+    source_url: input.sourceUrl,
+    apply_url: input.sourceUrl,
+    published_at: input.publishedAt,
+    expires_at: input.expiresAt,
+    description_text: input.description,
+    tags: [config.country, config.sourceFamily],
+    payload: input.payload,
+  };
+}
+
+function keepQuality(jobs: CommercialSourceJob[]) {
+  const kept: CommercialSourceJob[] = [];
+  let skipped = 0;
+  for (const job of jobs) {
+    if (isExpired(job.expires_at) || isQualityBlocked(job)) {
+      skipped++;
+      continue;
+    }
+    kept.push(job);
+  }
+  return { kept, skipped };
+}
+
+export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig): Promise<CommercialSourceResult> {
+  const maxItems = Math.max(1, Math.min(config.maxItems ?? 50, 100));
+  const maxPages = Math.max(1, Math.min(config.maxPages ?? 2, 5));
+  const items: CommercialSourceJob[] = [];
+  let fetchedCount = 0;
+  let feedsFetched = 0;
+  let pagesFetched = 0;
+  let sitemapsFetched = 0;
+  let skippedQualityCount = 0;
+  let stoppedReason = "exhausted_candidates";
+  const diagnostics: unknown[] = [];
+
+  if (!config.htmlOnly) {
+    for (const feedUrl of config.feedUrls ?? []) {
+      const res = await fetchText(feedUrl);
+      diagnostics.push({ url: feedUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
+      if (res.blocked) return result(config, feedUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics);
+      if (!res.ok) continue;
+      feedsFetched++;
+      const parsed = parseFeed(res.text, config);
+      fetchedCount += parsed.length;
+      const quality = keepQuality(parsed);
+      skippedQualityCount += quality.skipped;
+      items.push(...quality.kept);
+      if (items.length >= maxItems) {
+        stoppedReason = "limit_reached";
+        break;
+      }
+    }
+  }
+
+  if (!config.htmlOnly && items.length < 3) {
+    for (const sitemapUrl of config.sitemapUrls ?? []) {
+      const res = await fetchText(sitemapUrl);
+      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
+      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics, sitemapsFetched);
+      if (!res.ok) continue;
+      sitemapsFetched++;
+      const parsed = parseSitemap(res.text, config);
+      fetchedCount += parsed.length;
+      const quality = keepQuality(parsed);
+      skippedQualityCount += quality.skipped;
+      items.push(...quality.kept);
+      if (items.length >= maxItems) {
+        stoppedReason = "limit_reached";
+        break;
+      }
+    }
+  }
+
+  if (!config.rssOnly && items.length < 3) {
+    for (let i = 0; i < maxPages; i++) {
+      const startUrl = config.startUrls?.[i];
+      if (!startUrl) break;
+      const res = await fetchText(startUrl);
+      diagnostics.push({ url: startUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
+      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics);
+      if (!res.ok) {
+        stoppedReason = res.status >= 500 ? "server_error" : "html_not_ok";
+        continue;
+      }
+      pagesFetched++;
+      const parsed = parseHtml(res.text, config, startUrl);
+      fetchedCount += parsed.length;
+      const quality = keepQuality(parsed);
+      skippedQualityCount += quality.skipped;
+      items.push(...quality.kept);
+      if (items.length >= maxItems) {
+        stoppedReason = "limit_reached";
+        break;
+      }
+    }
+  }
+
+  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, stoppedReason, diagnostics, sitemapsFetched);
+}
+
+function result(
+  config: CommercialSourceConfig,
+  listUrl: string,
+  items: CommercialSourceJob[],
+  fetchedCount: number,
+  feedsFetched: number,
+  pagesFetched: number,
+  skippedQualityCount: number,
+  stoppedReason: string,
+  diagnostics: unknown[],
+  sitemapsFetched = 0,
+): CommercialSourceResult {
+  return {
+    ok: true,
+    source_code: config.sourceCode,
+    source_family: config.sourceFamily,
+    dry_run: true,
+    detected_country: config.country,
+    list_url: listUrl,
+    parsed_count: items.length,
+    fetched_count: fetchedCount,
+    feeds_fetched: feedsFetched,
+    pages_fetched: pagesFetched,
+    skipped_quality_count: skippedQualityCount,
+    stopped_reason: stoppedReason,
+    sample_jobs: items.slice(0, 5),
+    items,
+    meta: { diagnostics, sitemaps_fetched: sitemapsFetched },
+  };
+}
