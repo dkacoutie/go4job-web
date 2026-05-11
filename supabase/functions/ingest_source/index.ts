@@ -830,45 +830,56 @@ Deno.serve(async (req) => {
       ].includes(source_code)
     ) {
       if (!dry_run) {
-        return json({
-          ok: false,
-          source_code,
-          dry_run: false,
-          error: `${source_code}_import_disabled_dry_run_only`,
-        }, 409);
+        const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+        const jobWebGhanaImportAllowed = source_code === "jobwebghana_portal" &&
+          body?.allow_import === true &&
+          body?.confirm === "IMPORT_JOBWEBGHANA_PORTAL" &&
+          requestedLimit !== null &&
+          requestedLimit <= 50;
+
+        if (!jobWebGhanaImportAllowed) {
+          return json({
+            ok: false,
+            source_code,
+            dry_run: false,
+            error: source_code === "jobwebghana_portal"
+              ? "jobwebghana_import_requires_explicit_confirmation"
+              : `${source_code}_import_disabled_dry_run_only`,
+          }, 409);
+        }
       }
 
-      if (source_code === "myjobmag_ng_rss" || source_code === "myjobmag_gh_rss") {
+      if (dry_run && (source_code === "myjobmag_ng_rss" || source_code === "myjobmag_gh_rss")) {
         return json(commercialDryRunResponse(await fetchMyJobMagRssItems(source_code, {
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "ngojobs_africa_rss") {
+      if (dry_run && source_code === "ngojobs_africa_rss") {
         return json(commercialDryRunResponse(await fetchNgoJobsAfricaRssItems({
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "jobwebghana_portal") {
+      if (dry_run && source_code === "jobwebghana_portal") {
         return json(commercialDryRunResponse(await fetchJobWebGhanaPortalItems({
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "hotnigerianjobs_portal") {
+      if (dry_run && source_code === "hotnigerianjobs_portal") {
         return json(commercialDryRunResponse(await fetchHotNigerianJobsPortalItems({
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "novojob_portal") {
+      if (dry_run && source_code === "novojob_portal") {
         return json(commercialDryRunResponse(await fetchNovojobPortalItems({
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "goafricaonline_ci_portal") {
+      if (dry_run && source_code === "goafricaonline_ci_portal") {
         return json(commercialDryRunResponse(await fetchGoAfricaOnlineCiPortalItems({
           limit: commercialDryRunLimit,
         })));
       }
-      if (source_code === "jobberman_ng_portal" || source_code === "jobberman_gh_portal") {
+      if (dry_run && (source_code === "jobberman_ng_portal" || source_code === "jobberman_gh_portal")) {
         return json(commercialDryRunResponse(await fetchJobbermanPortalItems(source_code, {
           limit: commercialDryRunLimit,
         })));
@@ -885,6 +896,106 @@ Deno.serve(async (req) => {
 
     const jobSourceArr = await sbGet<any[]>(jobSourceUrl, serviceKey);
     const jobSource = jobSourceArr?.[0] ?? null;
+
+    if (source_code === "jobwebghana_portal") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_JOBWEBGHANA_PORTAL" ||
+        requestedLimit === null ||
+        requestedLimit > 50
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "jobwebghana_import_requires_explicit_confirmation",
+        }, 409);
+      }
+
+      const importLimit = toBoundedInt(limit, 30, 1, 50);
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchJobWebGhanaPortalItems({ limit: importLimit });
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
+        limit: importLimit,
+        dry_run: false,
+        status: "jobwebghana_portal_upserted",
+        parsed: data.parsed_count,
+        inserted,
+        updated,
+        skipped_quality_count: data.skipped_quality_count,
+        pages_fetched: data.pages_fetched,
+        feeds_fetched: data.feeds_fetched,
+        stopped_reason: data.stopped_reason,
+      });
+    }
 
     if (source_code === "emploisenegal_portal") {
       if (!jobSource) {
