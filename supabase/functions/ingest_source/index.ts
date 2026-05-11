@@ -702,6 +702,13 @@ function goAfricaOnlineCiImportRejectionReason(item: ScrapedItem) {
   return null;
 }
 
+function isGoAfricaOnlineCiImportConfirmed(confirm: unknown, requestedLimit: number | null) {
+  if (requestedLimit === null || requestedLimit > 150) return false;
+  if (requestedLimit <= 50) return confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL";
+  if (requestedLimit <= 100) return confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL_LIMIT_100";
+  return confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL_LIMIT_150";
+}
+
 Deno.serve(async (req) => {
   // Healthcheck
   if (req.method === "GET") {
@@ -908,9 +915,7 @@ Deno.serve(async (req) => {
           requestedLimit <= 50;
         const goAfricaOnlineCiImportAllowed = source_code === "goafricaonline_ci_portal" &&
           body?.allow_import === true &&
-          body?.confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL" &&
-          requestedLimit !== null &&
-          requestedLimit <= 50;
+          isGoAfricaOnlineCiImportConfirmed(body?.confirm, requestedLimit);
 
         if (!jobWebGhanaImportAllowed && !novojobImportAllowed && !goAfricaOnlineCiImportAllowed) {
           return json({
@@ -1195,9 +1200,7 @@ Deno.serve(async (req) => {
       if (
         dry_run ||
         body?.allow_import !== true ||
-        body?.confirm !== "IMPORT_GOAFRICAONLINE_CI_PORTAL" ||
-        requestedLimit === null ||
-        requestedLimit > 50
+        !isGoAfricaOnlineCiImportConfirmed(body?.confirm, requestedLimit)
       ) {
         return json({
           ok: false,
@@ -1207,7 +1210,7 @@ Deno.serve(async (req) => {
         }, 409);
       }
 
-      const importLimit = toBoundedInt(limit, 30, 1, 50);
+      const importLimit = toBoundedInt(limit, 30, 1, 150);
       const runId = await createRun(
         supabaseUrl,
         serviceKey,
@@ -1321,6 +1324,8 @@ Deno.serve(async (req) => {
         parser_mode: data.meta.parser_mode,
         country_detected_count: data.meta.country_detected_count,
         country_unknown_count: data.meta.country_unknown_count,
+        max_pages_used: data.meta.max_pages_used,
+        per_page_valid_counts: data.meta.per_page_valid_counts,
       });
     }
 
