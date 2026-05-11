@@ -41,6 +41,10 @@ export type CommercialSourceConfig = {
   country: string;
   maxItems?: number;
   maxPages?: number;
+  alwaysFetchStartPages?: boolean;
+  fetchSitemapsAfterHtml?: boolean;
+  probeAllStartPages?: boolean;
+  pageDelayMs?: number;
   htmlOnly?: boolean;
   rssOnly?: boolean;
   linkInclude?: string;
@@ -124,6 +128,10 @@ function safeIsoDate(value: string | null) {
 
 function isExpired(expiresAt: string | null) {
   return expiresAt ? Date.parse(expiresAt) < Date.now() : false;
+}
+
+function delay(ms: number) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
 async function fetchText(url: string) {
@@ -315,16 +323,32 @@ function keepQuality(jobs: CommercialSourceJob[], config: CommercialSourceConfig
 export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig): Promise<CommercialSourceResult> {
   const maxItems = Math.max(1, Math.min(config.maxItems ?? 50, 100));
   const maxPages = Math.max(1, Math.min(config.maxPages ?? 2, 5));
+  const pageDelayMs = Math.max(0, config.pageDelayMs ?? 0);
   const items: CommercialSourceJob[] = [];
   const seenUrls = new Set<string>();
   let fetchedCount = 0;
   let feedsFetched = 0;
   let pagesFetched = 0;
   let sitemapsFetched = 0;
+  let duplicateUrlCount = 0;
   let skippedQualityCount = 0;
   let skippedNonJobCount = 0;
   let stoppedReason = "exhausted_candidates";
+  let paginationModeUsed = "none";
   const diagnostics: unknown[] = [];
+
+  function appendUnique(job: CommercialSourceJob) {
+    if (seenUrls.has(job.source_url)) {
+      duplicateUrlCount++;
+      return false;
+    }
+    seenUrls.add(job.source_url);
+    if (items.length >= maxItems) {
+      return false;
+    }
+    items.push(job);
+    return true;
+  }
 
   if (!config.htmlOnly) {
     for (const feedUrl of config.feedUrls ?? []) {
@@ -339,9 +363,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
       for (const item of quality.kept) {
-        if (seenUrls.has(item.source_url)) continue;
-        seenUrls.add(item.source_url);
-        items.push(item);
+        appendUnique(item);
       }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
@@ -350,11 +372,11 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     }
   }
 
-  if (!config.htmlOnly && items.length < 3) {
+  if (!config.htmlOnly && !config.fetchSitemapsAfterHtml && items.length < 3) {
     for (const sitemapUrl of config.sitemapUrls ?? []) {
       const res = await fetchText(sitemapUrl);
       diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
-      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched);
+      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
       if (!res.ok) continue;
       sitemapsFetched++;
       const parsed = parseSitemap(res.text, config);
@@ -363,9 +385,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
       for (const item of quality.kept) {
-        if (seenUrls.has(item.source_url)) continue;
-        seenUrls.add(item.source_url);
-        items.push(item);
+        appendUnique(item);
       }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
@@ -374,27 +394,62 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     }
   }
 
-  if (!config.rssOnly && items.length < 3) {
+  if (!config.rssOnly && (items.length < 3 || (config.alwaysFetchStartPages && items.length < maxItems))) {
+    let previousPageUrls: Set<string> | null = null;
     for (let i = 0; i < maxPages; i++) {
       const startUrl = config.startUrls?.[i];
       if (!startUrl) break;
+      if (pagesFetched > 0) {
+        await delay(pageDelayMs);
+      }
       const res = await fetchText(startUrl);
       diagnostics.push({ url: startUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
-      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics);
+      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
       if (!res.ok) {
         stoppedReason = res.status >= 500 ? "server_error" : "html_not_ok";
         continue;
       }
       pagesFetched++;
       const parsed = parseHtml(res.text, config, startUrl);
+      const pageUrls = new Set(parsed.map((item) => item.source_url));
+      if (parsed.length === 0) {
+        stoppedReason = "html_structure_unstable";
+        break;
+      }
+      if (previousPageUrls && parsed.every((item) => previousPageUrls?.has(item.source_url))) {
+        stoppedReason = "duplicate_pagination_page";
+        break;
+      }
+      previousPageUrls = pageUrls;
+      paginationModeUsed = pagesFetched > 1 ? "multi_page_html" : "single_page_html";
       fetchedCount += parsed.length;
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
       for (const item of quality.kept) {
-        if (seenUrls.has(item.source_url)) continue;
-        seenUrls.add(item.source_url);
-        items.push(item);
+        appendUnique(item);
+      }
+      if (items.length >= maxItems) {
+        stoppedReason = "limit_reached";
+        if (!config.probeAllStartPages) break;
+      }
+    }
+  }
+
+  if (!config.htmlOnly && config.fetchSitemapsAfterHtml && items.length < maxItems) {
+    for (const sitemapUrl of config.sitemapUrls ?? []) {
+      const res = await fetchText(sitemapUrl);
+      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
+      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
+      if (!res.ok) continue;
+      sitemapsFetched++;
+      const parsed = parseSitemap(res.text, config);
+      fetchedCount += parsed.length;
+      const quality = keepQuality(parsed, config);
+      skippedQualityCount += quality.skippedQuality;
+      skippedNonJobCount += quality.skippedNonJob;
+      for (const item of quality.kept) {
+        appendUnique(item);
       }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
@@ -407,7 +462,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     stoppedReason = config.stoppedReasonWhenEmpty;
   }
 
-  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched);
+  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
 }
 
 function result(
@@ -422,6 +477,8 @@ function result(
   stoppedReason: string,
   diagnostics: unknown[],
   sitemapsFetched = 0,
+  duplicateUrlCount = 0,
+  paginationModeUsed = "none",
 ): CommercialSourceResult {
   const countryUnknownCount = items.filter((item) => !item.country || item.country === "Unknown").length;
   return {
@@ -442,6 +499,12 @@ function result(
     meta: {
       diagnostics,
       sitemaps_fetched: sitemapsFetched,
+      feeds_fetched: feedsFetched,
+      pages_fetched: pagesFetched,
+      unique_url_count: items.length,
+      duplicate_url_count: duplicateUrlCount,
+      pagination_mode_used: paginationModeUsed,
+      stopped_reason: stoppedReason,
       skipped_non_job_count: skippedNonJobCount,
       country_detected_count: items.length - countryUnknownCount,
       country_unknown_count: countryUnknownCount,
