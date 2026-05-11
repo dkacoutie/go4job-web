@@ -44,7 +44,11 @@ export type CommercialSourceConfig = {
   sitemapUrls?: string[];
   country: string;
   maxItems?: number;
+  maxItemsHardCap?: number;
   maxPages?: number;
+  maxPagesHardCap?: number;
+  minValidItemsPerPage?: number;
+  duplicatePageUrlRatioToStop?: number;
   alwaysFetchStartPages?: boolean;
   fetchSitemapsAfterHtml?: boolean;
   probeAllStartPages?: boolean;
@@ -415,9 +419,11 @@ function keepQuality(jobs: CommercialSourceJob[], config: CommercialSourceConfig
 }
 
 export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig): Promise<CommercialSourceResult> {
-  const maxItems = Math.max(1, Math.min(config.maxItems ?? 50, 100));
-  const maxPages = Math.max(1, Math.min(config.maxPages ?? 2, 5));
+  const maxItems = Math.max(1, Math.min(config.maxItems ?? 50, config.maxItemsHardCap ?? 100));
+  const maxPages = Math.max(1, Math.min(config.maxPages ?? 2, config.maxPagesHardCap ?? 5));
   const pageDelayMs = Math.max(0, config.pageDelayMs ?? 0);
+  const minValidItemsPerPage = Math.max(0, config.minValidItemsPerPage ?? 0);
+  const duplicatePageUrlRatioToStop = Math.max(0, Math.min(config.duplicatePageUrlRatioToStop ?? 1, 1));
   const items: CommercialSourceJob[] = [];
   const seenUrls = new Set<string>();
   let fetchedCount = 0;
@@ -431,6 +437,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   let paginationModeUsed = "none";
   const rejectedCounts: Record<string, number> = {};
   const diagnostics: unknown[] = [];
+  const perPageValidCounts: number[] = [];
 
   function appendUnique(job: CommercialSourceJob) {
     if (seenUrls.has(job.source_url)) {
@@ -498,7 +505,6 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   }
 
   if (!config.rssOnly && (items.length < 3 || (config.alwaysFetchStartPages && items.length < maxItems))) {
-    let previousPageUrls: Set<string> | null = null;
     for (let i = 0; i < maxPages; i++) {
       const startUrl = config.startUrls?.[i];
       if (!startUrl) break;
@@ -506,7 +512,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
         await delay(pageDelayMs);
       }
       const res = await fetchText(startUrl);
-      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
+      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed, rejectedCounts, maxPages, perPageValidCounts);
       if (!res.ok) {
         diagnostics.push(diagnosticForFetch(config, res, "html", 0));
         stoppedReason = res.status >= 500 ? "server_error" : "html_not_ok";
@@ -517,24 +523,30 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
         ? config.parseHtmlJobs(res.text, config, startUrl)
         : parseHtml(res.text, config, startUrl);
       diagnostics.push(diagnosticForFetch(config, res, "html", parsed.length));
-      const pageUrls = new Set(parsed.map((item) => item.source_url));
       if (parsed.length === 0) {
+        perPageValidCounts.push(0);
         stoppedReason = "html_structure_unstable";
         break;
       }
-      if (previousPageUrls && parsed.every((item) => previousPageUrls?.has(item.source_url))) {
-        stoppedReason = "duplicate_pagination_page";
-        break;
-      }
-      previousPageUrls = pageUrls;
       paginationModeUsed = pagesFetched > 1 ? "multi_page_html" : "single_page_html";
       fetchedCount += parsed.length;
       const quality = keepQuality(parsed, config);
+      perPageValidCounts.push(quality.kept.length);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
       mergeCounts(rejectedCounts, quality.rejectedCounts);
+      const repeatedUrlCount = quality.kept.filter((item) => seenUrls.has(item.source_url)).length;
+      const repeatedUrlRatio = quality.kept.length > 0 ? repeatedUrlCount / quality.kept.length : 0;
+      if (pagesFetched > 1 && repeatedUrlRatio >= duplicatePageUrlRatioToStop) {
+        stoppedReason = "duplicate_pagination_page";
+        break;
+      }
       for (const item of quality.kept) {
         appendUnique(item);
+      }
+      if (minValidItemsPerPage > 0 && quality.kept.length < minValidItemsPerPage) {
+        stoppedReason = quality.kept.length === 0 ? "empty_pagination_page" : "low_valid_count_page";
+        break;
       }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
@@ -573,7 +585,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     stoppedReason = config.stoppedReasonWhenEmpty;
   }
 
-  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed, rejectedCounts);
+  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed, rejectedCounts, maxPages, perPageValidCounts);
 }
 
 function mergeCounts(target: Record<string, number>, source: Record<string, number>) {
@@ -597,6 +609,8 @@ function result(
   duplicateUrlCount = 0,
   paginationModeUsed = "none",
   rejectedCounts: Record<string, number> = {},
+  maxPagesUsed = 0,
+  perPageValidCounts: number[] = [],
 ): CommercialSourceResult {
   const countryUnknownCount = items.filter((item) => !item.country || item.country === "Unknown").length;
   return {
@@ -628,6 +642,8 @@ function result(
       pagination_mode_used: paginationModeUsed,
       parser_mode: paginationModeUsed.includes("html") ? config.htmlParserMode ?? "html" : paginationModeUsed,
       stopped_reason: stoppedReason,
+      max_pages_used: maxPagesUsed,
+      per_page_valid_counts: perPageValidCounts,
       skipped_non_job_count: skippedNonJobCount,
       country_detected_count: items.length - countryUnknownCount,
       country_unknown_count: countryUnknownCount,

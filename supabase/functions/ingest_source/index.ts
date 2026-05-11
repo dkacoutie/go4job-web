@@ -878,7 +878,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const commercialDryRunLimit = toBoundedInt(limit, 50, 1, 100);
+    const commercialDryRunLimit = source_code === "goafricaonline_ci_portal"
+      ? toBoundedInt(limit, 50, 1, 150)
+      : toBoundedInt(limit, 50, 1, 100);
     if (
       [
         "myjobmag_ng_rss",
@@ -952,8 +954,10 @@ Deno.serve(async (req) => {
         })));
       }
       if (dry_run && source_code === "goafricaonline_ci_portal") {
+        const goAfricaOnlineCiMaxPages = toBoundedInt(body?.max_pages, 6, 1, 6);
         return json(commercialDryRunResponse(await fetchGoAfricaOnlineCiPortalItems({
           limit: commercialDryRunLimit,
+          maxPages: goAfricaOnlineCiMaxPages,
         })));
       }
       if (dry_run && (source_code === "jobberman_ng_portal" || source_code === "jobberman_gh_portal")) {

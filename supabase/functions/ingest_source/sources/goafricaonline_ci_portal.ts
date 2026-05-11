@@ -25,10 +25,8 @@ const GENERIC_TITLES = new Set([
 const GENERIC_COMPANY_NAMES = new Set([
   "entreprise",
   "societe",
-  "société",
   "confidentiel",
   "non precise",
-  "non précisé",
   "n/a",
 ]);
 
@@ -44,19 +42,16 @@ const SOCIAL_HOSTS = [
 const FRENCH_MONTHS: Record<string, string> = {
   janvier: "01",
   fevrier: "02",
-  février: "02",
   mars: "03",
   avril: "04",
   mai: "05",
   juin: "06",
   juillet: "07",
   aout: "08",
-  août: "08",
   septembre: "09",
   octobre: "10",
   novembre: "11",
   decembre: "12",
-  décembre: "12",
 };
 
 function cleanText(value: unknown): string {
@@ -164,11 +159,13 @@ function badgeValues(cardHtml: string) {
 }
 
 function pickContractType(badges: string[]) {
-  return badges.find((badge) => /^(cdi|cdd|stage|alternance|freelance|interim|intérim)$/i.test(badge)) ?? null;
+  return badges.find((badge) =>
+    /^(cdi|cdd|stage|alternance|freelance|interim)$/i.test(normalizedSignal(badge))
+  ) ?? null;
 }
 
 function pickExperience(badges: string[]) {
-  return badges.find((badge) => /exp[eé]rience/i.test(badge)) ?? null;
+  return badges.find((badge) => normalizedSignal(badge).includes("experience")) ?? null;
 }
 
 function cardStart(html: string, anchorIndex: number) {
@@ -288,23 +285,32 @@ function rejectGoAfricaJob(job: CommercialSourceJob) {
   return null;
 }
 
-export async function fetchGoAfricaOnlineCiPortalItems(options?: { limit?: number }) {
+export async function fetchGoAfricaOnlineCiPortalItems(options?: { limit?: number; maxPages?: number }) {
   const baseUrl = "https://www.goafricaonline.com";
+  const requestedMaxPages = Number.isFinite(options?.maxPages) ? Math.trunc(options?.maxPages as number) : 6;
+  const maxPages = Math.max(1, Math.min(requestedMaxPages, 6));
   return await fetchCommercialSourceDryRun({
     sourceCode: SOURCE_CODE,
     sourceFamily: SOURCE_FAMILY,
     baseUrl,
     country: COUNTRY,
     maxItems: options?.limit ?? 50,
-    maxPages: 3,
+    maxItemsHardCap: 150,
+    maxPages,
+    maxPagesHardCap: 6,
+    minValidItemsPerPage: 5,
+    duplicatePageUrlRatioToStop: 0.5,
     htmlOnly: true,
     alwaysFetchStartPages: true,
     probeAllStartPages: true,
-    pageDelayMs: 1000,
+    pageDelayMs: 3000,
     startUrls: [
       `${baseUrl}/ci/emploi`,
       `${baseUrl}/ci/emploi?page=2`,
       `${baseUrl}/ci/emploi?page=3`,
+      `${baseUrl}/ci/emploi?page=4`,
+      `${baseUrl}/ci/emploi?page=5`,
+      `${baseUrl}/ci/emploi?page=6`,
     ],
     linkInclude: "goafricaonline.com/ci/",
     jobUrlIncludes: ["/ci/emploi/job-"],
