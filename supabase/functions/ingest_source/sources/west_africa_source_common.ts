@@ -51,6 +51,7 @@ export type CommercialSourceConfig = {
   jobUrlIncludes?: string[];
   excludeUrlIncludes?: string[];
   postProcessJob?: (job: CommercialSourceJob) => CommercialSourceJob;
+  rejectJobReason?: (job: CommercialSourceJob) => string | null;
   shouldSkipJob?: (job: CommercialSourceJob) => boolean;
   stoppedReasonWhenEmpty?: string;
 };
@@ -301,12 +302,23 @@ function buildJob(
   };
 }
 
+function incrementCount(counts: Record<string, number>, key: string) {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
 function keepQuality(jobs: CommercialSourceJob[], config: CommercialSourceConfig) {
   const kept: CommercialSourceJob[] = [];
   let skippedQuality = 0;
   let skippedNonJob = 0;
+  const rejectedCounts: Record<string, number> = {};
   for (const rawJob of jobs) {
     const job = config.postProcessJob ? config.postProcessJob(rawJob) : rawJob;
+    const rejectReason = config.rejectJobReason?.(job);
+    if (rejectReason) {
+      incrementCount(rejectedCounts, rejectReason);
+      skippedNonJob++;
+      continue;
+    }
     if (config.shouldSkipJob?.(job)) {
       skippedNonJob++;
       continue;
@@ -317,7 +329,7 @@ function keepQuality(jobs: CommercialSourceJob[], config: CommercialSourceConfig
     }
     kept.push(job);
   }
-  return { kept, skippedQuality, skippedNonJob };
+  return { kept, skippedQuality, skippedNonJob, rejectedCounts };
 }
 
 export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig): Promise<CommercialSourceResult> {
@@ -335,6 +347,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   let skippedNonJobCount = 0;
   let stoppedReason = "exhausted_candidates";
   let paginationModeUsed = "none";
+  const rejectedCounts: Record<string, number> = {};
   const diagnostics: unknown[] = [];
 
   function appendUnique(job: CommercialSourceJob) {
@@ -362,6 +375,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
+      mergeCounts(rejectedCounts, quality.rejectedCounts);
       for (const item of quality.kept) {
         appendUnique(item);
       }
@@ -384,6 +398,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
+      mergeCounts(rejectedCounts, quality.rejectedCounts);
       for (const item of quality.kept) {
         appendUnique(item);
       }
@@ -426,6 +441,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
+      mergeCounts(rejectedCounts, quality.rejectedCounts);
       for (const item of quality.kept) {
         appendUnique(item);
       }
@@ -448,6 +464,7 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
       skippedNonJobCount += quality.skippedNonJob;
+      mergeCounts(rejectedCounts, quality.rejectedCounts);
       for (const item of quality.kept) {
         appendUnique(item);
       }
@@ -462,7 +479,13 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     stoppedReason = config.stoppedReasonWhenEmpty;
   }
 
-  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
+  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed, rejectedCounts);
+}
+
+function mergeCounts(target: Record<string, number>, source: Record<string, number>) {
+  for (const [key, count] of Object.entries(source)) {
+    target[key] = (target[key] ?? 0) + count;
+  }
 }
 
 function result(
@@ -479,6 +502,7 @@ function result(
   sitemapsFetched = 0,
   duplicateUrlCount = 0,
   paginationModeUsed = "none",
+  rejectedCounts: Record<string, number> = {},
 ): CommercialSourceResult {
   const countryUnknownCount = items.filter((item) => !item.country || item.country === "Unknown").length;
   return {
@@ -494,7 +518,7 @@ function result(
     pages_fetched: pagesFetched,
     skipped_quality_count: skippedQualityCount,
     stopped_reason: stoppedReason,
-    sample_jobs: items.slice(0, 5),
+    sample_jobs: items.slice(0, 10),
     items,
     meta: {
       diagnostics,
@@ -503,6 +527,10 @@ function result(
       pages_fetched: pagesFetched,
       unique_url_count: items.length,
       duplicate_url_count: duplicateUrlCount,
+      rejected_social_url_count: rejectedCounts.rejected_social_url_count ?? 0,
+      rejected_navigation_url_count: rejectedCounts.rejected_navigation_url_count ?? 0,
+      rejected_missing_company_count: rejectedCounts.rejected_missing_company_count ?? 0,
+      rejected_invalid_job_url_count: rejectedCounts.rejected_invalid_job_url_count ?? 0,
       pagination_mode_used: paginationModeUsed,
       stopped_reason: stoppedReason,
       skipped_non_job_count: skippedNonJobCount,
