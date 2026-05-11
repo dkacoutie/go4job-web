@@ -12,12 +12,35 @@ const COMPANY_STOP_MARKERS = [
 const GENERIC_COMPANY_NAMES = new Set([
   "entreprise",
   "societe",
-  "société",
   "confidentiel",
   "non precise",
-  "non précisé",
   "n/a",
 ]);
+
+const GENERIC_TITLES = new Set([
+  "emploi",
+  "emplois",
+  "offre",
+  "offres",
+  "offres emploi",
+  "offres d'emploi",
+  "postuler",
+  "apply now",
+  "share",
+  "facebook",
+  "twitter",
+  "linkedin",
+  "whatsapp",
+]);
+
+const SOCIAL_HOSTS = [
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "linkedin.com",
+  "whatsapp.com",
+  "wa.me",
+];
 
 function cleanCompanyText(value: string) {
   return value
@@ -39,6 +62,56 @@ function normalizedSignal(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function isSocialUrl(rawUrl: string) {
+  const lowerUrl = rawUrl.toLowerCase();
+  if (/(sharer\.php|\/share\b|share=|whatsapp|linkedin|facebook|twitter)/i.test(lowerUrl)) {
+    return true;
+  }
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    return SOCIAL_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+  } catch {
+    return false;
+  }
+}
+
+function normalizeNovojobUrl(rawUrl: string | null | undefined) {
+  const value = String(rawUrl ?? "").trim();
+  if (!value || isSocialUrl(value)) return null;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    const pathname = url.pathname.replace(/\/+/g, "/").replace(/\/$/g, "");
+    if (hostname !== "novojob.com") return null;
+    if (!/\/offres-d-emploi\/offre-d-emploi\/[^/]+\/(?:[^/]+\/)?\d+-[^/]+$/i.test(pathname)) {
+      return null;
+    }
+    return `https://www.novojob.com${pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+function isNavigationUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    const pathname = url.pathname.replace(/\/+/g, "/").replace(/\/$/g, "");
+    if (hostname !== "novojob.com") return false;
+    return pathname === "/offres-emploi" || pathname.endsWith("/offres-emploi") ||
+      pathname === "/jobs" || pathname.includes("/entreprises") ||
+      pathname.includes("/candidats") || pathname.includes("/conseils");
+  } catch {
+    return false;
+  }
+}
+
+function isGenericTitle(title: string) {
+  const normalized = normalizedSignal(title);
+  return normalized.length < 5 || GENERIC_TITLES.has(normalized);
 }
 
 function extractCompanyName(description: string | null | undefined) {
@@ -65,7 +138,16 @@ function extractCompanyName(description: string | null | undefined) {
 }
 
 function improveNovojob(job: CommercialSourceJob): CommercialSourceJob {
-  const url = job.source_url.toLowerCase();
+  const normalizedUrl = normalizeNovojobUrl(job.source_url);
+  const baseJob = normalizedUrl
+    ? {
+      ...job,
+      external_id: `novojob_portal:${normalizedUrl}`,
+      source_url: normalizedUrl,
+      apply_url: normalizedUrl,
+    }
+    : job;
+  const url = baseJob.source_url.toLowerCase();
   const country = url.includes("/cote-d-ivoire/")
     ? "Cote d'Ivoire"
     : url.includes("/senegal/")
@@ -78,15 +160,34 @@ function improveNovojob(job: CommercialSourceJob): CommercialSourceJob {
     ? "Burkina Faso"
     : url.includes("/guinee/")
     ? "Guinea"
-    : job.country;
-  const companyName = job.company_name || extractCompanyName(job.description_text);
+    : baseJob.country;
+  const companyName = baseJob.company_name || extractCompanyName(baseJob.description_text);
   return {
-    ...job,
+    ...baseJob,
     company_name: companyName,
     country,
     location: country,
     tags: [country ?? "Unknown", "novojob_portal"],
   };
+}
+
+function rejectNovojob(job: CommercialSourceJob) {
+  if (!job.source_url || isSocialUrl(job.source_url)) {
+    return "rejected_social_url_count";
+  }
+  if (isNavigationUrl(job.source_url) || isGenericTitle(job.title)) {
+    return "rejected_navigation_url_count";
+  }
+  if (!normalizeNovojobUrl(job.source_url)) {
+    return "rejected_invalid_job_url_count";
+  }
+  if (!job.company_name?.trim() || GENERIC_COMPANY_NAMES.has(normalizedSignal(job.company_name))) {
+    return "rejected_missing_company_count";
+  }
+  if (!job.country || job.country === "West Africa Francophone") {
+    return "rejected_invalid_job_url_count";
+  }
+  return null;
 }
 
 export async function fetchNovojobPortalItems(options?: { limit?: number }) {
@@ -115,6 +216,7 @@ export async function fetchNovojobPortalItems(options?: { limit?: number }) {
     jobUrlIncludes: ["/offre-d-emploi/"],
     excludeUrlIncludes: ["/entreprises/", "/candidats/", "/conseils/"],
     postProcessJob: improveNovojob,
+    rejectJobReason: rejectNovojob,
     stoppedReasonWhenEmpty: "novojob_requires_specific_static_endpoint",
   });
 }
