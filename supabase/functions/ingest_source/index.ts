@@ -549,6 +549,9 @@ type ScrapedItem = {
   location?: string | null;
   country?: string | null;
   contract_type?: string | null;
+  sector?: string | null;
+  experience?: string | null;
+  posted_at?: string | null;
   description_text?: string | null;
   description_html?: string | null;
   source_url: string;
@@ -584,6 +587,7 @@ async function mapScrapedItemsToRows(
     const title = (it.title || "Offre d'emploi").trim();
     const desc = it.description_text || "";
     const jobType = detectJobType(title, desc);
+    const postedAt = it.posted_at ?? it.published_at ?? null;
     const sourceUrl = normalizeOptionalUrl(it.source_url) ??
       normalizeOptionalUrl(it.apply_url);
     const applyUrl = normalizeOptionalUrl(it.apply_url) ?? sourceUrl;
@@ -619,7 +623,7 @@ async function mapScrapedItemsToRows(
       dedupe_identity_key: identity.dedupeIdentityKey,
       cross_source_fingerprint: identity.crossSourceFingerprint,
       tags: [],
-      posted_at: it.published_at ?? null,
+      posted_at: postedAt,
       published_at: it.published_at ?? null,
       expires_at: it.expires_at ?? null,
       scraped_at: now,
@@ -632,11 +636,70 @@ async function mapScrapedItemsToRows(
       job_json: {
         source_code: sourceCode,
         list_url: listUrl,
+        sector: it.sector ?? null,
+        experience: it.experience ?? null,
+        posted_at: postedAt,
       },
     });
   }
 
   return rows;
+}
+
+const GOAFRICAONLINE_CI_QUALITY_TERMS = [
+  "betting",
+  "casino",
+  "gambling",
+  "1xbet",
+  "melbet",
+  "crypto",
+  "mlm",
+  "parrainage",
+  "revenus passifs",
+  "trading miracle",
+  "whatsapp only",
+  "whatsapp-only",
+];
+
+function normalizeGuardSignal(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function isRealGoAfricaOnlineCiJobUrl(rawUrl: string | null | undefined) {
+  const value = String(rawUrl ?? "").trim();
+  if (!value) return false;
+  if (/(sharer\.php|\/share\b|share=|whatsapp|linkedin|facebook|twitter)/i.test(value)) {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    const pathname = url.pathname.replace(/\/+/g, "/").replace(/\/$/g, "");
+    return hostname === "goafricaonline.com" && /^\/ci\/emploi\/job-\d+-[^/]+$/i.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+function goAfricaOnlineCiImportRejectionReason(item: ScrapedItem) {
+  const title = (item.title ?? "").trim();
+  const companyName = (item.company_name ?? "").trim();
+  const country = (item.country ?? "").trim();
+  const sourceUrl = item.source_url ?? "";
+  if (!title || title.length < 5) return "missing_title";
+  if (!companyName || companyName.length < 2) return "missing_company_name";
+  if (country !== "Cote d'Ivoire") return "invalid_country";
+  if (!isRealGoAfricaOnlineCiJobUrl(sourceUrl)) return "invalid_source_url";
+
+  const haystack = normalizeGuardSignal(`${title} ${companyName} ${item.description_text ?? ""} ${sourceUrl}`);
+  if (GOAFRICAONLINE_CI_QUALITY_TERMS.some((term) => haystack.includes(normalizeGuardSignal(term)))) {
+    return "blocked_quality_term";
+  }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -841,8 +904,13 @@ Deno.serve(async (req) => {
           body?.confirm === "IMPORT_NOVOJOB_PORTAL" &&
           requestedLimit !== null &&
           requestedLimit <= 50;
+        const goAfricaOnlineCiImportAllowed = source_code === "goafricaonline_ci_portal" &&
+          body?.allow_import === true &&
+          body?.confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL" &&
+          requestedLimit !== null &&
+          requestedLimit <= 50;
 
-        if (!jobWebGhanaImportAllowed && !novojobImportAllowed) {
+        if (!jobWebGhanaImportAllowed && !novojobImportAllowed && !goAfricaOnlineCiImportAllowed) {
           return json({
             ok: false,
             source_code,
@@ -851,6 +919,8 @@ Deno.serve(async (req) => {
               ? "jobwebghana_import_requires_explicit_confirmation"
               : source_code === "novojob_portal"
               ? "novojob_import_requires_explicit_confirmation"
+              : source_code === "goafricaonline_ci_portal"
+              ? "goafricaonline_ci_import_requires_explicit_confirmation"
               : `${source_code}_import_disabled_dry_run_only`,
           }, 409);
         }
@@ -1109,6 +1179,144 @@ Deno.serve(async (req) => {
         rejected_navigation_url_count: data.meta.rejected_navigation_url_count,
         rejected_missing_company_count: data.meta.rejected_missing_company_count,
         rejected_invalid_job_url_count: data.meta.rejected_invalid_job_url_count,
+      });
+    }
+
+    if (source_code === "goafricaonline_ci_portal") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_GOAFRICAONLINE_CI_PORTAL" ||
+        requestedLimit === null ||
+        requestedLimit > 50
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "goafricaonline_ci_import_requires_explicit_confirmation",
+        }, 409);
+      }
+
+      const importLimit = toBoundedInt(limit, 30, 1, 50);
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchGoAfricaOnlineCiPortalItems({ limit: importLimit });
+      const invalidItems = data.items
+        .map((item, index) => ({
+          index,
+          source_url: item.source_url,
+          reason: goAfricaOnlineCiImportRejectionReason(item),
+        }))
+        .filter((item) => item.reason);
+      if (invalidItems.length > 0) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: "goafricaonline_ci_import_quality_guard_failed",
+          fetched_count: data.items.length,
+          inserted_count: 0,
+          updated_count: 0,
+        });
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "goafricaonline_ci_import_quality_guard_failed",
+          invalid_count: invalidItems.length,
+          invalid_items: invalidItems.slice(0, 10),
+        }, 409);
+      }
+
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
+        limit: importLimit,
+        dry_run: false,
+        status: "goafricaonline_ci_portal_upserted",
+        parsed: data.parsed_count,
+        parsed_count: data.parsed_count,
+        fetched_count: data.fetched_count,
+        inserted,
+        updated,
+        skipped_quality_count: data.skipped_quality_count,
+        pages_fetched: data.pages_fetched,
+        feeds_fetched: data.feeds_fetched,
+        stopped_reason: data.stopped_reason,
+        unique_url_count: data.meta.unique_url_count,
+        duplicate_url_count: data.meta.duplicate_url_count,
+        rejected_social_url_count: data.meta.rejected_social_url_count,
+        rejected_navigation_url_count: data.meta.rejected_navigation_url_count,
+        rejected_missing_company_count: data.meta.rejected_missing_company_count,
+        rejected_invalid_job_url_count: data.meta.rejected_invalid_job_url_count,
+        parser_mode: data.meta.parser_mode,
+        country_detected_count: data.meta.country_detected_count,
+        country_unknown_count: data.meta.country_unknown_count,
       });
     }
 
