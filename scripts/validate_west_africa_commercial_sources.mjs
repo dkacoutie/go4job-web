@@ -37,7 +37,8 @@ const SOURCES = [
     mainUrl: "https://ngojobsinafrica.com/jobs",
     linkNeedle: "ngojobsinafrica.com",
     jobUrlPatterns: ["ngojobsinafrica.com/"],
-    excludeUrlPatterns: ["/category/", "/tag/", "/author/", "/page/", "/jobs/"],
+    excludeUrlPatterns: ["/category/", "/tag/", "/job-tag/", "/job-location/", "/author/", "/page/", "/jobs/"],
+    rssOnly: true,
     priority: "P0",
   },
   {
@@ -195,8 +196,15 @@ function cleanText(value) {
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&#038;/gi, "&")
+    .replace(/&#8217;/gi, "'")
+    .replace(/&#8230;/gi, "\u2026")
     .replace(/&apos;/gi, "'")
     .replace(/&rsquo;/gi, "'")
+    .replace(/&ndash;/gi, "-")
+    .replace(/&mdash;/gi, "-")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number.parseInt(code, 10)))
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<\/?[^>]+(>|$)/g, " ")
@@ -273,17 +281,84 @@ function isJobUrl(url, source) {
 
 function normalizeJobs(jobs, source) {
   const out = [];
+  const seen = new Set();
   for (const job of jobs) {
-    if (!job.title || !job.source_url || !job.detected_country) continue;
-    if (isQualityBlocked(job)) continue;
+    const normalized = source.id === "ngojobs_africa_rss" ? normalizeNgoJob(job) : job;
+    if (source.id === "ngojobs_africa_rss" && isNgoNonJob(normalized)) continue;
+    if (source.id === "ngojobs_africa_rss" && normalized.detected_country === "Unknown") continue;
+    if (seen.has(normalized.source_url)) continue;
+    seen.add(normalized.source_url);
+    if (!normalized.title || !normalized.source_url || !normalized.detected_country) continue;
+    if (isQualityBlocked(normalized)) continue;
     out.push({
-      title: job.title,
-      source_url: job.source_url,
-      detected_country: job.detected_country,
-      date: job.date,
+      title: normalized.title,
+      source_url: normalized.source_url,
+      detected_country: normalized.detected_country,
+      date: normalized.date,
     });
   }
   return out.slice(0, 20);
+}
+
+function normalizeNgoJob(job) {
+  return { ...job, detected_country: detectNgoCountry(job) ?? "Unknown" };
+}
+
+function normalizeAscii(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’]/g, "'")
+    .toLowerCase();
+}
+
+function isNgoNonJob(job) {
+  const haystack = normalizeAscii(`${job.title} ${job.description ?? ""} ${job.source_url}`);
+  const programJobExceptions = ["programme officer", "program officer", "programme manager", "program manager"];
+  if (programJobExceptions.some((term) => haystack.includes(term))) return false;
+  const terms = [
+    "scholarship",
+    "scholarships",
+    "fellowship",
+    "fellowships",
+    "programme application",
+    "program application",
+    "programmes application",
+    "internship placement program",
+    "young professionals program",
+    "apprenticeship training program",
+    "grant",
+    "grants",
+    "award",
+    "awards",
+    "scheme",
+    "masters degree scholarship",
+    "master's degree scholarship",
+    "call for applications",
+    "training programme",
+    "accelerator",
+    "incubation",
+    "competition",
+  ];
+  if (terms.some((term) => haystack.includes(normalizeAscii(term)))) return true;
+  return /\bprogram(me)?s?\b/.test(normalizeAscii(job.title));
+}
+
+function detectNgoCountry(job) {
+  const haystack = normalizeAscii(`${job.source_url} ${job.title} ${job.description ?? ""}`);
+  const countries = [
+    { country: "Nigeria", signals: ["nigeria", "lagos", "abuja", "kano", "borno", "adamawa"] },
+    { country: "Ghana", signals: ["ghana", "accra", "kumasi"] },
+    { country: "Cote d'Ivoire", signals: ["cote d'ivoire", "cote d ivoire", "ivory coast", "abidjan"] },
+    { country: "Senegal", signals: ["senegal", "dakar"] },
+    { country: "Benin", signals: ["benin", "cotonou"] },
+    { country: "Togo", signals: ["togo", "lome"] },
+    { country: "Burkina Faso", signals: ["burkina faso", "ouagadougou"] },
+    { country: "Mali", signals: ["mali", "bamako"] },
+    { country: "Guinea", signals: ["guinea", "conakry"] },
+    { country: "Niger", signals: ["niger", "niamey"] },
+  ];
+  return countries.find((entry) => entry.signals.some((signal) => haystack.includes(signal)))?.country ?? null;
 }
 
 function absUrl(baseUrl, href) {
@@ -321,11 +396,16 @@ async function validateSource(source) {
     probes.push(summarizeFetch(res));
     if (res.blocked) return classify(source, "PAUSE_TECH_RISK", res, probes, [], "blocked_feed_probe");
     if (!res.ok) continue;
+    if (source.rssOnly && /sitemap/i.test(url)) continue;
     const samples = /sitemap/i.test(url) ? parseSitemap(res.text, source) : parseFeed(res.text, source);
     if (samples.length >= 3) {
       const recommendation = /sitemap/i.test(url) ? "GO_SITEMAP" : "GO_RSS";
       return classify(source, recommendation, res, probes, samples, "validated_structured_source");
     }
+  }
+
+  if (source.rssOnly) {
+    return classify(source, "NEEDS_SPECIFIC_PARSER", main, probes, [], "rss_accessible_but_clean_samples_insufficient");
   }
 
   if (main.ok) {

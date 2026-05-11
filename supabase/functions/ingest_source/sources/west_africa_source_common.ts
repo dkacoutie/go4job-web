@@ -46,6 +46,9 @@ export type CommercialSourceConfig = {
   linkInclude?: string;
   jobUrlIncludes?: string[];
   excludeUrlIncludes?: string[];
+  postProcessJob?: (job: CommercialSourceJob) => CommercialSourceJob;
+  shouldSkipJob?: (job: CommercialSourceJob) => boolean;
+  stoppedReasonWhenEmpty?: string;
 };
 
 const USER_AGENT = "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)";
@@ -72,14 +75,21 @@ function cleanText(value: unknown): string {
     .replace(/&amp;/gi, "&")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&#038;/gi, "&")
+    .replace(/&#8217;/gi, "'")
+    .replace(/&#8230;/gi, "\u2026")
     .replace(/&apos;/gi, "'")
     .replace(/&rsquo;/gi, "'")
+    .replace(/&ndash;/gi, "-")
+    .replace(/&mdash;/gi, "-")
     .replace(/&eacute;/gi, "e")
     .replace(/&Eacute;/g, "E")
     .replace(/&egrave;/gi, "e")
     .replace(/&agrave;/gi, "a")
     .replace(/&ocirc;/gi, "o")
     .replace(/&ccedil;/gi, "c")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number.parseInt(code, 10)))
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<\/?[^>]+(>|$)/g, " ")
@@ -137,6 +147,16 @@ async function fetchText(url: string) {
       text,
       blocked: isBlocked(res.status, text),
     };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      contentType: "",
+      finalUrl: url,
+      text: "",
+      blocked: false,
+      error: String(error),
+    };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -171,6 +191,9 @@ function parseFeed(xml: string, config: CommercialSourceConfig) {
     const publishedAt = safeIsoDate(tagValue(block, "pubDate") || tagValue(block, "published") || tagValue(block, "updated"));
     const expiresAt = safeIsoDate(tagValue(block, "expires") || tagValue(block, "expirationDate"));
     const description = tagValue(block, "description") || tagValue(block, "summary");
+    const categories = Array.from(block.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)).map((match) =>
+      cleanText(match[1])
+    ).filter(Boolean);
     return buildJob(config, {
       title,
       sourceUrl,
@@ -178,7 +201,7 @@ function parseFeed(xml: string, config: CommercialSourceConfig) {
       expiresAt,
       description,
       index,
-      payload: { source_kind: "feed" },
+      payload: { source_kind: "feed", categories },
     });
   }).filter((job): job is CommercialSourceJob => Boolean(job));
 }
@@ -270,43 +293,56 @@ function buildJob(
   };
 }
 
-function keepQuality(jobs: CommercialSourceJob[]) {
+function keepQuality(jobs: CommercialSourceJob[], config: CommercialSourceConfig) {
   const kept: CommercialSourceJob[] = [];
-  let skipped = 0;
-  for (const job of jobs) {
+  let skippedQuality = 0;
+  let skippedNonJob = 0;
+  for (const rawJob of jobs) {
+    const job = config.postProcessJob ? config.postProcessJob(rawJob) : rawJob;
+    if (config.shouldSkipJob?.(job)) {
+      skippedNonJob++;
+      continue;
+    }
     if (isExpired(job.expires_at) || isQualityBlocked(job)) {
-      skipped++;
+      skippedQuality++;
       continue;
     }
     kept.push(job);
   }
-  return { kept, skipped };
+  return { kept, skippedQuality, skippedNonJob };
 }
 
 export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig): Promise<CommercialSourceResult> {
   const maxItems = Math.max(1, Math.min(config.maxItems ?? 50, 100));
   const maxPages = Math.max(1, Math.min(config.maxPages ?? 2, 5));
   const items: CommercialSourceJob[] = [];
+  const seenUrls = new Set<string>();
   let fetchedCount = 0;
   let feedsFetched = 0;
   let pagesFetched = 0;
   let sitemapsFetched = 0;
   let skippedQualityCount = 0;
+  let skippedNonJobCount = 0;
   let stoppedReason = "exhausted_candidates";
   const diagnostics: unknown[] = [];
 
   if (!config.htmlOnly) {
     for (const feedUrl of config.feedUrls ?? []) {
       const res = await fetchText(feedUrl);
-      diagnostics.push({ url: feedUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
-      if (res.blocked) return result(config, feedUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics);
+      diagnostics.push({ url: feedUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
+      if (res.blocked) return result(config, feedUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics);
       if (!res.ok) continue;
       feedsFetched++;
       const parsed = parseFeed(res.text, config);
       fetchedCount += parsed.length;
-      const quality = keepQuality(parsed);
-      skippedQualityCount += quality.skipped;
-      items.push(...quality.kept);
+      const quality = keepQuality(parsed, config);
+      skippedQualityCount += quality.skippedQuality;
+      skippedNonJobCount += quality.skippedNonJob;
+      for (const item of quality.kept) {
+        if (seenUrls.has(item.source_url)) continue;
+        seenUrls.add(item.source_url);
+        items.push(item);
+      }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
         break;
@@ -317,15 +353,20 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   if (!config.htmlOnly && items.length < 3) {
     for (const sitemapUrl of config.sitemapUrls ?? []) {
       const res = await fetchText(sitemapUrl);
-      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
-      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics, sitemapsFetched);
+      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
+      if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched);
       if (!res.ok) continue;
       sitemapsFetched++;
       const parsed = parseSitemap(res.text, config);
       fetchedCount += parsed.length;
-      const quality = keepQuality(parsed);
-      skippedQualityCount += quality.skipped;
-      items.push(...quality.kept);
+      const quality = keepQuality(parsed, config);
+      skippedQualityCount += quality.skippedQuality;
+      skippedNonJobCount += quality.skippedNonJob;
+      for (const item of quality.kept) {
+        if (seenUrls.has(item.source_url)) continue;
+        seenUrls.add(item.source_url);
+        items.push(item);
+      }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
         break;
@@ -338,8 +379,8 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       const startUrl = config.startUrls?.[i];
       if (!startUrl) break;
       const res = await fetchText(startUrl);
-      diagnostics.push({ url: startUrl, status: res.status, content_type: res.contentType, blocked: res.blocked });
-      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, "blocked_by_site", diagnostics);
+      diagnostics.push({ url: startUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
+      if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics);
       if (!res.ok) {
         stoppedReason = res.status >= 500 ? "server_error" : "html_not_ok";
         continue;
@@ -347,9 +388,14 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
       pagesFetched++;
       const parsed = parseHtml(res.text, config, startUrl);
       fetchedCount += parsed.length;
-      const quality = keepQuality(parsed);
-      skippedQualityCount += quality.skipped;
-      items.push(...quality.kept);
+      const quality = keepQuality(parsed, config);
+      skippedQualityCount += quality.skippedQuality;
+      skippedNonJobCount += quality.skippedNonJob;
+      for (const item of quality.kept) {
+        if (seenUrls.has(item.source_url)) continue;
+        seenUrls.add(item.source_url);
+        items.push(item);
+      }
       if (items.length >= maxItems) {
         stoppedReason = "limit_reached";
         break;
@@ -357,7 +403,11 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
     }
   }
 
-  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, stoppedReason, diagnostics, sitemapsFetched);
+  if (items.length === 0 && config.stoppedReasonWhenEmpty) {
+    stoppedReason = config.stoppedReasonWhenEmpty;
+  }
+
+  return result(config, config.startUrls?.[0] ?? config.feedUrls?.[0] ?? config.baseUrl, items.slice(0, maxItems), fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, stoppedReason, diagnostics, sitemapsFetched);
 }
 
 function result(
@@ -368,10 +418,12 @@ function result(
   feedsFetched: number,
   pagesFetched: number,
   skippedQualityCount: number,
+  skippedNonJobCount: number,
   stoppedReason: string,
   diagnostics: unknown[],
   sitemapsFetched = 0,
 ): CommercialSourceResult {
+  const countryUnknownCount = items.filter((item) => !item.country || item.country === "Unknown").length;
   return {
     ok: true,
     source_code: config.sourceCode,
@@ -387,6 +439,12 @@ function result(
     stopped_reason: stoppedReason,
     sample_jobs: items.slice(0, 5),
     items,
-    meta: { diagnostics, sitemaps_fetched: sitemapsFetched },
+    meta: {
+      diagnostics,
+      sitemaps_fetched: sitemapsFetched,
+      skipped_non_job_count: skippedNonJobCount,
+      country_detected_count: items.length - countryUnknownCount,
+      country_unknown_count: countryUnknownCount,
+    },
   };
 }
