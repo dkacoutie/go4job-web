@@ -4,6 +4,10 @@ export type CommercialSourceJob = {
   company_name: string | null;
   country: string | null;
   location: string | null;
+  sector?: string | null;
+  contract_type?: string | null;
+  experience?: string | null;
+  posted_at?: string | null;
   source_url: string;
   apply_url: string;
   published_at: string | null;
@@ -53,6 +57,12 @@ export type CommercialSourceConfig = {
   postProcessJob?: (job: CommercialSourceJob) => CommercialSourceJob;
   rejectJobReason?: (job: CommercialSourceJob) => string | null;
   shouldSkipJob?: (job: CommercialSourceJob) => boolean;
+  parseHtmlJobs?: (
+    html: string,
+    config: CommercialSourceConfig,
+    pageUrl: string,
+  ) => CommercialSourceJob[];
+  htmlParserMode?: string;
   reasonWhenZero?: string;
   stoppedReasonWhenEmpty?: string;
 };
@@ -503,7 +513,9 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
         continue;
       }
       pagesFetched++;
-      const parsed = parseHtml(res.text, config, startUrl);
+      const parsed = config.parseHtmlJobs
+        ? config.parseHtmlJobs(res.text, config, startUrl)
+        : parseHtml(res.text, config, startUrl);
       diagnostics.push(diagnosticForFetch(config, res, "html", parsed.length));
       const pageUrls = new Set(parsed.map((item) => item.source_url));
       if (parsed.length === 0) {
@@ -614,6 +626,7 @@ function result(
       rejected_missing_company_count: rejectedCounts.rejected_missing_company_count ?? 0,
       rejected_invalid_job_url_count: rejectedCounts.rejected_invalid_job_url_count ?? 0,
       pagination_mode_used: paginationModeUsed,
+      parser_mode: paginationModeUsed.includes("html") ? config.htmlParserMode ?? "html" : paginationModeUsed,
       stopped_reason: stoppedReason,
       skipped_non_job_count: skippedNonJobCount,
       country_detected_count: items.length - countryUnknownCount,
