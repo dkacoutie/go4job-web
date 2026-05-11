@@ -53,6 +53,7 @@ export type CommercialSourceConfig = {
   postProcessJob?: (job: CommercialSourceJob) => CommercialSourceJob;
   rejectJobReason?: (job: CommercialSourceJob) => string | null;
   shouldSkipJob?: (job: CommercialSourceJob) => boolean;
+  reasonWhenZero?: string;
   stoppedReasonWhenEmpty?: string;
 };
 
@@ -274,6 +275,77 @@ function isJobUrl(url: string, config: CommercialSourceConfig) {
   );
 }
 
+function urlsFromText(text: string, parserMode: string) {
+  if (parserMode === "html") {
+    return Array.from(text.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi))
+      .map((match) => match[1] ?? "");
+  }
+  if (parserMode === "sitemap") {
+    return Array.from(text.matchAll(/<loc>([\s\S]*?)<\/loc>/gi))
+      .map((match) => cleanText(match[1]));
+  }
+  return Array.from(text.matchAll(/<link\b[^>]*href=["']([^"']+)["']|<link\b[^>]*>([\s\S]*?)<\/link>/gi))
+    .map((match) => cleanText(match[1] ?? match[2] ?? ""));
+}
+
+function hasJobMarkers(text: string, config: CommercialSourceConfig) {
+  const normalized = normalizeSignal(text);
+  const urlMarkers = (config.jobUrlIncludes ?? []).some((pattern) =>
+    normalized.includes(normalizeSignal(pattern))
+  );
+  return urlMarkers ||
+    normalized.includes("entreprise :") ||
+    normalized.includes("nombre de postes") ||
+    normalized.includes("offre d'emploi") ||
+    normalized.includes("offres d'emploi");
+}
+
+function reasonWhenZero(
+  res: { ok: boolean; status: number; blocked: boolean; text: string },
+  config: CommercialSourceConfig,
+) {
+  if (res.blocked) return "blocked_by_site";
+  if (!res.ok) return res.status >= 500 ? "server_error" : "html_not_ok";
+  if (!res.text.trim()) return "empty_body";
+  if (!hasJobMarkers(res.text, config)) return config.reasonWhenZero ?? "no_static_job_markers";
+  return config.reasonWhenZero ?? "no_detected_static_jobs";
+}
+
+function diagnosticForFetch(
+  config: CommercialSourceConfig,
+  res: {
+    status: number;
+    contentType: string;
+    finalUrl: string;
+    text: string;
+    blocked: boolean;
+    error?: string;
+  },
+  parserMode: string,
+  parsedCount: number,
+) {
+  const candidateUrls = urlsFromText(res.text, parserMode);
+  const detectedJobUrlCount = candidateUrls.filter((url) => isJobUrl(url, config)).length;
+  const candidateUrlCount = candidateUrls.length;
+  return {
+    fetched_url: res.finalUrl,
+    url: res.finalUrl,
+    http_status: res.status,
+    status: res.status,
+    content_type: res.contentType,
+    body_length: res.text.length,
+    html_length: parserMode === "html" ? res.text.length : null,
+    has_job_markers: hasJobMarkers(res.text, config),
+    detected_job_url_count: detectedJobUrlCount,
+    candidate_url_count: candidateUrlCount,
+    rejected_candidate_count: Math.max(0, candidateUrlCount - detectedJobUrlCount),
+    parser_mode: parserMode,
+    reason_when_zero: parsedCount === 0 ? reasonWhenZero({ ...res, ok: res.status >= 200 && res.status < 300 }, config) : null,
+    blocked: res.blocked,
+    error: res.error,
+  };
+}
+
 function buildJob(
   config: CommercialSourceConfig,
   input: {
@@ -366,11 +438,14 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   if (!config.htmlOnly) {
     for (const feedUrl of config.feedUrls ?? []) {
       const res = await fetchText(feedUrl);
-      diagnostics.push({ url: feedUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
       if (res.blocked) return result(config, feedUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        diagnostics.push(diagnosticForFetch(config, res, "feed", 0));
+        continue;
+      }
       feedsFetched++;
       const parsed = parseFeed(res.text, config);
+      diagnostics.push(diagnosticForFetch(config, res, "feed", parsed.length));
       fetchedCount += parsed.length;
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
@@ -389,11 +464,14 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   if (!config.htmlOnly && !config.fetchSitemapsAfterHtml && items.length < 3) {
     for (const sitemapUrl of config.sitemapUrls ?? []) {
       const res = await fetchText(sitemapUrl);
-      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
       if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        diagnostics.push(diagnosticForFetch(config, res, "sitemap", 0));
+        continue;
+      }
       sitemapsFetched++;
       const parsed = parseSitemap(res.text, config);
+      diagnostics.push(diagnosticForFetch(config, res, "sitemap", parsed.length));
       fetchedCount += parsed.length;
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;
@@ -418,14 +496,15 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
         await delay(pageDelayMs);
       }
       const res = await fetchText(startUrl);
-      diagnostics.push({ url: startUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
       if (res.blocked) return result(config, startUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
       if (!res.ok) {
+        diagnostics.push(diagnosticForFetch(config, res, "html", 0));
         stoppedReason = res.status >= 500 ? "server_error" : "html_not_ok";
         continue;
       }
       pagesFetched++;
       const parsed = parseHtml(res.text, config, startUrl);
+      diagnostics.push(diagnosticForFetch(config, res, "html", parsed.length));
       const pageUrls = new Set(parsed.map((item) => item.source_url));
       if (parsed.length === 0) {
         stoppedReason = "html_structure_unstable";
@@ -455,11 +534,14 @@ export async function fetchCommercialSourceDryRun(config: CommercialSourceConfig
   if (!config.htmlOnly && config.fetchSitemapsAfterHtml && items.length < maxItems) {
     for (const sitemapUrl of config.sitemapUrls ?? []) {
       const res = await fetchText(sitemapUrl);
-      diagnostics.push({ url: sitemapUrl, status: res.status, content_type: res.contentType, blocked: res.blocked, error: res.error });
       if (res.blocked) return result(config, sitemapUrl, [], fetchedCount, feedsFetched, pagesFetched, skippedQualityCount, skippedNonJobCount, "blocked_by_site", diagnostics, sitemapsFetched, duplicateUrlCount, paginationModeUsed);
-      if (!res.ok) continue;
+      if (!res.ok) {
+        diagnostics.push(diagnosticForFetch(config, res, "sitemap", 0));
+        continue;
+      }
       sitemapsFetched++;
       const parsed = parseSitemap(res.text, config);
+      diagnostics.push(diagnosticForFetch(config, res, "sitemap", parsed.length));
       fetchedCount += parsed.length;
       const quality = keepQuality(parsed, config);
       skippedQualityCount += quality.skippedQuality;

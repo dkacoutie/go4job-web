@@ -3,14 +3,10 @@ import { type CommercialSourceJob, fetchCommercialSourceDryRun } from "./west_af
 const COMPANY_STOP_MARKERS = [
   "Nombre de postes",
   "Experience demandee",
-  "Experience demandée",
-  "Métier / Fonction",
   "Metier / Fonction",
   "Secteurs d'activite",
-  "Secteurs d'activité",
   "Niveau de poste",
   "Lieu de residence",
-  "Lieu de résidence",
 ];
 
 const GENERIC_COMPANY_NAMES = new Set([
@@ -33,7 +29,7 @@ function cleanCompanyText(value: string) {
     .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number.parseInt(code, 10)))
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/[.,;:|\-–—\s]+$/u, "")
+    .replace(/[.,;:|\-\u2013\u2014\s]+$/u, "")
     .trim();
 }
 
@@ -47,15 +43,17 @@ function normalizedSignal(value: string) {
 
 function extractCompanyName(description: string | null | undefined) {
   if (!description) return null;
-  const markerMatch = description.match(/\b(?:Entreprise|Soci[eé]t[eé]|Societe)\s*:\s*/iu);
+  const markerMatch = description.match(/\b(?:Entreprise|Soci[e\u00e9]t[e\u00e9]|Societe)\s*:\s*/iu);
   if (!markerMatch || markerMatch.index === undefined) return null;
 
   const start = markerMatch.index + markerMatch[0].length;
   let candidate = description.slice(start);
+  const normalizedCandidate = normalizedSignal(candidate);
   for (const marker of COMPANY_STOP_MARKERS) {
-    const markerIndex = normalizedSignal(candidate).indexOf(normalizedSignal(marker));
+    const markerIndex = normalizedCandidate.indexOf(normalizedSignal(marker));
     if (markerIndex >= 0) {
       candidate = candidate.slice(0, markerIndex);
+      break;
     }
   }
 
@@ -100,16 +98,23 @@ export async function fetchNovojobPortalItems(options?: { limit?: number }) {
     country: "West Africa Francophone",
     maxItems: options?.limit ?? 50,
     feedUrls: [
+      `${baseUrl}/cote-d-ivoire/rss`,
+      `${baseUrl}/cote-d-ivoire/feed`,
       `${baseUrl}/feed`,
       `${baseUrl}/rss`,
       `${baseUrl}/rss.xml`,
     ],
     sitemapUrls: [`${baseUrl}/sitemap.xml`, `${baseUrl}/sitemap_index.xml`],
-    startUrls: [`${baseUrl}/offres-emploi`, `${baseUrl}/jobs`],
+    startUrls: [
+      `${baseUrl}/cote-d-ivoire/offres-emploi`,
+      `${baseUrl}/offres-emploi`,
+      `${baseUrl}/jobs`,
+    ],
+    maxPages: 3,
     linkInclude: "novojob.com",
     jobUrlIncludes: ["/offre-d-emploi/"],
     excludeUrlIncludes: ["/entreprises/", "/candidats/", "/conseils/"],
     postProcessJob: improveNovojob,
-    stoppedReasonWhenEmpty: "js_rendered_or_specific_parser_required",
+    stoppedReasonWhenEmpty: "novojob_requires_specific_static_endpoint",
   });
 }
