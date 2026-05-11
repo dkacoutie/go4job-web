@@ -10,6 +10,7 @@ import { fetchEmploiSenegalPortalItems } from "./sources/emploisenegal_portal.ts
 import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
+import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
 import {
   buildCrossSourceJobIdentity,
   canonicalizeJobUrl,
@@ -268,6 +269,14 @@ function toBoundedInt(
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!value) return [];
+  const raw = Array.isArray(value) ? value : [value];
+  return raw
+    .map((entry) => typeof entry === "string" ? entry.trim() : "")
+    .filter(Boolean);
 }
 
 function normalizeAdzunaSortMode(value: unknown): "freshness" | "exploration" {
@@ -698,6 +707,68 @@ Deno.serve(async (req) => {
         suspicious_signal_count: data.suspicious_signal_count,
         stopped_reason: data.stopped_reason,
         sample: data.sample.slice(0, 3),
+      });
+    }
+
+    if (source_code === "reliefweb_api") {
+      if (!dry_run) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "reliefweb_api_import_disabled_dry_run_only",
+        }, 409);
+      }
+
+      const reliefwebAppname =
+        typeof body?.appname === "string" && body.appname.trim()
+          ? body.appname.trim()
+          : typeof body?.reliefweb_appname === "string" &&
+              body.reliefweb_appname.trim()
+          ? body.reliefweb_appname.trim()
+          : Deno.env.get("RELIEFWEB_APPNAME")?.trim() ?? "";
+
+      if (!reliefwebAppname) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: true,
+          error: "reliefweb_appname_missing",
+          message:
+            "ReliefWeb API requires an appname. Pass body.appname or set RELIEFWEB_APPNAME.",
+        }, 400);
+      }
+
+      const requestedLimit = hasRequestedLimit && Number.isFinite(limit)
+        ? Math.trunc(limit)
+        : null;
+      const effectiveLimit = toBoundedInt(limit, 50, 1, 100);
+      const offset = toBoundedInt(body?.offset, 0, 0, 10000);
+      const countries = toStringArray(body?.countries);
+      const data = await fetchReliefWebJobs({
+        appname: reliefwebAppname,
+        limit: effectiveLimit,
+        offset,
+        countries,
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        dry_run: true,
+        status: "dry_run_parsed",
+        requested_limit: requestedLimit,
+        effective_limit: data.effective_limit,
+        offset: data.offset,
+        countries_requested: data.countries_requested,
+        parsed: data.parsed,
+        sample: data.items.slice(0, 5),
+        meta: {
+          endpoint: data.endpoint,
+          total_count: data.total_count,
+          content_type: data.meta.content_type,
+          request_body: data.meta.request_body,
+        },
       });
     }
 
