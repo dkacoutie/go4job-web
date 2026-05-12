@@ -905,7 +905,7 @@ Deno.serve(async (req) => {
       ].includes(source_code)
     ) {
       if (!dry_run) {
-        if (source_code === "myjobmag_ng_portal" || source_code === "myjobmag_gh_portal") {
+        if (source_code === "myjobmag_gh_portal") {
           return json({
             ok: false,
             source_code,
@@ -925,11 +925,19 @@ Deno.serve(async (req) => {
           body?.confirm === "IMPORT_NOVOJOB_PORTAL" &&
           requestedLimit !== null &&
           requestedLimit <= 50;
+        const myJobMagNgImportAllowed = source_code === "myjobmag_ng_portal" &&
+          body?.allow_import === true &&
+          body?.confirm === "IMPORT_MYJOBMAG_NG_PORTAL";
         const goAfricaOnlineCiImportAllowed = source_code === "goafricaonline_ci_portal" &&
           body?.allow_import === true &&
           isGoAfricaOnlineCiImportConfirmed(body?.confirm, requestedLimit);
 
-        if (!jobWebGhanaImportAllowed && !novojobImportAllowed && !goAfricaOnlineCiImportAllowed) {
+        if (
+          !jobWebGhanaImportAllowed &&
+          !novojobImportAllowed &&
+          !myJobMagNgImportAllowed &&
+          !goAfricaOnlineCiImportAllowed
+        ) {
           return json({
             ok: false,
             source_code,
@@ -938,6 +946,8 @@ Deno.serve(async (req) => {
               ? "jobwebghana_import_requires_explicit_confirmation"
               : source_code === "novojob_portal"
               ? "novojob_import_requires_explicit_confirmation"
+              : source_code === "myjobmag_ng_portal"
+              ? "myjobmag_ng_import_requires_explicit_confirmation"
               : source_code === "goafricaonline_ci_portal"
               ? "goafricaonline_ci_import_requires_explicit_confirmation"
               : `${source_code}_import_disabled_dry_run_only`,
@@ -999,6 +1009,110 @@ Deno.serve(async (req) => {
 
     const jobSourceArr = await sbGet<any[]>(jobSourceUrl, serviceKey);
     const jobSource = jobSourceArr?.[0] ?? null;
+
+    if (source_code === "myjobmag_ng_portal") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const importCap = 60;
+      const importLimit = toBoundedInt(limit, 20, 1, importCap);
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_MYJOBMAG_NG_PORTAL"
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "myjobmag_ng_import_requires_explicit_confirmation",
+          import_cap: importCap,
+        }, 409);
+      }
+
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchMyJobMagPortalItems("myjobmag_ng_portal", {
+        limit: importLimit,
+      });
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        dry_run: false,
+        status: "myjobmag_ng_portal_upserted",
+        requested_limit: Number.isFinite(limit) ? Math.trunc(limit) : null,
+        effective_limit: importLimit,
+        limit: importLimit,
+        import_cap: importCap,
+        parsed_count: data.parsed_count,
+        inserted_count: inserted,
+        updated_count: updated,
+        inserted,
+        updated,
+        skipped_stale_count: data.meta.skipped_stale_count ?? 0,
+        enrichment_matched_count: data.meta.enrichment_matched_count ?? 0,
+        stopped_reason: data.stopped_reason,
+        warnings: data.meta.warnings ?? [],
+      });
+    }
 
     if (source_code === "jobwebghana_portal") {
       if (!jobSource) {
