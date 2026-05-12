@@ -43,6 +43,10 @@ type ParseStats = {
   skippedDuplicate: number;
   enrichmentMatched: number;
   enrichmentMismatch: number;
+  enrichmentCompanyMismatch: number;
+  feedTitleExamples: unknown[];
+  enrichmentTitleExamples: unknown[];
+  enrichmentCompanyMismatchExamples: unknown[];
 };
 
 const USER_AGENT = "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)";
@@ -268,17 +272,22 @@ function normalizeJobUrl(rawUrl: string, config: MyJobMagConfig) {
 
 function parseTitleCompany(rawTitle: string, aggregate?: AggregateEntry | null) {
   const fallbackTitle = cleanText(rawTitle);
-  const position = cleanText(aggregate?.position ?? "");
-  const company = cleanText(aggregate?.company ?? "");
-  if (position && company) return { title: position, company };
-
   const titleMatch = fallbackTitle.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (titleMatch?.[1] && titleMatch?.[2]) {
-    return {
+  const fallbackParsed = titleMatch?.[1] && titleMatch?.[2]
+    ? {
       title: titleMatch[1].trim(),
       company: titleMatch[2].trim(),
+    }
+    : null;
+  const position = cleanText(aggregate?.position ?? "");
+  const company = cleanText(aggregate?.company ?? "");
+  if (position) {
+    return {
+      title: position,
+      company: company || fallbackParsed?.company || null,
     };
   }
+  if (fallbackParsed) return fallbackParsed;
 
   return {
     title: fallbackTitle,
@@ -290,11 +299,21 @@ function companyFromCanonicalTitle(rawTitle: string) {
   return cleanText(rawTitle).match(/^(.+?)\s+at\s+(.+)$/i)?.[2]?.trim() ?? null;
 }
 
+function positionFromCanonicalTitle(rawTitle: string) {
+  return cleanText(rawTitle).match(/^(.+?)\s+at\s+(.+)$/i)?.[1]?.trim() ?? null;
+}
+
 function isSameCompany(left: string | null | undefined, right: string | null | undefined) {
   const leftSignal = normalizeSignal(left ?? "").replace(/\blimited\b|\bltd\b|\bplc\b|\binc\b|\bllc\b/g, "").trim();
   const rightSignal = normalizeSignal(right ?? "").replace(/\blimited\b|\bltd\b|\bplc\b|\binc\b|\bllc\b/g, "").trim();
   if (!leftSignal || !rightSignal) return false;
   return leftSignal === rightSignal || leftSignal.includes(rightSignal) || rightSignal.includes(leftSignal);
+}
+
+function isSamePosition(left: string | null | undefined, right: string | null | undefined) {
+  const leftSignal = normalizeSignal(left ?? "");
+  const rightSignal = normalizeSignal(right ?? "");
+  return Boolean(leftSignal && rightSignal && leftSignal === rightSignal);
 }
 
 function isBlockedQuality(job: Pick<CommercialSourceJob, "title" | "company_name" | "description_text" | "source_url">) {
@@ -348,11 +367,28 @@ function parseJobsFeed(xml: string, config: MyJobMagConfig, aggregateByTitle: Ma
   let skippedDuplicate = 0;
   let enrichmentMatched = 0;
   let enrichmentMismatch = 0;
+  let enrichmentCompanyMismatch = 0;
+  const feedTitleExamples: unknown[] = [];
+  const enrichmentCompanyMismatchExamples: unknown[] = [];
 
   const feedItems = itemBlocks(xml);
+  const enrichmentTitleExamples = Array.from(aggregateByTitle.values()).slice(0, 5).map((entry) => ({
+    title: entry.title,
+    key: normalizeSignal(entry.title),
+    position: entry.position,
+    company: entry.company,
+  }));
   const nowMs = Date.now();
   for (const [index, block] of feedItems.entries()) {
     const rawTitle = tagValue(block, "title");
+    const rawTitleKey = normalizeSignal(rawTitle);
+    if (feedTitleExamples.length < 5) {
+      feedTitleExamples.push({
+        raw_title: rawTitle,
+        normalized_key: rawTitleKey,
+        canonical_company: companyFromCanonicalTitle(rawTitle),
+      });
+    }
     const sourceUrl = normalizeJobUrl(tagValue(block, "link"), config);
     if (!sourceUrl) {
       rejectedInvalidUrl++;
@@ -364,12 +400,33 @@ function parseJobsFeed(xml: string, config: MyJobMagConfig, aggregateByTitle: Ma
     }
     seenUrls.add(sourceUrl);
 
-    const aggregateCandidate = aggregateByTitle.get(normalizeSignal(rawTitle));
+    const aggregateCandidate = aggregateByTitle.get(rawTitleKey);
     const canonicalCompany = companyFromCanonicalTitle(rawTitle);
-    const aggregate = aggregateCandidate && (!canonicalCompany || isSameCompany(canonicalCompany, aggregateCandidate.company))
-      ? aggregateCandidate
+    const canonicalPosition = positionFromCanonicalTitle(rawTitle);
+    const companyMatches = Boolean(
+      aggregateCandidate && (!canonicalCompany || isSameCompany(canonicalCompany, aggregateCandidate.company)),
+    );
+    const positionMatches = Boolean(aggregateCandidate && isSamePosition(canonicalPosition, aggregateCandidate.position));
+    const aggregate = aggregateCandidate && (companyMatches || positionMatches)
+      ? {
+        ...aggregateCandidate,
+        company: companyMatches ? aggregateCandidate.company : canonicalCompany,
+      }
       : null;
     if (aggregate) enrichmentMatched++;
+    if (aggregateCandidate && !companyMatches) {
+      enrichmentCompanyMismatch++;
+      if (enrichmentCompanyMismatchExamples.length < 5) {
+        enrichmentCompanyMismatchExamples.push({
+          raw_title: rawTitle,
+          normalized_key: rawTitleKey,
+          canonical_company: canonicalCompany,
+          aggregate_title: aggregateCandidate.title,
+          aggregate_position: aggregateCandidate.position,
+          aggregate_company: aggregateCandidate.company,
+        });
+      }
+    }
     if (aggregateCandidate && !aggregate) enrichmentMismatch++;
     const parsedTitle = parseTitleCompany(rawTitle, aggregate);
     if (isNonJob(parsedTitle.title, sourceUrl)) {
@@ -433,6 +490,10 @@ function parseJobsFeed(xml: string, config: MyJobMagConfig, aggregateByTitle: Ma
     skippedDuplicate,
     enrichmentMatched,
     enrichmentMismatch,
+    enrichmentCompanyMismatch,
+    feedTitleExamples,
+    enrichmentTitleExamples,
+    enrichmentCompanyMismatchExamples,
   } satisfies ParseStats;
 }
 
@@ -502,6 +563,10 @@ export async function fetchMyJobMagPortalItems(
       enrichment_items_read: parsed.enrichmentItemsRead,
       enrichment_matched_count: parsed.enrichmentMatched,
       enrichment_mismatch_count: parsed.enrichmentMismatch,
+      enrichment_company_mismatch_count: parsed.enrichmentCompanyMismatch,
+      enrichment_feed_title_examples: parsed.enrichmentTitleExamples,
+      canonical_feed_title_examples: parsed.feedTitleExamples,
+      enrichment_company_mismatch_examples: parsed.enrichmentCompanyMismatchExamples,
       raw_feed_items_read: parsed.feedItemsRead,
       feed_items_read: parsed.feedItemsRead,
       rejected_invalid_job_url_count: parsed.rejectedInvalidUrl,
