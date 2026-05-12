@@ -75,7 +75,7 @@ const PAGE_TIMEOUT_MS = 20000;
 const DEFAULT_MAX_PAGES = 2;
 const MAX_PAGES_CAP = 20;
 const DEFAULT_LIMIT = 30;
-const LIMIT_CAP = 100;
+export const AEJ_MAX_ITEMS_PER_RUN = 200;
 const DEFAULT_DELAY_MS = 800;
 
 const INVALID_TITLE_TERMS = new Set([
@@ -390,7 +390,12 @@ export async function fetchAejItems(
     1,
     MAX_PAGES_CAP,
   );
-  const maxItems = toBoundedInt(maxItemsInput, DEFAULT_LIMIT, 1, LIMIT_CAP);
+  const maxItems = toBoundedInt(
+    maxItemsInput,
+    DEFAULT_LIMIT,
+    1,
+    AEJ_MAX_ITEMS_PER_RUN,
+  );
   const delayMs = toBoundedInt(delayMsInput, DEFAULT_DELAY_MS, 0, 5000);
   const diagnostics: AejPageDiagnostic[] = [];
   const warnings: string[] = [];

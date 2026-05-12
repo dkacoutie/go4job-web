@@ -1,7 +1,7 @@
 // supabase/functions/ingest_source/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { fetchAejItems } from "./sources/aej_html.ts";
+import { AEJ_MAX_ITEMS_PER_RUN, fetchAejItems } from "./sources/aej_html.ts";
 import { fetchAdzunaItems } from "./sources/adzuna_api.ts";
 import { fetchEmploiCiItems } from "./sources/emploi_ci.ts";
 import { fetchEmploiCiPortalItems } from "./sources/emploi_ci_portal.ts";
@@ -1802,8 +1802,18 @@ Deno.serve(async (req) => {
         ? jobSource.ingest_config.list_url
         : "https://agenceemploijeunes.ci/offres-emploi";
       const maxPages = toBoundedInt(body?.max_pages ?? jobSource.ingest_config?.max_pages, 2, 1, 20);
-      const requestedAejLimit = toBoundedInt(body?.limit ?? limit, 30, 1, 100);
-      const configuredAejLimit = toBoundedInt(jobSource.ingest_config?.limit, 30, 1, 100);
+      const requestedAejLimit = toBoundedInt(
+        body?.limit ?? limit,
+        30,
+        1,
+        AEJ_MAX_ITEMS_PER_RUN,
+      );
+      const configuredAejLimit = toBoundedInt(
+        jobSource.ingest_config?.limit,
+        30,
+        1,
+        AEJ_MAX_ITEMS_PER_RUN,
+      );
       const maxItems = Math.min(requestedAejLimit, configuredAejLimit);
       const delayMs = toBoundedInt(body?.delay_ms ?? jobSource.ingest_config?.delay_ms, 800, 0, 5000);
 
