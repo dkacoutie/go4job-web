@@ -1793,24 +1793,59 @@ Deno.serve(async (req) => {
     const method = (jobSource.ingest_method ?? "rss_generic").toLowerCase();
 
     if (method === "aej_html") {
-      if (jobSource.is_active === false && !dry_run) {
+      const aejDryRun = Boolean(body?.dry_run ?? true);
+      if (jobSource.is_active === false && !aejDryRun) {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const listUrl = jobSource.ingest_config?.list_url ||
-        "https://www.agenceemploijeunes.ci/site/offres-emplois";
-      const maxPages = Math.max(
-        1,
-        Math.min(5, Number(jobSource.ingest_config?.max_pages ?? 2)),
-      );
-      const maxItems = Math.max(
-        1,
-        Math.min(limit, Number(jobSource.ingest_config?.limit ?? 30)),
-      );
-      const delayMs = Math.max(
-        0,
-        Number(jobSource.ingest_config?.delay_ms ?? 800),
-      );
+      const listUrl = typeof jobSource.ingest_config?.list_url === "string"
+        ? jobSource.ingest_config.list_url
+        : "https://agenceemploijeunes.ci/offres-emploi";
+      const maxPages = toBoundedInt(body?.max_pages ?? jobSource.ingest_config?.max_pages, 2, 1, 20);
+      const requestedAejLimit = toBoundedInt(body?.limit ?? limit, 30, 1, 100);
+      const configuredAejLimit = toBoundedInt(jobSource.ingest_config?.limit, 30, 1, 100);
+      const maxItems = Math.min(requestedAejLimit, configuredAejLimit);
+      const delayMs = toBoundedInt(body?.delay_ms ?? jobSource.ingest_config?.delay_ms, 800, 0, 5000);
+
+      if (!aejDryRun && (body?.allow_import !== true || body?.confirm !== "IMPORT_AEJ_CI_V2")) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "aej_ci_import_requires_explicit_confirmation",
+          message: 'Pass allow_import=true and confirm="IMPORT_AEJ_CI_V2" to run a real AEJ import.',
+        }, 409);
+      }
+
+      const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
+
+      if (aejDryRun) {
+        const emptyStatus = data.items.length === 0
+          ? data.stopped_reason === "fetch_failed" || data.stopped_reason === "page_not_ok"
+            ? 502
+            : 422
+          : 200;
+        return json({
+          ok: data.items.length > 0,
+          source_code,
+          limit: maxItems,
+          dry_run: true,
+          status: data.items.length > 0 ? "dry_run_parsed" : "dry_run_empty",
+          list_url: data.list_url,
+          parsed: data.parsed,
+          parsed_count: data.parsed_count,
+          fetched_count: data.fetched_count,
+          pages_fetched: data.pages_fetched,
+          detail_pages_fetched: data.detail_pages_fetched,
+          skipped_quality_count: data.skipped_quality_count,
+          duplicate_count: data.duplicate_count,
+          stopped_reason: data.stopped_reason,
+          warnings: data.warnings,
+          sample: data.items.slice(0, 3),
+          sample_jobs: data.items.slice(0, 5),
+          meta: data.meta,
+        }, emptyStatus);
+      }
 
       const runId = await createRun(
         supabaseUrl,
@@ -1819,27 +1854,33 @@ Deno.serve(async (req) => {
         "ingest",
       );
       currentRunId = runId;
-      const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
 
-      if (dry_run) {
+      if (data.items.length === 0) {
+        const finishedAt = new Date().toISOString();
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
+          finished_at: finishedAt,
+          status: "failed",
+          ok: false,
+          error: `aej_no_items_fetched: ${data.stopped_reason}`,
+          fetched_count: 0,
           inserted_count: 0,
           updated_count: 0,
         });
-        return json({
-          ok: true,
-          source_code,
-          limit: maxItems,
-          dry_run: true,
-          status: "dry_run_parsed",
-          list_url: data.list_url,
-          parsed: data.parsed,
-          sample: data.items.slice(0, 3),
+        await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+          last_checked_at: finishedAt,
+          ingest_status: "error",
         });
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "aej_no_items_fetched",
+          fetched_count: data.fetched_count,
+          pages_fetched: data.pages_fetched,
+          stopped_reason: data.stopped_reason,
+          warnings: data.warnings,
+          meta: data.meta,
+        }, 422);
       }
 
       const supabase = createClient(supabaseUrl, serviceKey, {
@@ -1866,9 +1907,9 @@ Deno.serve(async (req) => {
           job_source_id: jobSource.id,
           external_id: it.external_id,
           title: it.title,
-          company_name: null,
+          company_name: it.company_name,
           location,
-          country: jobSource.country || "Cote d'Ivoire",
+          country: "CI",
           remote_type: null,
           contract_type: it.contract_type || null,
           seniority: null,
@@ -1883,9 +1924,9 @@ Deno.serve(async (req) => {
           canonical_url: identity.canonicalUrl,
           dedupe_identity_key: identity.dedupeIdentityKey,
           cross_source_fingerprint: identity.crossSourceFingerprint,
-          tags: [],
-          posted_at: null,
-          published_at: null,
+          tags: ["CI", "aej_html_v2"],
+          posted_at: it.posted_at,
+          published_at: it.published_at,
           expires_at: it.expires_at,
           scraped_at: now,
           updated_at: now,
@@ -1898,6 +1939,9 @@ Deno.serve(async (req) => {
             source_code,
             list_url: data.list_url,
             reference: it.reference,
+            sector: it.sector,
+            fetched_count: data.fetched_count,
+            stopped_reason: data.stopped_reason,
           },
         };
       }));
@@ -1917,6 +1961,10 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
         });
+        await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+          last_checked_at: new Date().toISOString(),
+          ingest_status: "error",
+        });
         return json({
           ok: false,
           error: "jobs_upsert_failed",
@@ -1924,13 +1972,20 @@ Deno.serve(async (req) => {
         }, 500);
       }
 
+      const finishedAt = new Date().toISOString();
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAt,
         status: "success",
         ok: true,
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
       });
 
       return json({
@@ -1940,9 +1995,15 @@ Deno.serve(async (req) => {
         dry_run: false,
         status: "aej_upserted",
         parsed: data.parsed,
+        fetched_count: data.fetched_count,
+        pages_fetched: data.pages_fetched,
+        skipped_quality_count: data.skipped_quality_count,
+        duplicate_count: data.duplicate_count,
+        stopped_reason: data.stopped_reason,
         inserted,
         updated,
         upserted: rows.length,
+        meta: data.meta,
       });
     }
 
