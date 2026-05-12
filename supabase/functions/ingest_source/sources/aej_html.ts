@@ -54,6 +54,9 @@ export type AejFetchResult = {
   items: AejItem[];
   meta: {
     diagnostics: AejPageDiagnostic[];
+    start_page_used: number;
+    first_page_fetched: number | null;
+    last_page_fetched: number | null;
     max_pages_used: number;
     max_items_used: number;
     detail_fetch_limit_used: number;
@@ -381,9 +384,11 @@ export async function fetchAejItems(
   maxPagesInput?: number,
   maxItemsInput?: number,
   delayMsInput?: number,
+  startPageInput?: number,
 ): Promise<AejFetchResult> {
   const canonical = canonicalListUrl(configuredListUrl);
   const listUrl = canonical.url;
+  const startPage = toBoundedInt(startPageInput, 1, 1, Number.MAX_SAFE_INTEGER);
   const maxPages = toBoundedInt(
     maxPagesInput,
     DEFAULT_MAX_PAGES,
@@ -409,8 +414,11 @@ export async function fetchAejItems(
   let stoppedReason = "max_pages_reached";
   let totalAvailable: number | null = null;
   let lastPageDetected: number | null = null;
+  let firstPageFetched: number | null = null;
+  let lastPageFetched: number | null = null;
 
-  for (let page = 1; page <= maxPages; page++) {
+  for (let pageOffset = 0; pageOffset < maxPages; pageOffset++) {
+    const page = startPage + pageOffset;
     const url = pageUrl(listUrl, page);
     const response = await fetchHtml(url);
     const diagnostic: AejPageDiagnostic = {
@@ -437,6 +445,8 @@ export async function fetchAejItems(
     }
 
     pagesFetched++;
+    firstPageFetched ??= page;
+    lastPageFetched = page;
     const inertia = parseInertiaPage(response.text);
     const offers = offersPayload(propsObject(inertia));
     diagnostic.parsed_candidate_count = offers.data.length;
@@ -445,6 +455,13 @@ export async function fetchAejItems(
     totalAvailable = offers.total ?? totalAvailable;
     lastPageDetected = offers.lastPage ?? lastPageDetected;
     fetchedCount += offers.data.length;
+
+    if (lastPageDetected !== null && startPage > lastPageDetected) {
+      stoppedReason = "start_page_after_last_page";
+      warnings.push("aej_start_page_after_last_page");
+      diagnostics.push(diagnostic);
+      break;
+    }
 
     if (offers.data.length === 0) {
       stoppedReason = "empty_page";
@@ -537,6 +554,9 @@ export async function fetchAejItems(
     items,
     meta: {
       diagnostics,
+      start_page_used: startPage,
+      first_page_fetched: firstPageFetched,
+      last_page_fetched: lastPageFetched,
       max_pages_used: maxPages,
       max_items_used: maxItems,
       detail_fetch_limit_used: maxItems,

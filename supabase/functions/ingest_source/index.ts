@@ -1801,6 +1801,12 @@ Deno.serve(async (req) => {
       const listUrl = typeof jobSource.ingest_config?.list_url === "string"
         ? jobSource.ingest_config.list_url
         : "https://agenceemploijeunes.ci/offres-emploi";
+      const startPage = toBoundedInt(
+        body?.start_page ?? body?.startPage ?? jobSource.ingest_config?.start_page,
+        1,
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
       const maxPages = toBoundedInt(body?.max_pages ?? jobSource.ingest_config?.max_pages, 2, 1, 20);
       const requestedAejLimit = toBoundedInt(
         body?.limit ?? limit,
@@ -1827,7 +1833,7 @@ Deno.serve(async (req) => {
         }, 409);
       }
 
-      const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs);
+      const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs, startPage);
 
       if (aejDryRun) {
         const emptyStatus = data.items.length === 0
@@ -1845,6 +1851,7 @@ Deno.serve(async (req) => {
           parsed: data.parsed,
           parsed_count: data.parsed_count,
           fetched_count: data.fetched_count,
+          start_page: startPage,
           pages_fetched: data.pages_fetched,
           detail_pages_fetched: data.detail_pages_fetched,
           skipped_quality_count: data.skipped_quality_count,
@@ -1886,6 +1893,7 @@ Deno.serve(async (req) => {
           dry_run: false,
           error: "aej_no_items_fetched",
           fetched_count: data.fetched_count,
+          start_page: startPage,
           pages_fetched: data.pages_fetched,
           stopped_reason: data.stopped_reason,
           warnings: data.warnings,
@@ -2006,6 +2014,7 @@ Deno.serve(async (req) => {
         status: "aej_upserted",
         parsed: data.parsed,
         fetched_count: data.fetched_count,
+        start_page: startPage,
         pages_fetched: data.pages_fetched,
         skipped_quality_count: data.skipped_quality_count,
         duplicate_count: data.duplicate_count,
