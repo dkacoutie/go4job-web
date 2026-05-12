@@ -11,6 +11,7 @@ import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
+import { fetchMyJobMagPortalItems } from "./sources/myjobmag_portal.ts";
 import { fetchMyJobMagRssItems } from "./sources/myjobmag_rss.ts";
 import { fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
 import { fetchJobWebGhanaPortalItems } from "./sources/jobwebghana_portal.ts";
@@ -899,9 +900,20 @@ Deno.serve(async (req) => {
         "goafricaonline_ci_portal",
         "jobberman_ng_portal",
         "jobberman_gh_portal",
+        "myjobmag_ng_portal",
+        "myjobmag_gh_portal",
       ].includes(source_code)
     ) {
       if (!dry_run) {
+        if (source_code === "myjobmag_ng_portal" || source_code === "myjobmag_gh_portal") {
+          return json({
+            ok: false,
+            source_code,
+            dry_run: false,
+            error: "myjobmag_source_dry_run_only_not_validated",
+          }, 409);
+        }
+
         const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
         const jobWebGhanaImportAllowed = source_code === "jobwebghana_portal" &&
           body?.allow_import === true &&
@@ -935,6 +947,11 @@ Deno.serve(async (req) => {
 
       if (dry_run && (source_code === "myjobmag_ng_rss" || source_code === "myjobmag_gh_rss")) {
         return json(commercialDryRunResponse(await fetchMyJobMagRssItems(source_code, {
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (dry_run && (source_code === "myjobmag_ng_portal" || source_code === "myjobmag_gh_portal")) {
+        return json(commercialDryRunResponse(await fetchMyJobMagPortalItems(source_code, {
           limit: commercialDryRunLimit,
         })));
       }
