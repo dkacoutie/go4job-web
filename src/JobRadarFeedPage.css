@@ -186,6 +186,38 @@
   flex-wrap: wrap;
 }
 
+.jr-filterSelect {
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--jr-border);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--jr-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jr-filterSelect select {
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--jr-text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
+}
+
+.jr-alertActionRow {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .jr-explorerBlock {
   margin-top: 16px;
 }

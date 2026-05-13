@@ -42,6 +42,9 @@ type AlertRow = {
   keywords: string[];
   country: string | null;
   countries?: string[] | null;
+  search_query?: string | null;
+  employment_types?: string[] | null;
+  work_modes?: string[] | null;
   frequency: string;
   channels: string[];
   is_active: boolean;
@@ -74,6 +77,7 @@ type JobRow = {
   location?: string | null;
   country?: string | null;
   remote_type?: string | null;
+  contract_type?: string | null;
   job_family?: string | null;
 
   sort_at?: string | null;
@@ -248,6 +252,46 @@ function labelRemoteType(raw?: string | null) {
   if (rt.includes("site") || rt.includes("office") || rt.includes("présentiel") || rt.includes("presentiel")) return "Sur site";
   return rt.trim();
 }
+
+type FilterOption = {
+  value: string;
+  label: string;
+};
+
+const COUNTRY_FILTER_OPTIONS: FilterOption[] = [
+  { value: "", label: "Tous les pays" },
+  { value: "CI", label: "Côte d’Ivoire" },
+  { value: "FR", label: "France" },
+  { value: "SN", label: "Sénégal" },
+  { value: "GH", label: "Ghana" },
+  { value: "NG", label: "Nigeria" },
+  { value: "GB", label: "Royaume-Uni" },
+  { value: "REMOTE", label: "Remote / international" },
+];
+
+const CONTRACT_FILTER_OPTIONS: FilterOption[] = [
+  { value: "", label: "Tous les contrats" },
+  { value: "cdi", label: "CDI" },
+  { value: "cdd", label: "CDD" },
+  { value: "internship", label: "Stage" },
+  { value: "alternance", label: "Alternance" },
+  { value: "freelance", label: "Freelance / mission" },
+];
+
+const WORK_MODE_FILTER_OPTIONS: FilterOption[] = [
+  { value: "", label: "Tous les modes" },
+  { value: "onsite", label: "Sur site" },
+  { value: "hybrid", label: "Hybride" },
+  { value: "remote", label: "Remote" },
+];
+
+const CONTRACT_ALIASES: Record<string, string[]> = {
+  cdi: ["cdi", "permanent", "long terme", "full time", "full-time"],
+  cdd: ["cdd", "contract", "contrat", "temporary", "fixed term", "mission"],
+  internship: ["stage", "intern", "internship", "stagiaire"],
+  alternance: ["alternance", "apprenticeship", "apprenti", "apprentie"],
+  freelance: ["freelance", "consultant", "contractor", "mission"],
+};
 
 function pickLocationLabel(job: JobRow) {
   const remote = labelRemoteType(job.remote_type);
@@ -467,6 +511,7 @@ const JOB_SELECT_FIELDS = `
   location,
   country,
   remote_type,
+  contract_type,
   job_family,
   published_at,
   posted_at,
@@ -542,6 +587,56 @@ function buildServerSearchTerms(rawQuery: string) {
   return uniq([safeTerm, ...importantTokens, ...fallbackTokens]).filter((term) => term.length >= TEXT_SEARCH_MIN_LENGTH).slice(0, 6);
 }
 
+function selectedOptionLabel(options: FilterOption[], value: string) {
+  return options.find((option) => option.value === value)?.label ?? "";
+}
+
+function normalizeFilterValue(value: string | null | undefined) {
+  return normalizeText(canonicalizeText(value ?? ""));
+}
+
+function jobMatchesCountryFilter(job: JobRow, countryFilter: string) {
+  if (!countryFilter) return true;
+  if (countryFilter === "REMOTE") {
+    return isRemoteLike(`${job.remote_type ?? ""} ${job.location ?? ""} ${job.country ?? ""}`);
+  }
+  const country = (job.country ?? "").trim().toUpperCase();
+  if (country === countryFilter) return true;
+  return resolveCountrySearchQuery(`${job.country ?? ""} ${job.location ?? ""}`) === countryFilter;
+}
+
+function jobMatchesContractFilter(job: JobRow, contractFilter: string) {
+  if (!contractFilter) return true;
+  const text = normalizeFilterValue([job.contract_type, job.title].filter(Boolean).join(" "));
+  const aliases = CONTRACT_ALIASES[contractFilter] ?? [contractFilter];
+  return aliases.some((alias) => text.includes(normalizeFilterValue(alias)));
+}
+
+function jobMatchesWorkModeFilter(job: JobRow, workModeFilter: string) {
+  if (!workModeFilter) return true;
+  const text = normalizeFilterValue([job.remote_type, job.location].filter(Boolean).join(" "));
+  if (workModeFilter === "remote") return isRemoteLike(`${job.remote_type ?? ""} ${job.location ?? ""}`);
+  if (workModeFilter === "hybrid") return text.includes("hybrid") || text.includes("hybride");
+  if (workModeFilter === "onsite") {
+    return text.includes("sur site") ||
+      text.includes("onsite") ||
+      text.includes("on site") ||
+      text.includes("office") ||
+      text.includes("presentiel");
+  }
+  return true;
+}
+
+function buildSearchAlertKeywords(query: string) {
+  return buildJobSearchTokens(query).slice(0, 8);
+}
+
+function arraysEqualIgnoreOrder(left: string[], right: string[]) {
+  const a = [...left].map((value) => value.trim().toLowerCase()).filter(Boolean).sort();
+  const b = [...right].map((value) => value.trim().toLowerCase()).filter(Boolean).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function buildNormalizedJobSearchHay(job: JobRow) {
   return normalizeSearchText(canonicalizeText(buildJobHay(job)));
 }
@@ -594,6 +689,15 @@ export default function JobRadarFeedPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
+  const [countryFilter, setCountryFilter] = useState("");
+  const [contractFilter, setContractFilter] = useState("");
+  const [workModeFilter, setWorkModeFilter] = useState("");
+  const [alertSaveBusy, setAlertSaveBusy] = useState(false);
+  const [alertNotice, setAlertNotice] = useState<{
+    kind: "success" | "info" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
 
   const [matchMode, setMatchMode] = useState<"strict" | "large">("large");
   const STRICT_MIN_PERCENT = Number(import.meta.env.VITE_TOPMATCH_MIN ?? 55);
@@ -704,6 +808,10 @@ export default function JobRadarFeedPage() {
   const cvKeywords = useMemo(() => uniq(cvSkills).slice(0, CV_SKILLS_CAP), [cvSkills]);
 
   const geoPrefs = useMemo(() => buildGeoPreferences(alerts), [alerts]);
+  const hasActiveSearchCriteria = useMemo(
+    () => Boolean(normalizeSearchText(q) || countryFilter || contractFilter || workModeFilter),
+    [q, countryFilter, contractFilter, workModeFilter]
+  );
 
   function mergeUniqueById(prev: JobRow[], next: JobRow[]) {
     const map = new Map<string, JobRow>();
@@ -711,6 +819,14 @@ export default function JobRadarFeedPage() {
     for (const j of next) map.set(j.id, j);
     return Array.from(map.values());
   }
+
+  const jobMatchesVisibleFilters = useCallback(
+    (job: JobRow) =>
+      jobMatchesCountryFilter(job, countryFilter) &&
+      jobMatchesContractFilter(job, contractFilter) &&
+      jobMatchesWorkModeFilter(job, workModeFilter),
+    [countryFilter, contractFilter, workModeFilter]
+  );
 
   const fetchJobsRange = useCallback(async (from: number, to: number) => {
     const { data, error } = await supabase
@@ -730,7 +846,7 @@ export default function JobRadarFeedPage() {
   }, []);
 
   const fetchJobsSearch = useCallback(async (rawQuery: string) => {
-    const countryCode = resolveCountrySearchQuery(rawQuery);
+    const countryCode = countryFilter && countryFilter !== "REMOTE" ? countryFilter : resolveCountrySearchQuery(rawQuery);
     let query = supabase
       .from("jobs")
       .select(JOB_SELECT_FIELDS)
@@ -741,7 +857,9 @@ export default function JobRadarFeedPage() {
 
     if (countryCode) {
       query = query.eq("country", countryCode);
-    } else {
+    }
+
+    if (!countryCode && normalizeSearchText(rawQuery).length >= TEXT_SEARCH_MIN_LENGTH) {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
       if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
       const serverTerms = buildServerSearchTerms(rawQuery);
@@ -771,7 +889,10 @@ export default function JobRadarFeedPage() {
         results.push(...((data ?? []) as JobRow[]));
       }
 
-      return mergeUniqueById([], results).filter((job) => jobMatchesSearchQuery(job, rawQuery)).slice(0, SEARCH_LIMIT);
+      return mergeUniqueById([], results)
+        .filter((job) => jobMatchesSearchQuery(job, rawQuery))
+        .filter(jobMatchesVisibleFilters)
+        .slice(0, SEARCH_LIMIT);
     }
 
     const { data, error } = await query
@@ -780,8 +901,8 @@ export default function JobRadarFeedPage() {
       .order("created_at", { ascending: false, nullsFirst: false })
       .limit(SEARCH_LIMIT);
     if (error) throw error;
-    return (data ?? []) as JobRow[];
-  }, []);
+    return ((data ?? []) as JobRow[]).filter((job) => jobMatchesSearchQuery(job, rawQuery)).filter(jobMatchesVisibleFilters);
+  }, [countryFilter, jobMatchesVisibleFilters]);
 
   const fetchProfileContext = useCallback(async () => {
     try {
@@ -875,7 +996,7 @@ export default function JobRadarFeedPage() {
       const [{ data: aData, error: aErr }, cvContext, nextProfileContext, fetchedJobs] = await Promise.all([
         supabase
           .from("alerts")
-          .select("id, user_id, name, keywords, country, countries, frequency, channels, is_active, created_at")
+          .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
           .eq("user_id", userId)
           .eq("is_active", true)
           .order("created_at", { ascending: false }),
@@ -939,15 +1060,21 @@ export default function JobRadarFeedPage() {
 
     const rawQuery = q;
     const normalizedQuery = normalizeSearchText(rawQuery);
-    if (!normalizedQuery && !lastServerSearchQueryRef.current) return;
+    const criteriaKey = JSON.stringify({
+      q: normalizedQuery,
+      country: countryFilter,
+      contract: contractFilter,
+      workMode: workModeFilter,
+    });
+    if (!normalizedQuery && !hasActiveSearchCriteria && !lastServerSearchQueryRef.current) return;
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setErrorMsg(null);
-      setSearchBusy(Boolean(normalizedQuery));
+      setSearchBusy(Boolean(normalizedQuery || countryFilter || contractFilter || workModeFilter));
 
       try {
-        const nextJobs = normalizedQuery
+        const nextJobs = normalizedQuery || countryFilter || contractFilter || workModeFilter
           ? await fetchJobsSearch(rawQuery)
           : await fetchJobsRange(0, PAGE_SIZE - 1);
 
@@ -955,8 +1082,8 @@ export default function JobRadarFeedPage() {
 
         setJobs(nextJobs);
         setPageFrom(nextJobs.length);
-        setHasMore(normalizedQuery ? false : nextJobs.length === PAGE_SIZE);
-        lastServerSearchQueryRef.current = normalizedQuery;
+        setHasMore(normalizedQuery || countryFilter || contractFilter || workModeFilter ? false : nextJobs.length === PAGE_SIZE);
+        lastServerSearchQueryRef.current = criteriaKey;
       } catch (e: unknown) {
         if (cancelled) return;
         setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
@@ -970,7 +1097,18 @@ export default function JobRadarFeedPage() {
       window.clearTimeout(timer);
       setSearchBusy(false);
     };
-  }, [q, userId, loading, busy, fetchJobsRange, fetchJobsSearch]);
+  }, [
+    q,
+    userId,
+    loading,
+    busy,
+    countryFilter,
+    contractFilter,
+    workModeFilter,
+    hasActiveSearchCriteria,
+    fetchJobsRange,
+    fetchJobsSearch,
+  ]);
 
   useEffect(() => {
     if (matchMode !== "strict" || !onlyVeryRelevant) {
@@ -1047,6 +1185,126 @@ export default function JobRadarFeedPage() {
     });
   }
 
+  function buildCurrentAlertCriteria() {
+    const searchQuery = collapseSpaces(q);
+    const countries = countryFilter ? [countryFilter] : [];
+    const employmentTypes = contractFilter ? [contractFilter] : [];
+    const workModes = workModeFilter ? [workModeFilter] : [];
+
+    return {
+      searchQuery,
+      keywords: buildSearchAlertKeywords(searchQuery),
+      countries,
+      employmentTypes,
+      workModes,
+    };
+  }
+
+  function buildSearchAlertName() {
+    const parts = [
+      collapseSpaces(q),
+      selectedOptionLabel(COUNTRY_FILTER_OPTIONS, countryFilter),
+      selectedOptionLabel(CONTRACT_FILTER_OPTIONS, contractFilter),
+      selectedOptionLabel(WORK_MODE_FILTER_OPTIONS, workModeFilter),
+    ].filter(Boolean);
+    return `Alerte ${parts.join(" · ")}`.slice(0, 110);
+  }
+
+  function isSameSearchAlert(alert: AlertRow, criteria: ReturnType<typeof buildCurrentAlertCriteria>) {
+    const alertCountries = (alert.countries && alert.countries.length ? alert.countries : alert.country ? [alert.country] : []) as string[];
+    return normalizeSearchText(alert.search_query ?? "") === normalizeSearchText(criteria.searchQuery) &&
+      arraysEqualIgnoreOrder(alertCountries, criteria.countries) &&
+      arraysEqualIgnoreOrder(alert.employment_types ?? [], criteria.employmentTypes) &&
+      arraysEqualIgnoreOrder(alert.work_modes ?? [], criteria.workModes);
+  }
+
+  async function saveCurrentSearchAsAlert() {
+    if (!userId) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    if (!allowPremium) {
+      pushToast({ kind: "error", title: "Accès requis", message: STANDARD_GATE_MESSAGE });
+      return;
+    }
+    if (!hasActiveSearchCriteria || alertSaveBusy) {
+      const message = "Ajoute une recherche, un pays, un contrat ou un mode de travail avant de créer une alerte.";
+      setAlertNotice({ kind: "error", title: "Aucun critère défini", message });
+      pushToast({ kind: "error", title: "Aucun critère défini", message });
+      return;
+    }
+
+    setAlertSaveBusy(true);
+    setAlertNotice(null);
+    setErrorMsg(null);
+
+    try {
+      const criteria = buildCurrentAlertCriteria();
+      const { data: activeAlerts, error: activeErr } = await supabase
+        .from("alerts")
+        .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .returns<AlertRow[]>();
+
+      if (activeErr) throw activeErr;
+
+      const activeRows = activeAlerts ?? [];
+      if (activeRows.some((alert) => isSameSearchAlert(alert, criteria))) {
+        const message = "Cette alerte existe déjà.";
+        setAlertNotice({ kind: "info", title: "Alerte déjà active", message });
+        pushToast({ kind: "info", title: "Alerte déjà active", message });
+        return;
+      }
+
+      if (activeRows.length >= 3) {
+        const existing = activeRows.slice(0, 3).map((alert) => alert.name).filter(Boolean).join(", ");
+        const message = `Tu as déjà 3 alertes actives. Pour ajouter celle-ci, désactive une alerte existante.${existing ? ` Alertes actives : ${existing}.` : ""}`;
+        setAlertNotice({ kind: "info", title: "Limite atteinte", message });
+        pushToast({ kind: "info", title: "Limite atteinte", message: "Désactive une alerte existante pour ajouter celle-ci." });
+        return;
+      }
+
+      const countriesToSave = criteria.countries.length ? criteria.countries : null;
+      const legacyCountry = countriesToSave?.[0] ?? null;
+      const { data: created, error: insertErr } = await supabase
+        .from("alerts")
+        .insert({
+          user_id: userId,
+          name: buildSearchAlertName(),
+          search_query: criteria.searchQuery || null,
+          keywords: criteria.keywords,
+          country: legacyCountry,
+          countries: countriesToSave,
+          employment_types: criteria.employmentTypes,
+          work_modes: criteria.workModes,
+          frequency: "daily",
+          channels: ["email"],
+          is_active: true,
+        })
+        .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+        .single<AlertRow>();
+
+      if (insertErr) throw insertErr;
+
+      if (created) {
+        setAlerts((prev) => [created, ...prev.filter((alert) => alert.id !== created.id)]);
+      }
+
+      const message = "Tu recevras les nouvelles offres correspondant à cette recherche par email.";
+      setAlertNotice({ kind: "success", title: "Alerte créée", message });
+      pushToast({ kind: "success", title: "Alerte créée", message });
+    } catch (e: unknown) {
+      const message = getErrorMessage(e) ?? "Erreur inconnue";
+      setErrorMsg(message);
+      setAlertNotice({ kind: "error", title: "Création impossible", message });
+      pushToast({ kind: "error", title: "Création impossible", message });
+    } finally {
+      setAlertSaveBusy(false);
+    }
+  }
+
   const matches = useMemo(() => {
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCv = uniq(cvKeywords.map((k) => String(k ?? "").trim()).filter(Boolean));
@@ -1057,6 +1315,7 @@ export default function JobRadarFeedPage() {
       .map((job): MatchRow | null => {
         const hay = buildJobHay(job);
         if (!jobMatchesSearchQuery(job, q)) return null;
+        if (!jobMatchesVisibleFilters(job)) return null;
 
         const scored = computeJobMatchScore({
           job,
@@ -1144,6 +1403,7 @@ export default function JobRadarFeedPage() {
     geoPrefs,
     appStatusByJobId,
     dismissedJobIds,
+    jobMatchesVisibleFilters,
     STRICT_MIN_PERCENT,
     TOP_MATCH_MIN,
     TOP_MATCH_DQ_MIN,
@@ -1184,10 +1444,18 @@ export default function JobRadarFeedPage() {
     normalizedDesiredRole === "data analyst" &&
     hasValidShadowBuckets;
 
-  const visibleFeedBuckets =
+  const rawVisibleFeedBuckets =
     shouldUseShadowVisibleFeed && shadowFeed?.buckets
       ? shadowFeed.buckets
       : localFeedBuckets;
+  const visibleFeedBuckets = useMemo(
+    () => ({
+      top_match: rawVisibleFeedBuckets.top_match.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
+      for_you: rawVisibleFeedBuckets.for_you.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
+      explore: rawVisibleFeedBuckets.explore.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
+    }),
+    [rawVisibleFeedBuckets, jobMatchesVisibleFilters]
+  );
 
   const forYouRows = visibleFeedBuckets.for_you.filter((row: FeedDisplayRow) => {
     if (!onlyVeryRelevant) return true;
@@ -1403,6 +1671,68 @@ export default function JobRadarFeedPage() {
             </button>
           </div>
 
+          <div className="jr-filters" aria-label="Filtres de recherche">
+            <label className="jr-filterSelect">
+              <span>Pays</span>
+              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
+                {COUNTRY_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="jr-filterSelect">
+              <span>Contrat</span>
+              <select value={contractFilter} onChange={(e) => setContractFilter(e.target.value)}>
+                {CONTRACT_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="jr-filterSelect">
+              <span>Mode</span>
+              <select value={workModeFilter} onChange={(e) => setWorkModeFilter(e.target.value)}>
+                {WORK_MODE_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value || "all"} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {hasActiveSearchCriteria && (
+            <div className="jr-alertActionRow">
+              <button
+                className="jrBtn jrBtnPrimary"
+                type="button"
+                onClick={saveCurrentSearchAsAlert}
+                disabled={alertSaveBusy || busy}
+              >
+                {alertSaveBusy ? "Création…" : "Recevoir ces offres par email"}
+              </button>
+              <button
+                className="jrBtn jrBtnGhost"
+                type="button"
+                onClick={() => {
+                  setQ("");
+                  setCountryFilter("");
+                  setContractFilter("");
+                  setWorkModeFilter("");
+                  setAlertNotice(null);
+                }}
+                disabled={alertSaveBusy || busy}
+              >
+                Effacer les critères
+              </button>
+            </div>
+          )}
+
           <div className="jr-subline">
             {getJobRadarShadowSubline(shadowMeta, matchMode)}
           </div>
@@ -1477,6 +1807,26 @@ export default function JobRadarFeedPage() {
             <button className="jrBtn jrBtnGhost" onClick={load} type="button">
               Recharger les offres
             </button>
+          </div>
+        )}
+
+        {alertNotice && (
+          <div style={{ marginTop: 12 }}>
+            <NextStepCard
+              title={alertNotice.title}
+              message={alertNotice.message}
+              primaryAction={
+                alertNotice.title === "Limite atteinte"
+                  ? { label: "Gérer mes alertes", to: "/jobradar/alerts" }
+                  : { label: "OK", onClick: () => setAlertNotice(null) }
+              }
+              secondaryAction={
+                alertNotice.title === "Limite atteinte"
+                  ? { label: "Continuer la recherche", onClick: () => setAlertNotice(null) }
+                  : undefined
+              }
+              tone={alertNotice.kind === "success" ? "success" : alertNotice.kind === "error" ? "neutral" : "info"}
+            />
           </div>
         )}
 
