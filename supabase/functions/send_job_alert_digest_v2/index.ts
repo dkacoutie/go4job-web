@@ -415,7 +415,7 @@ serve(async (req) => {
         .maybeSingle<NotificationPrefsRow>(),
       supabase
         .from("alerts")
-        .select("id, name, keywords, country, countries, frequency, channels, is_active")
+        .select("id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active")
         .eq("user_id", userId)
         .eq("is_active", true)
         .returns<AlertRow[]>(),

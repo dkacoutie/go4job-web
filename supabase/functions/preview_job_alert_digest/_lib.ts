@@ -24,6 +24,9 @@ export type AlertRow = {
   keywords?: string[] | null;
   country?: string | null;
   countries?: string[] | null;
+  search_query?: string | null;
+  employment_types?: string[] | null;
+  work_modes?: string[] | null;
   frequency?: string | null;
   channels?: string[] | null;
   is_active?: boolean | null;
@@ -305,19 +308,22 @@ export function buildCriteria(profile: ProfileRow | null, alerts: AlertRow[]): C
   const activeAlerts = alerts.filter((alert) => alert.is_active !== false);
   const alertKeywords = activeAlerts.flatMap((alert) => [
     ...cleanArray(alert.keywords),
+    ...extractKeywordsFromName(alert.search_query ?? ""),
     ...extractKeywordsFromName(alert.name ?? ""),
   ]);
   const alertCountries = activeAlerts.flatMap((alert) => [
     ...cleanArray(alert.countries),
     cleanString(alert.country),
   ]);
+  const alertEmploymentTypes = activeAlerts.flatMap((alert) => cleanArray(alert.employment_types));
+  const alertWorkModes = activeAlerts.flatMap((alert) => cleanArray(alert.work_modes));
 
   return {
     desiredRole: onboarding.desiredRole,
     keywords: uniq([...onboarding.keywords, ...alertKeywords]).slice(0, 40),
     countries: uniq([...onboarding.countryCodes, ...alertCountries].filter(Boolean)).slice(0, 20),
-    employmentTypes: onboarding.employmentTypes,
-    workModes: onboarding.workModes,
+    employmentTypes: uniq([...onboarding.employmentTypes, ...alertEmploymentTypes]).slice(0, 20),
+    workModes: uniq([...onboarding.workModes, ...alertWorkModes]).slice(0, 10),
     sectors: onboarding.sectors,
     experienceLevel: onboarding.experienceLevel,
     activeAlerts,
