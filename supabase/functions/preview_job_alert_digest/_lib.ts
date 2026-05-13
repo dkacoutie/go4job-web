@@ -668,11 +668,11 @@ export function buildSubject(hero: SelectedJob | null, count: number): string {
   if (hero?.company_name && hero.title) {
     return `${hero.company_name} recrute ${hero.title} + ${count} offres pour toi`;
   }
-  return `${count} offres sÃ©lectionnÃ©es pour toi sur JobRadar`;
+  return `${count} offres sélectionnées pour toi sur JobRadar`;
 }
 
 export function buildPreheader(count: number, minJobsToSend: number): string {
-  return `${count} offres proches de ton profil. Un envoi rÃ©el exigerait au moins ${minJobsToSend} offres utiles.`;
+  return `${count} offres proches de ton profil. Un envoi réel exigerait au moins ${minJobsToSend} offres utiles.`;
 }
 
 export function reasonForCount(params: {
@@ -732,7 +732,7 @@ function blockByRole(jobs: SelectedJob[], criteria: Criteria): DigestBlock | nul
   return {
     key: "role",
     title: `Postes ${label}`,
-    subtitle: "Offres regroupÃ©es par poste ou famille mÃ©tier.",
+    subtitle: "Offres regroupées par poste ou famille métier.",
     count: items.length,
     sample_jobs: blockSamples(items),
     cta_label: "Voir ces offres",
@@ -748,7 +748,7 @@ function blockByCountry(jobs: SelectedJob[]): DigestBlock | null {
   return {
     key: "country",
     title: `Offres en ${country}`,
-    subtitle: "SÃ©lection gÃ©ographique issue des critÃ¨res disponibles.",
+    subtitle: "Sélection géographique issue des critères disponibles.",
     count: items.length,
     sample_jobs: blockSamples(items),
     cta_label: "Voir ces offres",
@@ -778,7 +778,7 @@ function blockByContract(jobs: SelectedJob[]): DigestBlock | null {
   return {
     key: "contract",
     title: `Contrats ${contract}`,
-    subtitle: "Offres regroupÃ©es par type de contrat.",
+    subtitle: "Offres regroupées par type de contrat.",
     count: items.length,
     sample_jobs: blockSamples(items),
     cta_label: "Voir ces offres",
@@ -797,7 +797,7 @@ function blockByDomain(jobs: SelectedJob[]): DigestBlock | null {
   return {
     key: "domain",
     title: `Domaine ${domain}`,
-    subtitle: "Regroupement approximatif par signaux mÃ©tier.",
+    subtitle: "Regroupement approximatif par signaux métier.",
     count: items.length,
     sample_jobs: blockSamples(items),
     cta_label: "Voir ces offres",
