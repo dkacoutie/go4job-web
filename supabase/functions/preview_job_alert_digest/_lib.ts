@@ -99,8 +99,7 @@ type RejectionReason =
   | "dismissed"
   | "old"
   | "poor_data"
-  | "below_preview_threshold"
-  | "other";
+  | "below_preview_threshold";
 
 type TopRejectedJob = {
   id: string;
@@ -640,7 +639,7 @@ export function selectRelevantJobs(params: {
       id: job.id,
       title: job.title,
       company_name: job.company_name,
-    }, "other", {
+    }, "below_preview_threshold", {
       score: job.score,
       reasons: job.score_reasons,
     });
@@ -677,8 +676,9 @@ export function buildSubject(hero: SelectedJob | null, count: number): string {
   return `${count} offres sélectionnées pour toi sur JobRadar`;
 }
 
-export function buildPreheader(count: number, minJobsToSend: number): string {
-  return `${count} offres proches de ton profil. Un envoi réel exigerait au moins ${minJobsToSend} offres utiles.`;
+export function buildPreheader(count: number, _minJobsToSend: number): string {
+  const offerLabel = count === 1 ? "offre proche" : "offres proches";
+  return `${count} ${offerLabel} de ton profil, selon tes critères JobRadar.`;
 }
 
 export function reasonForCount(params: {
