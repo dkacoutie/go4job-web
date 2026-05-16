@@ -10,10 +10,11 @@ export type MarketingEmailVariables = {
   app_url?: string | null;
   pricing_url?: string | null;
   feed_url?: string | null;
+  alert_url?: string | null;
 };
 
 export type RenderedMarketingEmail = {
-  email_key: MarketingEmailKey;
+  email_key: string;
   template_version: string;
   subject: string;
   html: string;
@@ -21,7 +22,7 @@ export type RenderedMarketingEmail = {
 };
 
 type TemplateDefinition = {
-  email_key: MarketingEmailKey;
+  email_key: string;
   template_version: string;
   subject: string;
   render: (variables: NormalizedMarketingEmailVariables) => {
@@ -37,10 +38,16 @@ type NormalizedMarketingEmailVariables = {
   app_url: string;
   pricing_url: string;
   feed_url: string;
+  alert_url: string;
 };
 
 const TEMPLATE_VERSION = "2026-05-02.v1";
 const DEFAULT_APP_URL = "https://jobradar.go4jobapp.com";
+const SENDABLE_MARKETING_EMAIL_KEYS = new Set<string>([
+  "payment_attempt_no_success_email_1",
+  "interested_no_payment_attempt_email_1",
+  "buyer_feedback_email_1",
+]);
 
 function cleanText(value: string | null | undefined) {
   return (value ?? "").replace(/\s+/g, " ").trim();
@@ -74,6 +81,7 @@ function normalizeVariables(input: MarketingEmailVariables): NormalizedMarketing
     app_url: appUrl,
     pricing_url: cleanText(input.pricing_url) || `${appUrl}/pricing`,
     feed_url: cleanText(input.feed_url) || `${appUrl}/jobradar/feed`,
+    alert_url: cleanText(input.alert_url) || `${appUrl}/jobradar/alerts`,
   };
 }
 
@@ -361,7 +369,51 @@ Se désinscrire : ${variables.unsubscribe_url}`;
   return { html, text };
 }
 
-const TEMPLATES: Record<MarketingEmailKey, TemplateDefinition> = {
+function createAlertEmail(variables: NormalizedMarketingEmailVariables) {
+  const html = renderLayout({
+    preheader: "Crée ta première alerte gratuite pour laisser JobRadar surveiller les offres utiles.",
+    title: "Il manque une chose pour que JobRadar travaille pour toi",
+    introHtml: `
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">Bonjour,</p>
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
+        JobRadar surveille chaque jour de nouvelles offres d'emploi. Pour savoir lesquelles sont faites pour toi,
+        il suffit de lui dire ce que tu cherches.
+      </p>`,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
+        En 2 minutes, crée ton alerte : poste recherché, pays, type de contrat et mode de travail.
+      </p>
+      <p style="margin:0;font-size:15px;line-height:1.7;color:#374151;">
+        Ensuite, JobRadar pourra faire le tri pour toi et te montrer les offres les plus proches de ta recherche.
+      </p>`,
+    primaryHref: variables.alert_url,
+    primaryLabel: "Créer mon alerte emploi",
+    unsubscribeUrl: variables.unsubscribe_url,
+    brandSubtitle: "par Go4Job",
+    headerLogoUrl: "https://jobradar.go4jobapp.com/go4job-logo-email.png",
+    hideUnsubscribeUrlInHtml: true,
+  });
+
+  const text = `Bonjour,
+
+JobRadar surveille chaque jour de nouvelles offres d'emploi. Pour savoir lesquelles sont faites pour toi, il suffit de lui dire ce que tu cherches.
+
+En 2 minutes, crée ton alerte : poste recherché, pays, type de contrat et mode de travail.
+
+Ensuite, JobRadar pourra faire le tri pour toi et te montrer les offres les plus proches de ta recherche.
+
+Créer mon alerte emploi
+${variables.alert_url}
+
+L'équipe JobRadar
+
+Se désabonner
+${variables.unsubscribe_url}`;
+
+  return { html, text };
+}
+
+const TEMPLATES: Record<string, TemplateDefinition> = {
   payment_attempt_no_success_email_1: {
     email_key: "payment_attempt_no_success_email_1",
     template_version: TEMPLATE_VERSION,
@@ -380,21 +432,27 @@ const TEMPLATES: Record<MarketingEmailKey, TemplateDefinition> = {
     subject: "Petit retour sur ton expérience JobRadar ?",
     render: buyerFeedback,
   },
+  create_alert_email_1: {
+    email_key: "create_alert_email_1",
+    template_version: TEMPLATE_VERSION,
+    subject: "Il manque une chose pour que JobRadar travaille pour toi",
+    render: createAlertEmail,
+  },
 };
 
 export function isMarketingEmailKey(value: string): value is MarketingEmailKey {
-  return Object.prototype.hasOwnProperty.call(TEMPLATES, value);
+  return SENDABLE_MARKETING_EMAIL_KEYS.has(value);
 }
 
-export function listMarketingEmailKeys(): MarketingEmailKey[] {
-  return Object.keys(TEMPLATES) as MarketingEmailKey[];
+export function listMarketingEmailKeys(): string[] {
+  return Object.keys(TEMPLATES);
 }
 
 export function renderMarketingEmail(
   emailKey: string,
   variables: MarketingEmailVariables = {},
 ): RenderedMarketingEmail {
-  if (!isMarketingEmailKey(emailKey)) {
+  if (!Object.prototype.hasOwnProperty.call(TEMPLATES, emailKey)) {
     throw new Error(`unknown_email_key:${emailKey}`);
   }
 

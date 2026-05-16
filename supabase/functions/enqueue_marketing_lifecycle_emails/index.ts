@@ -20,12 +20,23 @@ type Candidate = {
   email: string;
   email_normalized: string | null;
   registered_at: string | null;
+  last_sign_in_at?: string | null;
   poste_recherche: string | null;
   total_payment_attempts: number | null;
   last_payment_attempt_at: string | null;
   payment_statuses: string[] | null;
   segment: string | null;
   suggested_email_key: string | null;
+};
+
+type AuthUserCandidate = {
+  id?: string;
+  email?: string;
+  created_at?: string;
+  confirmed_at?: string | null;
+  email_confirmed_at?: string | null;
+  last_sign_in_at?: string | null;
+  deleted_at?: string | null;
 };
 
 type QueueRow = {
@@ -51,11 +62,13 @@ const CANDIDATE_BATCH_SIZE = 100;
 const ALLOWED_SEGMENTS = new Set([
   "payment_attempt_no_success",
   "interested_no_payment_attempt",
+  "non_paying_without_alert",
 ]);
 
 const ALLOWED_TEMPLATE_KEYS = new Set([
   "payment_attempt_no_success_email_1",
   "interested_no_payment_attempt_email_1",
+  "create_alert_email_1",
 ]);
 
 const corsHeaders = {
@@ -172,6 +185,234 @@ async function fetchDuplicateEmails(
   );
 }
 
+function isExcludedMarketingEmail(emailNormalized: string) {
+  return emailNormalized.endsWith("@example.com") ||
+    emailNormalized.endsWith("@go4jobapp.com") ||
+    [
+      "contact.jobradar@gmail.com",
+      "infos.go4job@gmail.com",
+      "d.kacoutie@gmail.com",
+      "kacoutiedieudonne@gmail.com",
+    ].includes(emailNormalized);
+}
+
+function isConfirmedUser(user: AuthUserCandidate) {
+  return Boolean(user.email_confirmed_at || user.confirmed_at);
+}
+
+function extractDesiredRole(profile: Record<string, unknown> | undefined) {
+  const onboarding = profile?.jobradar_onboarding;
+  if (!onboarding || typeof onboarding !== "object" || Array.isArray(onboarding)) {
+    return null;
+  }
+
+  const profileBlock = (onboarding as Record<string, unknown>).profile;
+  if (!profileBlock || typeof profileBlock !== "object" || Array.isArray(profileBlock)) {
+    return null;
+  }
+
+  const desiredRole = (profileBlock as Record<string, unknown>).desiredRole;
+  return typeof desiredRole === "string" && desiredRole.trim()
+    ? desiredRole.trim()
+    : null;
+}
+
+async function fetchCreateAlertCandidates(
+  supabase: SupabaseClient,
+  limit: number,
+  sequenceKey: string,
+  stepKey: string,
+) {
+  const queueRows: QueueRow[] = [];
+  const seenInRequest = new Set<string>();
+  let candidatesChecked = 0;
+  let skippedSuppressedCount = 0;
+  let skippedDuplicateCount = 0;
+  let skippedInvalidEmailCount = 0;
+  let skippedUnconfirmedCount = 0;
+  let skippedDeletedCount = 0;
+  let skippedExcludedEmailCount = 0;
+  let skippedActivePassCount = 0;
+  let skippedActiveAlertCount = 0;
+  let page = 1;
+
+  while (queueRows.length < limit) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: CANDIDATE_BATCH_SIZE,
+    });
+
+    if (error) throw new Error(`auth_users_lookup_failed: ${error.message}`);
+
+    const users = ((data?.users ?? []) as AuthUserCandidate[])
+      .filter((user) => Boolean(user.id));
+
+    if (users.length === 0) break;
+
+    candidatesChecked += users.length;
+
+    const contactableUsers = users.filter((user) => {
+      const emailNormalized = normalizeEmail(user.email ?? "");
+      if (!user.email || !emailNormalized) {
+        skippedInvalidEmailCount += 1;
+        return false;
+      }
+      if (user.deleted_at) {
+        skippedDeletedCount += 1;
+        return false;
+      }
+      if (!isConfirmedUser(user)) {
+        skippedUnconfirmedCount += 1;
+        return false;
+      }
+      if (isExcludedMarketingEmail(emailNormalized)) {
+        skippedExcludedEmailCount += 1;
+        return false;
+      }
+      if (seenInRequest.has(emailNormalized)) {
+        skippedDuplicateCount += 1;
+        return false;
+      }
+      return true;
+    });
+
+    const userIds = contactableUsers.map((user) => user.id as string);
+    const emailNormalized = contactableUsers.map((user) => normalizeEmail(user.email ?? ""));
+
+    const [
+      suppressedEmails,
+      duplicateEmails,
+      profilesRes,
+      activeAlertsRes,
+      activeSubscriptionsRes,
+      paidPaymentsRes,
+    ] = await Promise.all([
+      fetchSuppressedEmails(supabase, emailNormalized),
+      fetchDuplicateEmails(supabase, emailNormalized, sequenceKey, stepKey),
+      userIds.length
+        ? supabase
+          .from("profiles")
+          .select("user_id, created_at, jobradar_onboarding")
+          .in("user_id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? supabase
+          .from("alerts")
+          .select("user_id")
+          .eq("is_active", true)
+          .in("user_id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? supabase
+          .from("billing_subscriptions")
+          .select("user_id")
+          .eq("status", "active")
+          .not("activated_at", "is", null)
+          .in("user_id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? supabase
+          .from("billing_payments")
+          .select("user_id")
+          .eq("status", "paid")
+          .not("paid_at", "is", null)
+          .in("user_id", userIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (profilesRes.error) throw new Error(`profiles_lookup_failed: ${profilesRes.error.message}`);
+    if (activeAlertsRes.error) throw new Error(`active_alerts_lookup_failed: ${activeAlertsRes.error.message}`);
+    if (activeSubscriptionsRes.error) {
+      throw new Error(`active_subscriptions_lookup_failed: ${activeSubscriptionsRes.error.message}`);
+    }
+    if (paidPaymentsRes.error) throw new Error(`paid_payments_lookup_failed: ${paidPaymentsRes.error.message}`);
+
+    const profilesByUserId = new Map(
+      ((profilesRes.data ?? []) as Record<string, unknown>[])
+        .map((profile) => [String(profile.user_id), profile]),
+    );
+    const usersWithActiveAlerts = new Set(
+      ((activeAlertsRes.data ?? []) as Array<{ user_id?: string | null }>)
+        .map((row) => row.user_id)
+        .filter(Boolean),
+    );
+    const usersWithActivePass = new Set([
+      ...((activeSubscriptionsRes.data ?? []) as Array<{ user_id?: string | null }>)
+        .map((row) => row.user_id)
+        .filter(Boolean),
+      ...((paidPaymentsRes.data ?? []) as Array<{ user_id?: string | null }>)
+        .map((row) => row.user_id)
+        .filter(Boolean),
+    ]);
+
+    for (const user of contactableUsers) {
+      if (queueRows.length >= limit) break;
+
+      const userId = user.id as string;
+      const normalizedEmail = normalizeEmail(user.email ?? "");
+
+      if (suppressedEmails.has(normalizedEmail)) {
+        skippedSuppressedCount += 1;
+        continue;
+      }
+      if (duplicateEmails.has(normalizedEmail)) {
+        skippedDuplicateCount += 1;
+        continue;
+      }
+      if (usersWithActivePass.has(userId)) {
+        skippedActivePassCount += 1;
+        continue;
+      }
+      if (usersWithActiveAlerts.has(userId)) {
+        skippedActiveAlertCount += 1;
+        continue;
+      }
+
+      const profile = profilesByUserId.get(userId);
+      seenInRequest.add(normalizedEmail);
+      queueRows.push({
+        user_id: userId,
+        email: normalizedEmail,
+        sequence_key: sequenceKey,
+        step_key: stepKey,
+        template_key: "create_alert_email_1",
+        segment_key: "non_paying_without_alert",
+        status: "queued",
+        priority: 100,
+        metadata: {
+          source: "enqueue_marketing_lifecycle_emails",
+          dry_run_only_segment: true,
+          candidate_email: user.email,
+          email_normalized: normalizedEmail,
+          registered_at: String(profile?.created_at ?? user.created_at ?? ""),
+          last_sign_in_at: user.last_sign_in_at ?? null,
+          poste_recherche: extractDesiredRole(profile),
+          suggested_email_key: "create_alert_email_1",
+          alert_url: "https://jobradar.go4jobapp.com/jobradar/alerts",
+        },
+      });
+    }
+
+    if (users.length < CANDIDATE_BATCH_SIZE) break;
+    page += 1;
+  }
+
+  return {
+    queueRows,
+    candidatesChecked,
+    skippedSuppressedCount,
+    skippedDuplicateCount,
+    skippedInvalidEmailCount,
+    extraCounts: {
+      skipped_unconfirmed_count: skippedUnconfirmedCount,
+      skipped_deleted_count: skippedDeletedCount,
+      skipped_excluded_email_count: skippedExcludedEmailCount,
+      skipped_active_pass_count: skippedActivePassCount,
+      skipped_active_alert_count: skippedActiveAlertCount,
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -231,6 +472,63 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
+
+  const isCreateAlertDryRunSegment =
+    segmentKey === "non_paying_without_alert" ||
+    templateKey === "create_alert_email_1";
+
+  if (isCreateAlertDryRunSegment) {
+    if (segmentKey !== "non_paying_without_alert" || templateKey !== "create_alert_email_1") {
+      return json(400, {
+        ok: false,
+        error: "segment_template_mismatch",
+        message: "non_paying_without_alert must use create_alert_email_1.",
+      });
+    }
+
+    if (!dryRun) {
+      return json(400, {
+        ok: false,
+        dry_run: dryRun,
+        error: "dry_run_only_segment",
+        message: "non_paying_without_alert is preview/dry-run only and cannot enqueue emails.",
+      });
+    }
+
+    try {
+      const result = await fetchCreateAlertCandidates(
+        supabase,
+        limit,
+        sequenceKey,
+        stepKey,
+      );
+
+      return json(200, {
+        ok: true,
+        dry_run: true,
+        segment_key: "non_paying_without_alert",
+        template_key: "create_alert_email_1",
+        sequence_key: sequenceKey,
+        step_key: stepKey,
+        would_enqueue_count: result.queueRows.length,
+        enqueued_count: 0,
+        skipped_suppressed_count: result.skippedSuppressedCount,
+        skipped_duplicate_count: result.skippedDuplicateCount,
+        skipped_invalid_email_count: result.skippedInvalidEmailCount,
+        candidates_checked: result.candidatesChecked,
+        ...result.extraCounts,
+        sample: sampleRows(result.queueRows),
+        message: "Dry-run only. No marketing emails were queued or sent.",
+      });
+    } catch (error) {
+      return json(500, {
+        ok: false,
+        dry_run: true,
+        error: "create_alert_candidates_failed",
+        message: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
 
   try {
     let skippedSuppressedCount = 0;

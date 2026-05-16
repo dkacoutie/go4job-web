@@ -98,6 +98,7 @@ serve(async (req) => {
       app_url: body.app_url ?? null,
       pricing_url: body.pricing_url ?? null,
       feed_url: body.feed_url ?? null,
+      alert_url: body.alert_url ?? null,
     });
 
     return json(200, {
