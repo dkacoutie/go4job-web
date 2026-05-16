@@ -347,6 +347,7 @@ export default function AlertsPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const countActive = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
+  const freeAlertLimitReached = !allowPremium && countActive >= FREE_ACTIVE_ALERT_LIMIT;
 
   const { pushToast } = useToast();
 
@@ -719,11 +720,36 @@ export default function AlertsPage() {
       {errorMsg && <div className="alerts-error">Erreur : {errorMsg}</div>}
 
       <>
-        {!allowPremium && countActive >= FREE_ACTIVE_ALERT_LIMIT ? (
-          <div className="alerts-error">{FREE_ALERT_LIMIT_MESSAGE}</div>
-        ) : null}
-
-        <section className="alerts-card">
+        {freeAlertLimitReached ? (
+          <section className="alerts-freeActiveCard">
+            <div className="alerts-freeActiveIcon" aria-hidden="true">
+              ✓
+            </div>
+            <div className="alerts-freeActiveBody">
+              <div className="alerts-freeActiveTitle">Ton alerte gratuite est active</div>
+              <p>
+                JobRadar surveille maintenant les nouvelles offres selon tes critères. Tu recevras un digest par email
+                dès qu’il y a des opportunités pour toi.
+              </p>
+              <p className="alerts-freeActiveSecondary">
+                Pour créer plusieurs alertes et accéder aux détails complets des offres, active un pass JobRadar.
+              </p>
+              <div className="alerts-freeActiveActions">
+                <button className="btn btnPrimary" type="button" onClick={() => navigate("/jobradar/feed")}>
+                  Voir les offres correspondantes
+                </button>
+                <button className="btn alerts-freeActivePassBtn" type="button" onClick={() => navigate("/pricing")}>
+                  Activer un pass
+                </button>
+              </div>
+              <div className="alerts-freeActiveNote">
+                Tu veux chercher dans un autre secteur ? Modifie ou supprime ton alerte existante pour en créer une
+                nouvelle.
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="alerts-card">
         <div className="alerts-cardHeader">
           <div>
             <div className="mutedTitle">CRÉER UNE ALERTE</div>
@@ -823,6 +849,7 @@ export default function AlertsPage() {
           </button>
         </div>
       </section>
+        )}
 
       {createdHint && (
         <div style={{ margin: "18px 0" }}>
@@ -830,7 +857,9 @@ export default function AlertsPage() {
             title="Prochaine étape recommandée"
             message="Découvre les offres correspondant à cette alerte ou améliore ton ciblage."
             primaryAction={{ label: "Voir les offres correspondantes", to: "/jobradar/feed" }}
-            secondaryAction={{ label: "Ajouter un autre pays", to: "/jobradar/alerts" }}
+            secondaryAction={
+              freeAlertLimitReached ? undefined : { label: "Ajouter un autre pays", to: "/jobradar/alerts" }
+            }
             tone="info"
           />
         </div>
