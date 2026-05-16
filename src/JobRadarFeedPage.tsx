@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { canonicalizeText } from "./lib/taxonomy";
 import {
   buildJobRadarShadowUi,
@@ -284,6 +284,26 @@ const WORK_MODE_FILTER_OPTIONS: FilterOption[] = [
   { value: "hybrid", label: "Hybride" },
   { value: "remote", label: "Remote" },
 ];
+
+function supportedOptionValue(options: FilterOption[], value: string) {
+  return options.some((option) => option.value === value) ? value : "";
+}
+
+function readFeedFiltersFromSearch(search: string) {
+  const params = new URLSearchParams(search);
+  const q = collapseSpaces(params.get("q") ?? "");
+  const country = supportedOptionValue(COUNTRY_FILTER_OPTIONS, (params.get("country") ?? "").trim().toUpperCase());
+  const contract = supportedOptionValue(
+    CONTRACT_FILTER_OPTIONS,
+    (params.get("employment_type") ?? params.get("employment_types") ?? params.get("contract") ?? "").trim().toLowerCase()
+  );
+  const workMode = supportedOptionValue(
+    WORK_MODE_FILTER_OPTIONS,
+    (params.get("work_mode") ?? params.get("work_modes") ?? "").trim().toLowerCase()
+  );
+
+  return { q, country, contract, workMode };
+}
 
 const CONTRACT_ALIASES: Record<string, string[]> = {
   cdi: ["cdi", "permanent", "long terme", "full time", "full-time"],
@@ -656,9 +676,11 @@ function jobMatchesSearchQuery(job: JobRow, rawQuery: string) {
 
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
   const userId = session?.user?.id ?? null;
+  const initialFeedFilters = readFeedFiltersFromSearch(location.search);
 
   const FEED_PREVIEW_LIMIT = 4;
   const FEED_GATE_MESSAGE =
@@ -691,10 +713,10 @@ export default function JobRadarFeedPage() {
   const [busy, setBusy] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [q, setQ] = useState("");
-  const [countryFilter, setCountryFilter] = useState("");
-  const [contractFilter, setContractFilter] = useState("");
-  const [workModeFilter, setWorkModeFilter] = useState("");
+  const [q, setQ] = useState(initialFeedFilters.q);
+  const [countryFilter, setCountryFilter] = useState(initialFeedFilters.country);
+  const [contractFilter, setContractFilter] = useState(initialFeedFilters.contract);
+  const [workModeFilter, setWorkModeFilter] = useState(initialFeedFilters.workMode);
   const [alertSaveBusy, setAlertSaveBusy] = useState(false);
   const [alertNotice, setAlertNotice] = useState<{
     kind: "success" | "info" | "error";
@@ -779,6 +801,14 @@ export default function JobRadarFeedPage() {
     setHasUserSelectedMode(false);
     setShadowFeed(null);
   }, [userId]);
+
+  useEffect(() => {
+    const next = readFeedFiltersFromSearch(location.search);
+    setQ(next.q);
+    setCountryFilter(next.country);
+    setContractFilter(next.contract);
+    setWorkModeFilter(next.workMode);
+  }, [location.search]);
 
   const KEYWORDS_MAX_UNIQ = 60;
   const KEYWORDS_CAP = 20;
@@ -1950,8 +1980,16 @@ export default function JobRadarFeedPage() {
           showNoSearchResultsState ? (
             <EmptyState
               title="Aucune offre trouvée pour cette recherche"
-              description="Essaie un autre mot-clé ou élargis tes critères."
-              primaryAction={{ label: "Effacer la recherche", onClick: () => setQ("") }}
+              description="Essaie un autre mot-clé, un autre pays, ou efface les critères pour revenir au feed général."
+              primaryAction={{
+                label: "Effacer les critères",
+                onClick: () => {
+                  setQ("");
+                  setCountryFilter("");
+                  setContractFilter("");
+                  setWorkModeFilter("");
+                },
+              }}
               secondaryAction={{ label: "Recharger les offres", onClick: () => load() }}
               tone="info"
             />

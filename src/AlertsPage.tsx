@@ -17,6 +17,9 @@ type AlertRow = {
   // legacy + nouveau
   country: string | null;
   countries?: string[] | null;
+  search_query?: string | null;
+  employment_types?: string[] | null;
+  work_modes?: string[] | null;
 
   frequency: "instant" | "daily" | "weekly" | string;
   channels: string[];
@@ -30,6 +33,28 @@ function uniqClean(arr: string[]) {
     .filter(Boolean)
     .map((s) => s.replace(/\s+/g, " "));
   return Array.from(new Set(out));
+}
+
+function buildAlertFeedUrl(alert?: AlertRow | null) {
+  const params = new URLSearchParams();
+  const query =
+    alert?.search_query?.trim() ||
+    alert?.name?.trim() ||
+    uniqClean(alert?.keywords ?? []).join(" ");
+  const country =
+    alert?.countries?.length === 1
+      ? alert.countries[0]
+      : alert?.country?.trim() || "";
+  const employmentType = alert?.employment_types?.find(Boolean);
+  const workMode = alert?.work_modes?.find(Boolean);
+
+  if (query) params.set("q", query);
+  if (country) params.set("country", country);
+  if (employmentType) params.set("employment_type", employmentType);
+  if (workMode) params.set("work_mode", workMode);
+
+  const qs = params.toString();
+  return qs ? `/jobradar/feed?${qs}` : "/jobradar/feed";
 }
 
 /* =========================
@@ -348,6 +373,8 @@ export default function AlertsPage() {
 
   const countActive = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
   const freeAlertLimitReached = !allowPremium && countActive >= FREE_ACTIVE_ALERT_LIMIT;
+  const activeAlert = useMemo(() => rows.find((r) => r.is_active) ?? null, [rows]);
+  const activeAlertFeedUrl = useMemo(() => buildAlertFeedUrl(activeAlert), [activeAlert]);
 
   const { pushToast } = useToast();
 
@@ -405,7 +432,7 @@ export default function AlertsPage() {
 
     const { data, error } = await supabase
       .from("alerts")
-      .select("id, user_id, name, keywords, country, countries, frequency, channels, is_active, created_at")
+      .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -735,8 +762,8 @@ export default function AlertsPage() {
                 Pour créer plusieurs alertes et accéder aux détails complets des offres, active un pass JobRadar.
               </p>
               <div className="alerts-freeActiveActions">
-                <button className="btn btnPrimary" type="button" onClick={() => navigate("/jobradar/feed")}>
-                  Voir les offres correspondantes
+                <button className="btn btnPrimary" type="button" onClick={() => navigate(activeAlertFeedUrl)}>
+                  Voir les offres proches de mon alerte
                 </button>
                 <button className="btn alerts-freeActivePassBtn" type="button" onClick={() => navigate("/pricing")}>
                   Activer un pass
@@ -856,7 +883,7 @@ export default function AlertsPage() {
           <NextStepCard
             title="Prochaine étape recommandée"
             message="Découvre les offres correspondant à cette alerte ou améliore ton ciblage."
-            primaryAction={{ label: "Voir les offres correspondantes", to: "/jobradar/feed" }}
+            primaryAction={{ label: "Voir les offres proches de mon alerte", to: activeAlertFeedUrl }}
             secondaryAction={
               freeAlertLimitReached ? undefined : { label: "Ajouter un autre pays", to: "/jobradar/alerts" }
             }
