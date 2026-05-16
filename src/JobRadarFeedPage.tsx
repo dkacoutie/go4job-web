@@ -674,6 +674,9 @@ export default function JobRadarFeedPage() {
   ] as const;
   const OFFER_GATE_REASSURANCE = "Carte ou Mobile Money · Accès immédiat après paiement";
   const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";
+  const FREE_ACTIVE_ALERT_LIMIT = 1;
+  const FREE_ALERT_LIMIT_MESSAGE =
+    "Ton alerte gratuite est déjà active. Active un pass JobRadar pour créer plusieurs alertes.";
   const allowPremium = hasActivePass && !isLoadingPass;
   const isPreview = !allowPremium;
 
@@ -1223,8 +1226,8 @@ export default function JobRadarFeedPage() {
       navigate("/auth", { replace: true });
       return;
     }
-    if (!allowPremium) {
-      pushToast({ kind: "error", title: "Accès requis", message: STANDARD_GATE_MESSAGE });
+    if (isLoadingPass) {
+      pushToast({ kind: "info", title: "Chargement de ton accès", message: "Réessaie dans un instant." });
       return;
     }
     if (!hasActiveSearchCriteria || alertSaveBusy) {
@@ -1258,7 +1261,13 @@ export default function JobRadarFeedPage() {
         return;
       }
 
-      if (activeRows.length >= 3) {
+      if (!allowPremium && activeRows.length >= FREE_ACTIVE_ALERT_LIMIT) {
+        setAlertNotice({ kind: "info", title: "Limite gratuite atteinte", message: FREE_ALERT_LIMIT_MESSAGE });
+        pushToast({ kind: "info", title: "Limite gratuite atteinte", message: FREE_ALERT_LIMIT_MESSAGE });
+        return;
+      }
+
+      if (allowPremium && activeRows.length >= 3) {
         const existing = activeRows.slice(0, 3).map((alert) => alert.name).filter(Boolean).join(", ");
         const message = `Tu as déjà 3 alertes actives. Pour ajouter celle-ci, désactive une alerte existante.${existing ? ` Alertes actives : ${existing}.` : ""}`;
         setAlertNotice({ kind: "info", title: "Limite atteinte", message });

@@ -5,7 +5,6 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
-import PricingPlansBlock from "./components/PricingPlansBlock";
 import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
 
@@ -308,7 +307,9 @@ export default function AlertsPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
-  const ALERTS_GATE_MESSAGE = "Active ton accès JobRadar pour créer et gérer tes alertes.";
+  const FREE_ACTIVE_ALERT_LIMIT = 1;
+  const FREE_ALERT_LIMIT_MESSAGE =
+    "Ton alerte gratuite est déjà active. Active un pass JobRadar pour créer plusieurs alertes.";
   const allowPremium = hasActivePass && !isLoadingPass;
   const userId = session?.user?.id ?? null;
   const MENU_WIDTH = 220;
@@ -397,11 +398,6 @@ export default function AlertsPage() {
 
   async function fetchAlerts() {
     if (!userId) return;
-    if (!allowPremium) {
-      setRows([]);
-      setListLoading(false);
-      return;
-    }
 
     setErrorMsg(null);
     setListLoading(true);
@@ -427,11 +423,7 @@ export default function AlertsPage() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!allowPremium && !isLoadingPass) {
-        setListLoading(false);
-        return;
-      }
-      if (!loading && session && userId && allowPremium) {
+      if (!loading && session && userId && !isLoadingPass) {
         await fetchAlerts();
         if (!alive) return;
       }
@@ -474,10 +466,6 @@ export default function AlertsPage() {
 
   async function createAlert() {
     if (!userId || busy) return;
-    if (!allowPremium) {
-      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
-      return;
-    }
 
     const n = name.trim();
     const kw = uniqClean(keywordsText.split(",").map((s) => s.trim()).filter(Boolean));
@@ -517,6 +505,27 @@ export default function AlertsPage() {
 
     setBusy(true);
     setErrorMsg(null);
+
+    if (!allowPremium) {
+      const { count, error: countErr } = await supabase
+        .from("alerts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      if (countErr) {
+        setBusy(false);
+        setErrorMsg(countErr.message);
+        pushToast({ kind: "error", title: "Création impossible", message: countErr.message });
+        return;
+      }
+
+      if ((count ?? countActive) >= FREE_ACTIVE_ALERT_LIMIT) {
+        setBusy(false);
+        pushToast({ kind: "info", title: "Limite gratuite atteinte", message: FREE_ALERT_LIMIT_MESSAGE });
+        return;
+      }
+    }
 
     const { error } = await supabase.from("alerts").insert({
       user_id: userId,
@@ -566,9 +575,28 @@ export default function AlertsPage() {
 
   async function toggleActive(a: AlertRow) {
     if (!userId) return;
-    if (!allowPremium) {
-      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
+    if (!allowPremium && !a.is_active && countActive >= FREE_ACTIVE_ALERT_LIMIT) {
+      pushToast({ kind: "info", title: "Limite gratuite atteinte", message: FREE_ALERT_LIMIT_MESSAGE });
       return;
+    }
+
+    if (!allowPremium && !a.is_active) {
+      const { count, error: countErr } = await supabase
+        .from("alerts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      if (countErr) {
+        setErrorMsg(countErr.message);
+        pushToast({ kind: "error", title: "Mise à jour impossible", message: countErr.message });
+        return;
+      }
+
+      if ((count ?? countActive) >= FREE_ACTIVE_ALERT_LIMIT) {
+        pushToast({ kind: "info", title: "Limite gratuite atteinte", message: FREE_ALERT_LIMIT_MESSAGE });
+        return;
+      }
     }
 
     const { error } = await supabase
@@ -622,10 +650,6 @@ export default function AlertsPage() {
 
   async function confirmDelete() {
     if (!toDelete || !userId || deleteBusy) return;
-    if (!allowPremium) {
-      pushToast({ kind: "error", title: "Accès requis", message: ALERTS_GATE_MESSAGE });
-      return;
-    }
 
     setDeleteBusy(true);
     setOpenCardMenuId(null);
@@ -694,20 +718,12 @@ export default function AlertsPage() {
 
       {errorMsg && <div className="alerts-error">Erreur : {errorMsg}</div>}
 
-      {!allowPremium ? (
-        <section className="alerts-locked">
-          <div className="alerts-lockedIntro">
-            <div className="alerts-lockedTitle">Accès aux alertes</div>
-            <div className="alerts-lockedText">{ALERTS_GATE_MESSAGE}</div>
-          </div>
-          <PricingPlansBlock
-            title="Choisis ton pass"
-            subtitle="Active un pass pour créer des alertes et recevoir des opportunités ciblées."
-          />
-        </section>
-      ) : (
-        <>
-          <section className="alerts-card">
+      <>
+        {!allowPremium && countActive >= FREE_ACTIVE_ALERT_LIMIT ? (
+          <div className="alerts-error">{FREE_ALERT_LIMIT_MESSAGE}</div>
+        ) : null}
+
+        <section className="alerts-card">
         <div className="alerts-cardHeader">
           <div>
             <div className="mutedTitle">CRÉER UNE ALERTE</div>
@@ -961,8 +977,7 @@ export default function AlertsPage() {
           </div>
         </div>
       )}
-        </>
-      )}
+      </>
     </div>
   );
 }
