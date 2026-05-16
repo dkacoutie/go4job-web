@@ -52,6 +52,7 @@ type QueueRow = {
 };
 
 const CONFIRM_PHRASE = "ENQUEUE_MARKETING_LIFECYCLE_EMAILS";
+const CREATE_ALERT_CONFIRM_PHRASE = "ENQUEUE_CREATE_ALERT_EMAIL_1_LIMIT_1";
 const DEFAULT_SEQUENCE_KEY = "jobradar_reactivation_v1";
 const DEFAULT_STEP_KEY = "email_1";
 const DEFAULT_TEMPLATE_KEY = "payment_attempt_no_success_email_1";
@@ -437,14 +438,23 @@ serve(async (req) => {
     return json(400, { ok: false, error: "invalid_json" });
   }
 
-  const allowEnqueue = body.allow_enqueue === true &&
+  const allowDefaultEnqueue = body.allow_enqueue === true &&
     body.confirm === CONFIRM_PHRASE;
-  const dryRun = body.dry_run !== false || !allowEnqueue;
+  const allowCreateAlertEnqueue = body.allow_enqueue === true &&
+    body.confirm === CREATE_ALERT_CONFIRM_PHRASE;
+  const requestedRealRun = body.dry_run === false;
   const limit = parseLimit(body.limit);
   const sequenceKey = cleanText(body.sequence_key, DEFAULT_SEQUENCE_KEY);
   const stepKey = cleanText(body.step_key, DEFAULT_STEP_KEY);
   const templateKey = cleanText(body.template_key, DEFAULT_TEMPLATE_KEY);
   const segmentKey = (body.segment_key ?? "").trim() || null;
+  const isCreateAlertSegment =
+    segmentKey === "non_paying_without_alert" ||
+    templateKey === "create_alert_email_1";
+  const allowEnqueue = isCreateAlertSegment
+    ? allowCreateAlertEnqueue
+    : allowDefaultEnqueue;
+  const dryRun = body.dry_run !== false || !allowEnqueue;
 
   if (segmentKey && !ALLOWED_SEGMENTS.has(segmentKey)) {
     return json(400, {
@@ -473,11 +483,7 @@ serve(async (req) => {
     auth: { persistSession: false },
   });
 
-  const isCreateAlertDryRunSegment =
-    segmentKey === "non_paying_without_alert" ||
-    templateKey === "create_alert_email_1";
-
-  if (isCreateAlertDryRunSegment) {
+  if (isCreateAlertSegment) {
     if (segmentKey !== "non_paying_without_alert" || templateKey !== "create_alert_email_1") {
       return json(400, {
         ok: false,
@@ -486,13 +492,33 @@ serve(async (req) => {
       });
     }
 
-    if (!dryRun) {
-      return json(400, {
-        ok: false,
-        dry_run: dryRun,
-        error: "dry_run_only_segment",
-        message: "non_paying_without_alert is preview/dry-run only and cannot enqueue emails.",
-      });
+    if (requestedRealRun) {
+      if (!allowCreateAlertEnqueue) {
+        return json(400, {
+          ok: false,
+          dry_run: dryRun,
+          error: "create_alert_confirm_required",
+          message: `Real enqueue for non_paying_without_alert requires confirm=${CREATE_ALERT_CONFIRM_PHRASE}.`,
+        });
+      }
+
+      if (body.limit !== 1 || limit !== 1) {
+        return json(400, {
+          ok: false,
+          dry_run: dryRun,
+          error: "create_alert_limit_one_required",
+          message: "Real enqueue for non_paying_without_alert requires requested and effective limit=1.",
+        });
+      }
+
+      if (sequenceKey !== "non_paying_without_alert" || stepKey !== "email_1") {
+        return json(400, {
+          ok: false,
+          dry_run: dryRun,
+          error: "create_alert_sequence_step_required",
+          message: "Real enqueue for non_paying_without_alert requires sequence_key=non_paying_without_alert and step_key=email_1.",
+        });
+      }
     }
 
     try {
@@ -503,22 +529,60 @@ serve(async (req) => {
         stepKey,
       );
 
+      let enqueuedCount = 0;
+      let skippedDuplicateCount = result.skippedDuplicateCount;
+
+      if (!dryRun) {
+        for (const row of result.queueRows) {
+          const { error: insertError } = await supabase
+            .from("marketing_email_queue")
+            .insert(row);
+
+          if (!insertError) {
+            enqueuedCount += 1;
+            continue;
+          }
+
+          if (insertError.code === "23505") {
+            skippedDuplicateCount += 1;
+            continue;
+          }
+
+          return json(500, {
+            ok: false,
+            dry_run: dryRun,
+            error: "queue_insert_failed",
+            message: insertError.message,
+            would_enqueue_count: result.queueRows.length,
+            enqueued_count: enqueuedCount,
+            skipped_suppressed_count: result.skippedSuppressedCount,
+            skipped_duplicate_count: skippedDuplicateCount,
+            skipped_invalid_email_count: result.skippedInvalidEmailCount,
+            candidates_checked: result.candidatesChecked,
+            ...result.extraCounts,
+            sample: sampleRows(result.queueRows),
+          });
+        }
+      }
+
       return json(200, {
         ok: true,
-        dry_run: true,
+        dry_run: dryRun,
         segment_key: "non_paying_without_alert",
         template_key: "create_alert_email_1",
         sequence_key: sequenceKey,
         step_key: stepKey,
         would_enqueue_count: result.queueRows.length,
-        enqueued_count: 0,
+        enqueued_count: enqueuedCount,
         skipped_suppressed_count: result.skippedSuppressedCount,
-        skipped_duplicate_count: result.skippedDuplicateCount,
+        skipped_duplicate_count: skippedDuplicateCount,
         skipped_invalid_email_count: result.skippedInvalidEmailCount,
         candidates_checked: result.candidatesChecked,
         ...result.extraCounts,
         sample: sampleRows(result.queueRows),
-        message: "Dry-run only. No marketing emails were queued or sent.",
+        message: dryRun
+          ? "Dry-run only. No marketing emails were queued or sent."
+          : "One create-alert marketing lifecycle email was queued. No emails were sent.",
       });
     } catch (error) {
       return json(500, {

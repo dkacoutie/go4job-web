@@ -1,7 +1,8 @@
 export type MarketingEmailKey =
   | "payment_attempt_no_success_email_1"
   | "interested_no_payment_attempt_email_1"
-  | "buyer_feedback_email_1";
+  | "buyer_feedback_email_1"
+  | "create_alert_email_1";
 
 export type MarketingEmailVariables = {
   email?: string | null;
@@ -47,6 +48,7 @@ const SENDABLE_MARKETING_EMAIL_KEYS = new Set<string>([
   "payment_attempt_no_success_email_1",
   "interested_no_payment_attempt_email_1",
   "buyer_feedback_email_1",
+  "create_alert_email_1",
 ]);
 
 function cleanText(value: string | null | undefined) {

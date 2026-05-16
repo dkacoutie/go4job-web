@@ -86,12 +86,14 @@ const TEMPLATE_KEY_TO_SEGMENT: Record<MarketingEmailKey, string> = {
   payment_attempt_no_success_email_1: "payment_attempt_no_success",
   interested_no_payment_attempt_email_1: "interested_no_payment_attempt",
   buyer_feedback_email_1: "buyer_feedback",
+  create_alert_email_1: "non_paying_without_alert",
 };
 
 const VALID_SEGMENTS = new Set([
   "payment_attempt_no_success",
   "interested_no_payment_attempt",
   "buyer_feedback",
+  "non_paying_without_alert",
   "incomplete_onboarding",
   "expired_pass",
   "former_buyer",
