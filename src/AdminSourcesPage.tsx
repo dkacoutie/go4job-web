@@ -13,7 +13,6 @@ import {
   type AdminTestSourceSampleItem,
   type AdminValidateImportResult,
 } from "./lib/adminApi";
-import { supabase } from "./lib/supabaseClient";
 
 type JobSourceRow = {
   id: string;
@@ -122,10 +121,6 @@ export default function AdminSourcesPage() {
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  // ✅ UI Admin Guard
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-
   const [loading, setLoading] = useState(false);
 
   // busy states
@@ -211,40 +206,7 @@ export default function AdminSourcesPage() {
     setErr(null);
   }
 
-  // ✅ Admin Guard: check session + profiles.is_admin
-  useEffect(() => {
-    (async () => {
-      setAuthLoading(true);
-      setErr(null);
-
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      const user = userData?.user;
-
-      if (userErr || !user) {
-        setIsAdmin(false);
-        setAuthLoading(false);
-        return;
-      }
-
-      const { data: prof, error: profErr } = await supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (profErr) {
-        setIsAdmin(false);
-        setAuthLoading(false);
-        return;
-      }
-
-      setIsAdmin(!!prof?.is_admin);
-      setAuthLoading(false);
-    })();
-  }, []);
-
   async function load() {
-    if (!isAdmin) return;
     setLoading(true);
     setErr(null);
 
@@ -270,13 +232,11 @@ export default function AdminSourcesPage() {
   }
 
   useEffect(() => {
-    if (!authLoading && isAdmin) void load();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, isAdmin]);
+  }, []);
 
   async function onVerify(codeRaw: string) {
-    if (!isAdmin) return;
-
     const code = String(codeRaw ?? "").trim().toLowerCase();
     if (!code) return;
 
@@ -464,7 +424,6 @@ export default function AdminSourcesPage() {
   }
 
   async function toggleActive(row: JobSourceRow) {
-    if (!isAdmin) return;
     const next = !(row.is_active ?? false);
     const code = String(row.code ?? "").toLowerCase();
 
@@ -492,7 +451,6 @@ export default function AdminSourcesPage() {
   }
 
   async function discardSource(codeRaw: string) {
-    if (!isAdmin) return;
     const code = String(codeRaw ?? "").toLowerCase();
     const row = rowByCode[code];
     if (!row) return;
@@ -521,7 +479,6 @@ export default function AdminSourcesPage() {
   }
 
   async function importNow(codeRaw: string) {
-    if (!isAdmin) return;
 
     const code = String(codeRaw ?? "").trim().toLowerCase();
     if (!code) return;
@@ -584,7 +541,6 @@ export default function AdminSourcesPage() {
   }
 
   async function addOrUpdateRssSource(e: React.FormEvent) {
-    if (!isAdmin) return;
     e.preventDefault();
 
     const code = rssCode.trim().toLowerCase();
@@ -627,7 +583,6 @@ export default function AdminSourcesPage() {
   }
 
   async function markReadyOneClick(row: JobSourceRow) {
-    if (!isAdmin) return;
     const code = String(row.code ?? "").toLowerCase();
 
     setConfiguringCode(code);
@@ -664,49 +619,9 @@ export default function AdminSourcesPage() {
     setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
-  const anyBusy =
-    authLoading || loading || savingRss || !!togglingCode || !!configuringCode || !!verifyingCode || !!importingCode;
+  const anyBusy = loading || savingRss || !!togglingCode || !!configuringCode || !!verifyingCode || !!importingCode;
 
   const hasAny = Object.keys(details).length > 0 || !!lastAction;
-
-  // ✅ UI Admin Guard rendering
-  if (authLoading) {
-    return (
-      <div className="adminSources">
-        <div className="card">
-          <h2>Vérification des droits…</h2>
-          <div className="muted">Chargement…</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="adminSources">
-        <div className="notice notice--error">
-          <strong>Accès refusé.</strong>
-          <div className="notice__text">
-            Cette page est réservée aux administrateurs.
-            <br />
-            Si tu dois gérer des sources, demande au propriétaire du projet de te donner le rôle admin.
-          </div>
-        </div>
-
-        <div className="card">
-          <h2>Retour</h2>
-          <div className="muted" style={{ marginTop: 6 }}>
-            Tu peux revenir au tableau de bord.
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <a className="btn btn--primary" href="/">
-              Aller au Dashboard
-            </a>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="adminSources">

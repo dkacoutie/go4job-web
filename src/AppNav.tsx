@@ -70,7 +70,11 @@ export default function AppNav() {
   );
 
   const adminItems = useMemo(
-    () => [{ label: "Partenaires", path: "/admin/partners" }],
+    () => [
+      { label: "Health", path: "/admin/health" },
+      { label: "Sources", path: "/admin/sources" },
+      { label: "Partenaires", path: "/admin/partners" },
+    ],
     []
   );
 
@@ -241,7 +245,7 @@ export default function AppNav() {
             <button
               type="button"
               className={"appnav__btn " + (adminActive ? "is-active" : "")}
-              onClick={() => onNavigate("/admin/partners")}
+              onClick={() => onNavigate("/admin/health")}
             >
               Admin
             </button>

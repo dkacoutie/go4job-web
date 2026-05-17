@@ -31,6 +31,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
   const { session, loading: sessionLoading } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const isAdminPath = location.pathname.startsWith("/admin");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,9 +76,9 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (sessionLoading) return;
+    if (sessionLoading || isAdminPath) return;
     void loadDesiredRole();
-  }, [sessionLoading, loadDesiredRole]);
+  }, [sessionLoading, isAdminPath, loadDesiredRole]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -121,6 +122,10 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
     if (location.pathname.startsWith("/jobradar/onboarding")) {
       navigate("/jobradar/feed", { replace: true });
     }
+  }
+
+  if (isAdminPath) {
+    return <>{children}</>;
   }
 
   if (sessionLoading || loading) {

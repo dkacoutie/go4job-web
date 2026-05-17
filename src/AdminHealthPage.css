@@ -1,0 +1,494 @@
+.adminHealth {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 16px 34px;
+  color: #111827;
+}
+
+.adminHealth__decision,
+.adminHealth__section,
+.adminHealth__panel,
+.adminHealth__notice,
+.adminHealth__priority,
+.adminHealth__miniPanel {
+  background: #fff;
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.055);
+}
+
+.adminHealth__decision {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  margin-bottom: 12px;
+  border-left-width: 5px;
+}
+
+.adminHealth__decision.is-ok {
+  border-left-color: #059669;
+}
+
+.adminHealth__decision.is-info {
+  border-left-color: #2563eb;
+}
+
+.adminHealth__decision.is-warning {
+  border-left-color: #d97706;
+}
+
+.adminHealth__decision.is-critical {
+  border-left-color: #dc2626;
+}
+
+.adminHealth__decisionMain {
+  min-width: 0;
+}
+
+.adminHealth__decisionMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 190px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.adminHealth__eyebrow {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.adminHealth h1,
+.adminHealth h2,
+.adminHealth h3 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.adminHealth h1 {
+  margin-top: 4px;
+  font-size: 28px;
+  line-height: 1.12;
+}
+
+.adminHealth h2 {
+  font-size: 17px;
+}
+
+.adminHealth h3 {
+  font-size: 14px;
+}
+
+.adminHealth__decision p {
+  max-width: 780px;
+  margin: 8px 0 0;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.adminHealth__summaryLine {
+  margin-top: 10px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.adminHealth__muted,
+.adminHealth__kpiNote,
+.adminHealth__table td span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.adminHealth__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.adminHealth__tab {
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.adminHealth__tab:hover {
+  background: #f8fafc;
+}
+
+.adminHealth__tab.is-active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+
+.adminHealth__tabPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.adminHealth__section,
+.adminHealth__panel,
+.adminHealth__notice,
+.adminHealth__priority {
+  padding: 14px;
+}
+
+.adminHealth__notice--error {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: #fff7f7;
+  color: #991b1b;
+}
+
+.adminHealth__sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.adminHealth__priorityGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adminHealth__priorityItem {
+  min-width: 0;
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  border-radius: 8px;
+  padding: 11px;
+  background: #f8fafc;
+}
+
+.adminHealth__priorityItem > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.adminHealth__priorityItem strong,
+.adminHealth__priorityItem p {
+  display: block;
+}
+
+.adminHealth__priorityItem strong {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.adminHealth__priorityItem p {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.adminHealth__priorityItem.is-ok,
+.adminHealth__priorityItem.is-info {
+  background: #eff6ff;
+  border-color: rgba(37, 99, 235, 0.18);
+}
+
+.adminHealth__priorityItem.is-warning {
+  background: #fffbeb;
+  border-color: rgba(217, 119, 6, 0.22);
+}
+
+.adminHealth__priorityItem.is-critical {
+  background: #fef2f2;
+  border-color: rgba(220, 38, 38, 0.22);
+}
+
+.adminHealth__zone {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.adminHealth__kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adminHealth__kpi {
+  min-width: 0;
+  border: 1px solid rgba(17, 24, 39, 0.09);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.adminHealth__kpi.is-critical {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: #fff7f7;
+}
+
+.adminHealth__kpi.is-warning {
+  border-color: rgba(217, 119, 6, 0.28);
+  background: #fffbeb;
+}
+
+.adminHealth__kpiLabel {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.adminHealth__kpiValue {
+  margin-top: 8px;
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.08;
+}
+
+.adminHealth__kpiNote {
+  margin-top: 5px;
+}
+
+.adminHealth__overviewGrid {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(3, 1fr);
+  gap: 10px;
+}
+
+.adminHealth__miniPanel {
+  padding: 12px;
+}
+
+.adminHealth__miniPanel h3 {
+  margin-bottom: 10px;
+}
+
+.adminHealth__countryList {
+  display: grid;
+  gap: 7px;
+}
+
+.adminHealth__country,
+.adminHealth__metricLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.adminHealth__country span,
+.adminHealth__metricLine span {
+  overflow: hidden;
+  color: #475569;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminHealth__metricLine + .adminHealth__metricLine {
+  margin-top: 7px;
+}
+
+.adminHealth__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.adminHealth__pill.is-ok,
+.adminHealth__signal.is-ok {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: rgba(5, 150, 105, 0.18);
+}
+
+.adminHealth__pill.is-info,
+.adminHealth__signal.is-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.18);
+}
+
+.adminHealth__pill.is-warning,
+.adminHealth__signal.is-warning {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: rgba(217, 119, 6, 0.22);
+}
+
+.adminHealth__pill.is-critical,
+.adminHealth__signal.is-critical {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: rgba(220, 38, 38, 0.22);
+}
+
+.adminHealth__pill.is-muted {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.adminHealth__infoNotice {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.adminHealth__tableWrap {
+  overflow: auto;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 8px;
+}
+
+.adminHealth__table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.adminHealth__table th,
+.adminHealth__table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.07);
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.adminHealth__table--compact th,
+.adminHealth__table--compact td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.adminHealth__table th {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.adminHealth__table td strong,
+.adminHealth__table td span {
+  display: block;
+}
+
+.adminHealth__table td {
+  max-width: 260px;
+  word-break: break-word;
+}
+
+.adminHealth__signals {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.adminHealth__signal,
+.adminHealth__empty {
+  border: 1px solid rgba(17, 24, 39, 0.09);
+  border-radius: 8px;
+  padding: 11px;
+}
+
+.adminHealth__signal strong,
+.adminHealth__signal span {
+  display: block;
+}
+
+.adminHealth__signal span {
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.adminHealth__empty {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+}
+
+.adminHealth__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adminHealth__flags span {
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+}
+
+.adminHealth__flags span.is-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.adminHealth__scope {
+  margin-top: 12px;
+}
+
+@media (max-width: 1080px) {
+  .adminHealth__priorityGrid,
+  .adminHealth__kpiGrid,
+  .adminHealth__signals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adminHealth__overviewGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .adminHealth {
+    padding: 16px 10px 30px;
+  }
+
+  .adminHealth__decision {
+    flex-direction: column;
+  }
+
+  .adminHealth__decisionMeta {
+    align-items: flex-start;
+  }
+
+  .adminHealth__priorityGrid,
+  .adminHealth__kpiGrid,
+  .adminHealth__signals,
+  .adminHealth__overviewGrid {
+    grid-template-columns: 1fr;
+  }
+}

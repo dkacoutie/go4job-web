@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { fetchIsAdminUser } from "./adminAccess";
+import { supabase } from "./supabaseClient";
 import { useSession } from "./useSession";
 
 export default function AdminRoute({ children }: { children: ReactNode }) {
   const { session, loading: sessionLoading } = useSession();
-  const location = useLocation();
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLoading, setAdminLoading] = useState(true);
 
@@ -30,11 +29,18 @@ export default function AdminRoute({ children }: { children: ReactNode }) {
         setAdminLoading(true);
       }
 
-      const nextIsAdmin = await fetchIsAdminUser();
+      const { data, error } = await supabase.rpc("is_admin_user");
 
       if (cancelled) return;
 
-      setIsAdmin(nextIsAdmin);
+      if (error) {
+        console.warn("[AdminRoute] admin check failed", {
+          code: error.code,
+          message: error.message,
+        });
+      }
+
+      setIsAdmin(!error && data === true);
       setAdminLoading(false);
     })();
 
@@ -51,12 +57,7 @@ export default function AdminRoute({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!session) {
-    const from = `${location.pathname}${location.search}${location.hash}`;
-    return <Navigate to="/auth" replace state={{ from }} />;
-  }
-
-  if (!isAdmin) {
+  if (!session || !isAdmin) {
     return (
       <div style={{ padding: "24px 0" }}>
         <section
@@ -84,7 +85,7 @@ export default function AdminRoute({ children }: { children: ReactNode }) {
           >
             Acces refuse
           </div>
-          <h1 style={{ marginTop: 16, marginBottom: 12 }}>Admin partenaires reserve a l'equipe autorisee</h1>
+          <h1 style={{ marginTop: 16, marginBottom: 12 }}>Admin réservé à l'équipe autorisée</h1>
           <p style={{ margin: 0, color: "#475569", lineHeight: 1.6 }}>
             Cette page utilise maintenant l'autorisation admin centralisee. Si tu penses devoir y acceder, demande
             l'activation de ton compte admin.
