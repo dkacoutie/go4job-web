@@ -29,6 +29,8 @@ import {
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
+import { usePaymentMarket } from "./lib/paymentMarket";
+import { getStartingPremiumLabel } from "./lib/premiumPricing";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
@@ -680,7 +682,9 @@ export default function JobRadarFeedPage() {
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
   const userId = session?.user?.id ?? null;
+  const paymentMarket = usePaymentMarket(userId);
   const initialFeedFilters = readFeedFiltersFromSearch(location.search);
+  const startingPremiumLabel = getStartingPremiumLabel(paymentMarket.resolution.market);
 
   const FEED_PREVIEW_LIMIT = 4;
   const FEED_GATE_MESSAGE =
@@ -692,7 +696,7 @@ export default function JobRadarFeedPage() {
     "Offre complète + lien pour postuler",
     "Autres offres adaptées à ton profil",
     "Sauvegarde de tes annonces favorites",
-    "Paiement unique à partir de 1 500 FCFA, sans abonnement",
+    `Accès premium à partir de ${startingPremiumLabel}`,
   ] as const;
   const OFFER_GATE_REASSURANCE = "Carte ou Mobile Money · Accès immédiat après paiement";
   const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";

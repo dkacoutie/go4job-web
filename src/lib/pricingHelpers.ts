@@ -13,16 +13,7 @@ export type PaymentMethodBadge = {
   tone: "card" | "orange" | "mtn" | "moov" | "wave";
 };
 
-export type PlanDisplayPrices = {
-  xofLabel: string;
-  eurLabel: string;
-  usdLabel: string;
-  combinedLabel: string;
-};
-
 export const FEATURED_PLAN_CODE = "pass_30d";
-export const EUR_XOF = 655.957;
-export const USD_XOF = 570.94;
 export const PRICING_SECTION_EYEBROW = "Plans JobRadar";
 export const PRICING_SECTION_TITLE = "Choisis le pass qui correspond \u00e0 ton rythme";
 export const PRICING_SECTION_SUBTITLE =
@@ -34,11 +25,11 @@ export const PRICING_MODEL_TITLE = "Une tarification claire, pens\u00e9e pour du
 export const PRICING_MODEL_TEXT =
   "Choisis la dur\u00e9e qui correspond \u00e0 ton rythme : l'acc\u00e8s est complet d\u00e8s l'activation, avec paiement s\u00e9curis\u00e9 et sans renouvellement automatique.";
 export const PRICING_BILLING_MESSAGE =
-  "Paiement en FCFA (XOF). Les \u00e9quivalents EUR/USD sont indicatifs.";
+  "Prix affichés selon ta région. Le paiement final reste traité en XOF via Paystack.";
 export const PRICING_INDICATIVE_MESSAGE =
-  "Si tu paies avec une carte internationale, ta banque peut convertir le montant dans ta devise.";
+  "Pour les utilisateurs européens, les prix EUR sont des prix d'affichage marketing.";
 export const PRICING_CONVERSION_MESSAGE =
-  "Paiement s\u00e9curis\u00e9 par carte ou Mobile Money, en une seule fois et sans renouvellement automatique.";
+  "Le montant envoyé au checkout Paystack reste le prix XOF du pass choisi.";
 
 export const PRICING_REASSURANCE_POINTS = [
   "Paiement s\u00e9curis\u00e9 par carte ou Mobile Money",
@@ -123,25 +114,4 @@ export function formatAmount(amountMinor: number, currency: string) {
     }
     return `${amount} ${currency}`;
   }
-}
-
-function formatIndicativeAmount(amount: number, symbol: string) {
-  const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
-  const label = rounded.toLocaleString("fr-FR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return `${symbol}${label}`;
-}
-
-export function formatPlanDisplayPrices(amountXof: number): PlanDisplayPrices {
-  const eurLabel = formatIndicativeAmount(amountXof / EUR_XOF, "\u20ac");
-  const usdLabel = formatIndicativeAmount(amountXof / USD_XOF, "$");
-
-  return {
-    xofLabel: formatAmount(amountXof, "XOF"),
-    eurLabel,
-    usdLabel,
-    combinedLabel: `\u2248 ${eurLabel} / ${usdLabel}`,
-  };
 }

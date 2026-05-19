@@ -51,8 +51,8 @@ export default function PaymentMarketPanel({
       </div>
 
       <p className="payment-market-panel__body">
-        Tu peux choisir ta devise préférée pour l'affichage. Le paiement en ligne reste facturé en{" "}
-        <strong>FCFA (XOF)</strong>. Les montants en EUR/USD sont indicatifs.
+        Prix affichés en EUR pour les utilisateurs européens. Le paiement final est traité en{" "}
+        <strong>XOF</strong> via Paystack.
       </p>
 
       <div className="payment-market-panel__choices" role="group" aria-label="Choisir une devise d'affichage">
@@ -76,7 +76,7 @@ export default function PaymentMarketPanel({
 
       <p className="payment-market-panel__note">
         {resolution.market === "eur"
-          ? "Ton choix EUR est enregistré pour l'affichage. Le paiement en ligne reste facturé en FCFA (XOF)."
+          ? "Ton choix EUR est enregistré pour l'affichage."
           : "Ton affichage reste aligné sur le paiement en FCFA (XOF)."}
       </p>
 

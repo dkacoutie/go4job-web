@@ -19,9 +19,9 @@ import {
   PRICING_SECTION_EYEBROW,
   PRICING_SECTION_SUBTITLE,
   PRICING_SECTION_TITLE,
-  formatPlanDisplayPrices,
   getPlanMarketing,
 } from "./lib/pricingHelpers";
+import { getPremiumDisplayPrice } from "./lib/premiumPricing";
 import "./PricingPage.css";
 
 type BillingSettings = {
@@ -286,6 +286,7 @@ export default function PricingPage() {
   const hasActivePass = Boolean(currentPass && currentPass.status === "active");
   const isBusy = isCheckingOut || isVerifying;
   const isAccountPending = Boolean(session?.user) && accountLoading;
+  const displayMarket = paymentMarket.resolution.market;
 
   const handleSelectPaymentMarket = async (market: "eur" | "xof") => {
     try {
@@ -445,7 +446,9 @@ export default function PricingPage() {
                 const prices = plan.billing_plan_prices ?? [];
                 const price = prices.find((entry) => entry.currency === "XOF") ?? null;
                 const marketing = getPlanMarketing(plan.code, plan.name, plan.duration_days);
-                const displayPrices = price ? formatPlanDisplayPrices(price.amount_minor) : null;
+                const displayPrice = price
+                  ? getPremiumDisplayPrice(plan.code, price.amount_minor, displayMarket)
+                  : null;
 
                 const planActive = plan.is_active;
                 const priceActive = Boolean(price?.is_active);
@@ -488,12 +491,7 @@ export default function PricingPage() {
                     <div className="pricing-card__access">{PRICING_ACCESS_MESSAGE}</div>
 
                     <div className="pricing-card__priceWrap">
-                      <div className="pricing-card__price">{displayPrices?.xofLabel ?? "--"}</div>
-                      {displayPrices && (
-                        <div className="pricing-card__fx" aria-label="Equivalent indicatif en euro et dollar">
-                          {displayPrices.combinedLabel}
-                        </div>
-                      )}
+                      <div className="pricing-card__price">{displayPrice?.primaryLabel ?? "--"}</div>
                       <div className="pricing-card__priceNote">{PRICING_PRICE_NOTE}</div>
                     </div>
 
@@ -518,10 +516,10 @@ export default function PricingPage() {
                         ? "Vérification..."
                         : busyCode === plan.code || isBusy
                           ? "Traitement en cours..."
-                          : marketing.ctaLabel}
+                          : displayPrice?.ctaLabel ?? marketing.ctaLabel}
                     </button>
 
-                    <div className="pricing-card__footnote">{marketing.launchNote}</div>
+                    <div className="pricing-card__footnote">{displayPrice?.paystackNotice ?? marketing.launchNote}</div>
                   </div>
                 );
               })}

@@ -547,7 +547,7 @@
   font-size: 34px;
   font-weight: 700;
   color: var(--jr-ink-900);
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .pricing-card__fx {
