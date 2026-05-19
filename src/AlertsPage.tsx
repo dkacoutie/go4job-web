@@ -970,6 +970,18 @@ export default function AlertsPage() {
                         {visibleChannels.length ? <span className="chip">{visibleChannels.map(channelLabel).join(" / ")}</span> : null}
                     </div>
                   </div>
+
+                  {a.is_active ? (
+                    <div className="alertCardActions">
+                      <button
+                        className="btn btnGhost alertCardFeedBtn"
+                        type="button"
+                        onClick={() => navigate(buildAlertFeedUrl(a))}
+                      >
+                        Voir les offres proches →
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}
