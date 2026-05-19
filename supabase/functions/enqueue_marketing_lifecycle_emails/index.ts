@@ -131,10 +131,18 @@ function parseLimit(value: number | null | undefined) {
   return Math.min(Math.max(Math.trunc(value as number), 1), MAX_LIMIT);
 }
 
+function maskEmail(email: string) {
+  const [localPart, domain] = email.split("@");
+  if (!localPart || !domain) return "***";
+  const start = localPart.slice(0, 2);
+  const end = localPart.length > 4 ? localPart.slice(-1) : "";
+  return `${start}${"*".repeat(Math.max(3, localPart.length - start.length - end.length))}${end}@${domain}`;
+}
+
 function sampleRows(rows: QueueRow[]) {
   return rows.slice(0, 10).map((row) => ({
     user_id: row.user_id,
-    email: row.email,
+    email: maskEmail(row.email),
     sequence_key: row.sequence_key,
     step_key: row.step_key,
     template_key: row.template_key,
