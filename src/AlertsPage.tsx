@@ -2,6 +2,7 @@
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
+import { resolveCountrySearchQuery } from "./lib/jobMatching";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
@@ -35,23 +36,34 @@ function uniqClean(arr: string[]) {
   return Array.from(new Set(out));
 }
 
+function normalizeAlertCountry(value: string | null | undefined) {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+  const parenthesizedCode = raw.match(/\(([A-Za-z]{2})\)/)?.[1];
+  if (parenthesizedCode) return parenthesizedCode.toUpperCase();
+  if (/^[A-Za-z]{2}$/.test(raw)) return raw.toUpperCase();
+  return resolveCountrySearchQuery(raw) ?? "";
+}
+
 function buildAlertFeedUrl(alert?: AlertRow | null) {
   const params = new URLSearchParams();
+  const keywords = uniqClean(alert?.keywords ?? []);
   const query =
     alert?.search_query?.trim() ||
+    keywords.join(" ") ||
     alert?.name?.trim() ||
-    uniqClean(alert?.keywords ?? []).join(" ");
-  const country =
-    alert?.countries?.length === 1
-      ? alert.countries[0]
-      : alert?.country?.trim() || "";
-  const employmentType = alert?.employment_types?.find(Boolean);
-  const workMode = alert?.work_modes?.find(Boolean);
+    "";
+  const countries = uniqClean([...(alert?.countries ?? []), alert?.country ?? ""])
+    .map(normalizeAlertCountry)
+    .filter(Boolean);
+  const employmentTypes = uniqClean(alert?.employment_types ?? []);
+  const workModes = uniqClean(alert?.work_modes ?? []);
 
   if (query) params.set("q", query);
-  if (country) params.set("country", country);
-  if (employmentType) params.set("employment_type", employmentType);
-  if (workMode) params.set("work_mode", workMode);
+  for (const country of countries) params.append("country", country);
+  if (countries.length > 1) params.set("countries", countries.join(","));
+  for (const employmentType of employmentTypes) params.append("employment_type", employmentType);
+  for (const workMode of workModes) params.append("work_mode", workMode);
 
   const qs = params.toString();
   return qs ? `/jobradar/feed?${qs}` : "/jobradar/feed";

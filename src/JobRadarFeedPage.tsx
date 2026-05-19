@@ -291,10 +291,29 @@ function supportedOptionValue(options: FilterOption[], value: string) {
   return options.some((option) => option.value === value) ? value : "";
 }
 
+function normalizeCountryFilterParam(value: string) {
+  const raw = collapseSpaces(value).toUpperCase();
+  if (!raw) return "";
+  if (raw === "REMOTE") return "REMOTE";
+  if (/^[A-Z]{2}$/.test(raw)) return raw;
+  return resolveCountrySearchQuery(value) ?? "";
+}
+
+function readMultiParams(params: URLSearchParams, names: string[]) {
+  return names.flatMap((name) =>
+    params
+      .getAll(name)
+      .flatMap((value) => value.split(","))
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+}
+
 function readFeedFiltersFromSearch(search: string) {
   const params = new URLSearchParams(search);
   const q = collapseSpaces(params.get("q") ?? "");
-  const country = supportedOptionValue(COUNTRY_FILTER_OPTIONS, (params.get("country") ?? "").trim().toUpperCase());
+  const countries = uniq(readMultiParams(params, ["country", "countries"]).map(normalizeCountryFilterParam).filter(Boolean));
+  const country = countries.length === 1 ? supportedOptionValue(COUNTRY_FILTER_OPTIONS, countries[0]) || countries[0] : "";
   const contract = supportedOptionValue(
     CONTRACT_FILTER_OPTIONS,
     (params.get("employment_type") ?? params.get("employment_types") ?? params.get("contract") ?? "").trim().toLowerCase()
@@ -304,7 +323,7 @@ function readFeedFiltersFromSearch(search: string) {
     (params.get("work_mode") ?? params.get("work_modes") ?? "").trim().toLowerCase()
   );
 
-  return { q, country, contract, workMode };
+  return { q, country, countries, contract, workMode };
 }
 
 const CONTRACT_ALIASES: Record<string, string[]> = {
@@ -344,6 +363,7 @@ function buildWhyReasons(params: {
   expOk: boolean;
   geoRemote: GeoRemoteBreakdown;
   alertDisplay: Map<string, string>;
+  allowAlertReason?: boolean;
 }) {
   const reasons: string[] = [];
   const used = new Set<string>();
@@ -355,7 +375,9 @@ function buildWhyReasons(params: {
     reasons.push(t);
   };
 
-  const alertKeyword = pickAlertKeyword(params.why, params.alertDisplay);
+  const alertKeyword = params.allowAlertReason === false
+    ? null
+    : pickAlertKeyword(params.why, params.alertDisplay);
   add(fitReason("Correspond à ton alerte", alertKeyword));
 
   if (reasons.length < 2 && params.geoRemote.considered && params.geoRemote.points_awarded > 0) {
@@ -627,6 +649,11 @@ function jobMatchesCountryFilter(job: JobRow, countryFilter: string) {
   return resolveCountrySearchQuery(`${job.country ?? ""} ${job.location ?? ""}`) === countryFilter;
 }
 
+function jobMatchesCountryFilters(job: JobRow, countryFilters: string[]) {
+  if (!countryFilters.length) return true;
+  return countryFilters.some((countryFilter) => jobMatchesCountryFilter(job, countryFilter));
+}
+
 function jobMatchesContractFilter(job: JobRow, contractFilter: string) {
   if (!contractFilter) return true;
   const text = normalizeFilterValue([job.contract_type, job.title].filter(Boolean).join(" "));
@@ -719,6 +746,7 @@ export default function JobRadarFeedPage() {
 
   const [q, setQ] = useState(initialFeedFilters.q);
   const [countryFilter, setCountryFilter] = useState(initialFeedFilters.country);
+  const [countryFilters, setCountryFilters] = useState<string[]>(initialFeedFilters.countries);
   const [contractFilter, setContractFilter] = useState(initialFeedFilters.contract);
   const [workModeFilter, setWorkModeFilter] = useState(initialFeedFilters.workMode);
   const [alertSaveBusy, setAlertSaveBusy] = useState(false);
@@ -810,6 +838,7 @@ export default function JobRadarFeedPage() {
     const next = readFeedFiltersFromSearch(location.search);
     setQ(next.q);
     setCountryFilter(next.country);
+    setCountryFilters(next.countries);
     setContractFilter(next.contract);
     setWorkModeFilter(next.workMode);
   }, [location.search]);
@@ -846,8 +875,8 @@ export default function JobRadarFeedPage() {
 
   const geoPrefs = useMemo(() => buildGeoPreferences(alerts), [alerts]);
   const hasActiveSearchCriteria = useMemo(
-    () => Boolean(normalizeSearchText(q) || countryFilter || contractFilter || workModeFilter),
-    [q, countryFilter, contractFilter, workModeFilter]
+    () => Boolean(normalizeSearchText(q) || countryFilters.length || contractFilter || workModeFilter),
+    [q, countryFilters, contractFilter, workModeFilter]
   );
 
   function mergeUniqueById(prev: JobRow[], next: JobRow[]) {
@@ -859,10 +888,20 @@ export default function JobRadarFeedPage() {
 
   const jobMatchesVisibleFilters = useCallback(
     (job: JobRow) =>
-      jobMatchesCountryFilter(job, countryFilter) &&
+      jobMatchesCountryFilters(job, countryFilters) &&
       jobMatchesContractFilter(job, contractFilter) &&
       jobMatchesWorkModeFilter(job, workModeFilter),
-    [countryFilter, contractFilter, workModeFilter]
+    [countryFilters, contractFilter, workModeFilter]
+  );
+
+  const jobMatchesAlertCountryScope = useCallback(
+    (job: JobRow) => {
+      if (countryFilters.length || geoPrefs.allowAllCountries) return true;
+      const country = (job.country ?? "").trim().toUpperCase();
+      if (!country || country.length !== 2) return true;
+      return geoPrefs.allowedCountries.has(country);
+    },
+    [countryFilters, geoPrefs]
   );
 
   const fetchJobsRange = useCallback(async (from: number, to: number) => {
@@ -883,7 +922,8 @@ export default function JobRadarFeedPage() {
   }, []);
 
   const fetchJobsSearch = useCallback(async (rawQuery: string) => {
-    const countryCode = countryFilter && countryFilter !== "REMOTE" ? countryFilter : resolveCountrySearchQuery(rawQuery);
+    const countryCodes = countryFilters.filter((country) => country !== "REMOTE");
+    const countryCode = countryCodes.length === 1 ? countryCodes[0] : resolveCountrySearchQuery(rawQuery);
     let query = supabase
       .from("jobs")
       .select(JOB_SELECT_FIELDS)
@@ -892,11 +932,13 @@ export default function JobRadarFeedPage() {
       .in("job_status", ["active", "stale"])
       .or("quality_status.eq.ok,quality_status.is.null");
 
-    if (countryCode) {
+    if (countryCodes.length > 1) {
+      query = query.in("country", countryCodes);
+    } else if (countryCode) {
       query = query.eq("country", countryCode);
     }
 
-    if (!countryCode && normalizeSearchText(rawQuery).length >= TEXT_SEARCH_MIN_LENGTH) {
+    if (!countryCodes.length && !countryCode && normalizeSearchText(rawQuery).length >= TEXT_SEARCH_MIN_LENGTH) {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
       if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
       const serverTerms = buildServerSearchTerms(rawQuery);
@@ -939,7 +981,7 @@ export default function JobRadarFeedPage() {
       .limit(SEARCH_LIMIT);
     if (error) throw error;
     return ((data ?? []) as JobRow[]).filter((job) => jobMatchesSearchQuery(job, rawQuery)).filter(jobMatchesVisibleFilters);
-  }, [countryFilter, jobMatchesVisibleFilters]);
+  }, [countryFilters, jobMatchesVisibleFilters]);
 
   const fetchProfileContext = useCallback(async () => {
     try {
@@ -1099,7 +1141,7 @@ export default function JobRadarFeedPage() {
     const normalizedQuery = normalizeSearchText(rawQuery);
     const criteriaKey = JSON.stringify({
       q: normalizedQuery,
-      country: countryFilter,
+      countries: countryFilters,
       contract: contractFilter,
       workMode: workModeFilter,
     });
@@ -1108,10 +1150,10 @@ export default function JobRadarFeedPage() {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setErrorMsg(null);
-      setSearchBusy(Boolean(normalizedQuery || countryFilter || contractFilter || workModeFilter));
+      setSearchBusy(Boolean(normalizedQuery || countryFilters.length || contractFilter || workModeFilter));
 
       try {
-        const nextJobs = normalizedQuery || countryFilter || contractFilter || workModeFilter
+        const nextJobs = normalizedQuery || countryFilters.length || contractFilter || workModeFilter
           ? await fetchJobsSearch(rawQuery)
           : await fetchJobsRange(0, PAGE_SIZE - 1);
 
@@ -1119,7 +1161,7 @@ export default function JobRadarFeedPage() {
 
         setJobs(nextJobs);
         setPageFrom(nextJobs.length);
-        setHasMore(normalizedQuery || countryFilter || contractFilter || workModeFilter ? false : nextJobs.length === PAGE_SIZE);
+        setHasMore(normalizedQuery || countryFilters.length || contractFilter || workModeFilter ? false : nextJobs.length === PAGE_SIZE);
         lastServerSearchQueryRef.current = criteriaKey;
       } catch (e: unknown) {
         if (cancelled) return;
@@ -1140,6 +1182,7 @@ export default function JobRadarFeedPage() {
     loading,
     busy,
     countryFilter,
+    countryFilters,
     contractFilter,
     workModeFilter,
     hasActiveSearchCriteria,
@@ -1224,7 +1267,7 @@ export default function JobRadarFeedPage() {
 
   function buildCurrentAlertCriteria() {
     const searchQuery = collapseSpaces(q);
-    const countries = countryFilter ? [countryFilter] : [];
+    const countries = countryFilters;
     const employmentTypes = contractFilter ? [contractFilter] : [];
     const workModes = workModeFilter ? [workModeFilter] : [];
 
@@ -1493,11 +1536,15 @@ export default function JobRadarFeedPage() {
       : localFeedBuckets;
   const visibleFeedBuckets = useMemo(
     () => ({
-      top_match: rawVisibleFeedBuckets.top_match.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
-      for_you: rawVisibleFeedBuckets.for_you.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
+      top_match: rawVisibleFeedBuckets.top_match.filter((row: FeedDisplayRow) =>
+        jobMatchesVisibleFilters(row.job) && jobMatchesAlertCountryScope(row.job)
+      ),
+      for_you: rawVisibleFeedBuckets.for_you.filter((row: FeedDisplayRow) =>
+        jobMatchesVisibleFilters(row.job) && jobMatchesAlertCountryScope(row.job)
+      ),
       explore: rawVisibleFeedBuckets.explore.filter((row: FeedDisplayRow) => jobMatchesVisibleFilters(row.job)),
     }),
-    [rawVisibleFeedBuckets, jobMatchesVisibleFilters]
+    [rawVisibleFeedBuckets, jobMatchesVisibleFilters, jobMatchesAlertCountryScope]
   );
 
   const forYouRows = visibleFeedBuckets.for_you.filter((row: FeedDisplayRow) => {
@@ -1717,7 +1764,14 @@ export default function JobRadarFeedPage() {
           <div className="jr-filters" aria-label="Filtres de recherche">
             <label className="jr-filterSelect">
               <span>Pays</span>
-              <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
+              <select
+                value={countryFilter}
+                onChange={(e) => {
+                  const nextCountry = e.target.value;
+                  setCountryFilter(nextCountry);
+                  setCountryFilters(nextCountry ? [nextCountry] : []);
+                }}
+              >
                 {COUNTRY_FILTER_OPTIONS.map((option) => (
                   <option key={option.value || "all"} value={option.value}>
                     {option.label}
@@ -2075,7 +2129,12 @@ export default function JobRadarFeedPage() {
                   const isAdding = addingJobId === job.id;
                   const isDismissing = dismissingJobId === job.id;
                 const isTopMatch = p >= TOP_MATCH_MIN && (dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN;
-                const relevanceLabel = isTopMatch ? "Très adaptée" : getRelevanceLabel(p);
+                const matchesAlertCountry = jobMatchesAlertCountryScope(job);
+                const relevanceLabel = !matchesAlertCountry && !countryFilters.length
+                  ? "À explorer"
+                  : isTopMatch
+                  ? "Très adaptée"
+                  : getRelevanceLabel(p);
                 const scoreClass = isTopMatch
                   ? "jr-score jr-scoreStrong"
                   : p >= 70
@@ -2087,6 +2146,7 @@ export default function JobRadarFeedPage() {
                   expOk: row.expOk,
                   geoRemote: row.geoRemote,
                   alertDisplay: alertDisplayMap,
+                  allowAlertReason: matchesAlertCountry,
                 });
                 const locationLabel = [job.location ?? job.country, job.remote_type].filter(Boolean).join(" · ");
 
