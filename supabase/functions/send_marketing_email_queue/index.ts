@@ -12,6 +12,10 @@ import {
 type SendMarketingEmailQueueBody = {
   dry_run?: boolean | null;
   limit?: number | null;
+  confirm?: string | null;
+  segment_key?: string | null;
+  template_key?: string | null;
+  trigger?: string | null;
 };
 
 type QueueItem = {
@@ -77,6 +81,9 @@ type InsertedUnsubscribeToken = {
 };
 
 const MAX_LIMIT = 10;
+const SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE =
+  "SEND_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
+const CREATE_ALERT_DAILY_MAX_LIMIT = 10;
 const LOCKED_BY = "send_marketing_email_queue_v1";
 const REQUEST_TIMEOUT_MS = 15_000;
 const UNSUBSCRIBE_BASE_URL =
@@ -161,6 +168,16 @@ function parseLimit(value: number) {
   return Math.min(Math.max(Math.trunc(value), 1), MAX_LIMIT);
 }
 
+function isValidCreateAlertDailyLimit(value: number | null | undefined) {
+  return Number.isInteger(value) &&
+    (value as number) >= 1 &&
+    (value as number) <= CREATE_ALERT_DAILY_MAX_LIMIT;
+}
+
+function cleanText(value: string | null | undefined) {
+  return (value ?? "").trim();
+}
+
 function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -219,9 +236,82 @@ function ensureUnsubscribeFooter(html: string, text: string, unsubscribeUrl: str
   };
 }
 
-async function fetchQueueItems(supabase: SupabaseClient, limit: number) {
+async function countExact(
+  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  errorPrefix: string,
+) {
+  const { count, error } = await query;
+  if (error) throw new Error(`${errorPrefix}:${error.message}`);
+  return count ?? 0;
+}
+
+async function checkSendCreateAlertDailySafety(supabase: SupabaseClient) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    lockedCount,
+    recentFailedCount,
+    recentSuppressionCount,
+    recentWebhookEventCount,
+  ] = await Promise.all([
+    countExact(
+      supabase
+        .from("marketing_email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("segment_key", "non_paying_without_alert")
+        .eq("template_key", "create_alert_email_1")
+        .eq("status", "locked"),
+      "daily_locked_queue_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("marketing_email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("segment_key", "non_paying_without_alert")
+        .eq("template_key", "create_alert_email_1")
+        .eq("status", "failed")
+        .gte("updated_at", since),
+      "daily_failed_queue_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("email_suppressions")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since)
+        .or("reason.ilike.%bounce%,reason.ilike.%complaint%"),
+      "daily_suppression_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("resend_webhook_events")
+        .select("id", { count: "exact", head: true })
+        .gte("received_at", since)
+        .or("event_type.ilike.%bounce%,event_type.ilike.%complaint%"),
+      "daily_webhook_lookup_failed",
+    ),
+  ]);
+
+  const counts = {
+    locked_count: lockedCount,
+    recent_failed_count: recentFailedCount,
+    recent_bounce_or_complaint_suppression_count: recentSuppressionCount,
+    recent_bounce_or_complaint_webhook_count: recentWebhookEventCount,
+  };
+
+  return {
+    ok: Object.values(counts).every((count) => count === 0),
+    since,
+    counts,
+  };
+}
+
+async function fetchQueueItems(
+  supabase: SupabaseClient,
+  limit: number,
+  filters: { segmentKey?: string; templateKey?: string } = {},
+) {
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  let query = supabase
     .from("marketing_email_queue")
     .select(
       [
@@ -239,7 +329,17 @@ async function fetchQueueItems(supabase: SupabaseClient, limit: number) {
       ].join(","),
     )
     .eq("status", "queued")
-    .lte("scheduled_for", now)
+    .lte("scheduled_for", now);
+
+  if (filters.segmentKey) {
+    query = query.eq("segment_key", filters.segmentKey);
+  }
+
+  if (filters.templateKey) {
+    query = query.eq("template_key", filters.templateKey);
+  }
+
+  const { data, error } = await query
     .order("priority", { ascending: true })
     .order("scheduled_for", { ascending: true })
     .limit(limit * 3)
@@ -605,8 +705,36 @@ serve(async (req) => {
   const dryRun = body.dry_run;
   const limitRequested = body.limit;
   const limitApplied = parseLimit(limitRequested);
+  const isCreateAlertDailyMode =
+    body.confirm === SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE;
+  const segmentKey = cleanText(body.segment_key);
+  const templateKey = cleanText(body.template_key);
+  const trigger = cleanText(body.trigger);
 
-  if (!dryRun && limitApplied !== 1) {
+  if (isCreateAlertDailyMode) {
+    if (!isValidCreateAlertDailyLimit(body.limit)) {
+      return json(400, {
+        ok: false,
+        error: "send_create_alert_daily_limit_invalid",
+        message: "Daily send for create_alert_email_1 requires integer limit between 1 and 10.",
+      });
+    }
+
+    if (
+      segmentKey !== "non_paying_without_alert" ||
+      templateKey !== "create_alert_email_1" ||
+      !["cron", "manual_daily_test"].includes(trigger)
+    ) {
+      return json(400, {
+        ok: false,
+        error: "send_create_alert_daily_request_invalid",
+        message:
+          "Daily send requires segment_key=non_paying_without_alert, template_key=create_alert_email_1, and trigger=cron or manual_daily_test.",
+      });
+    }
+  }
+
+  if (!dryRun && !isCreateAlertDailyMode && limitApplied !== 1) {
     return json(400, {
       ok: false,
       error: "real_send_limit_one_required",
@@ -643,7 +771,28 @@ serve(async (req) => {
   let failedCount = 0;
 
   try {
-    const queueItems = await fetchQueueItems(supabase, limitApplied);
+    if (!dryRun && isCreateAlertDailyMode) {
+      const safety = await checkSendCreateAlertDailySafety(supabase);
+      if (!safety.ok) {
+        return json(409, {
+          ok: false,
+          dry_run: false,
+          error: "send_create_alert_daily_safety_stop",
+          details: safety,
+        });
+      }
+    }
+
+    const queueItems = await fetchQueueItems(
+      supabase,
+      limitApplied,
+      isCreateAlertDailyMode
+        ? {
+          segmentKey: "non_paying_without_alert",
+          templateKey: "create_alert_email_1",
+        }
+        : {},
+    );
 
     for (const item of queueItems) {
       const emailNormalized = normalizeEmail(item.email);

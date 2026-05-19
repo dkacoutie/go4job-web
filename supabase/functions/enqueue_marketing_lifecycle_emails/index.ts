@@ -53,6 +53,9 @@ type QueueRow = {
 
 const CONFIRM_PHRASE = "ENQUEUE_MARKETING_LIFECYCLE_EMAILS";
 const CREATE_ALERT_CONFIRM_PHRASE = "ENQUEUE_CREATE_ALERT_EMAIL_1_LIMIT_1";
+const CREATE_ALERT_DAILY_CONFIRM_PHRASE =
+  "ENQUEUE_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
+const CREATE_ALERT_DAILY_MAX_LIMIT = 10;
 const DEFAULT_SEQUENCE_KEY = "jobradar_reactivation_v1";
 const DEFAULT_STEP_KEY = "email_1";
 const DEFAULT_TEMPLATE_KEY = "payment_attempt_no_success_email_1";
@@ -148,6 +151,81 @@ function sampleRows(rows: QueueRow[]) {
     template_key: row.template_key,
     segment_key: row.segment_key,
   }));
+}
+
+function isValidCreateAlertDailyLimit(value: number | null | undefined) {
+  return Number.isInteger(value) &&
+    (value as number) >= 1 &&
+    (value as number) <= CREATE_ALERT_DAILY_MAX_LIMIT;
+}
+
+async function countExact(
+  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
+  errorPrefix: string,
+) {
+  const { count, error } = await query;
+  if (error) throw new Error(`${errorPrefix}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function checkCreateAlertDailySafety(supabase: SupabaseClient) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    queuedOrLockedCount,
+    recentFailedCount,
+    recentSuppressionCount,
+    recentWebhookEventCount,
+  ] = await Promise.all([
+    countExact(
+      supabase
+        .from("marketing_email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("segment_key", "non_paying_without_alert")
+        .eq("template_key", "create_alert_email_1")
+        .in("status", ["queued", "locked"]),
+      "daily_queue_active_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("marketing_email_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("segment_key", "non_paying_without_alert")
+        .eq("template_key", "create_alert_email_1")
+        .eq("status", "failed")
+        .gte("updated_at", since),
+      "daily_queue_failed_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("email_suppressions")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since)
+        .or("reason.ilike.%bounce%,reason.ilike.%complaint%"),
+      "daily_suppression_lookup_failed",
+    ),
+    countExact(
+      supabase
+        .from("resend_webhook_events")
+        .select("id", { count: "exact", head: true })
+        .gte("received_at", since)
+        .or("event_type.ilike.%bounce%,event_type.ilike.%complaint%"),
+      "daily_webhook_lookup_failed",
+    ),
+  ]);
+
+  const counts = {
+    queued_or_locked_count: queuedOrLockedCount,
+    recent_failed_count: recentFailedCount,
+    recent_bounce_or_complaint_suppression_count: recentSuppressionCount,
+    recent_bounce_or_complaint_webhook_count: recentWebhookEventCount,
+  };
+
+  return {
+    ok: Object.values(counts).every((count) => count === 0),
+    since,
+    counts,
+  };
 }
 
 async function fetchSuppressedEmails(
@@ -448,8 +526,12 @@ serve(async (req) => {
 
   const allowDefaultEnqueue = body.allow_enqueue === true &&
     body.confirm === CONFIRM_PHRASE;
-  const allowCreateAlertEnqueue = body.allow_enqueue === true &&
+  const allowCreateAlertManualEnqueue = body.allow_enqueue === true &&
     body.confirm === CREATE_ALERT_CONFIRM_PHRASE;
+  const allowCreateAlertDailyEnqueue = body.allow_enqueue === true &&
+    body.confirm === CREATE_ALERT_DAILY_CONFIRM_PHRASE;
+  const allowCreateAlertEnqueue = allowCreateAlertManualEnqueue ||
+    allowCreateAlertDailyEnqueue;
   const requestedRealRun = body.dry_run === false;
   const limit = parseLimit(body.limit);
   const sequenceKey = cleanText(body.sequence_key, DEFAULT_SEQUENCE_KEY);
@@ -506,16 +588,26 @@ serve(async (req) => {
           ok: false,
           dry_run: dryRun,
           error: "create_alert_confirm_required",
-          message: `Real enqueue for non_paying_without_alert requires confirm=${CREATE_ALERT_CONFIRM_PHRASE}.`,
+          message:
+            `Real enqueue for non_paying_without_alert requires confirm=${CREATE_ALERT_CONFIRM_PHRASE} or confirm=${CREATE_ALERT_DAILY_CONFIRM_PHRASE}.`,
         });
       }
 
-      if (body.limit !== 1 || limit !== 1) {
+      if (allowCreateAlertManualEnqueue && (body.limit !== 1 || limit !== 1)) {
         return json(400, {
           ok: false,
           dry_run: dryRun,
           error: "create_alert_limit_one_required",
           message: "Real enqueue for non_paying_without_alert requires requested and effective limit=1.",
+        });
+      }
+
+      if (allowCreateAlertDailyEnqueue && !isValidCreateAlertDailyLimit(body.limit)) {
+        return json(400, {
+          ok: false,
+          dry_run: dryRun,
+          error: "create_alert_daily_limit_invalid",
+          message: "Daily real enqueue for non_paying_without_alert requires integer limit between 1 and 10.",
         });
       }
 
@@ -526,6 +618,27 @@ serve(async (req) => {
           error: "create_alert_sequence_step_required",
           message: "Real enqueue for non_paying_without_alert requires sequence_key=non_paying_without_alert and step_key=email_1.",
         });
+      }
+
+      if (allowCreateAlertDailyEnqueue) {
+        try {
+          const safety = await checkCreateAlertDailySafety(supabase);
+          if (!safety.ok) {
+            return json(409, {
+              ok: false,
+              dry_run: false,
+              error: "create_alert_daily_safety_stop",
+              details: safety,
+            });
+          }
+        } catch (error) {
+          return json(500, {
+            ok: false,
+            dry_run: false,
+            error: "create_alert_daily_safety_check_failed",
+            message: error instanceof Error ? error.message : "unknown_error",
+          });
+        }
       }
     }
 
@@ -573,6 +686,12 @@ serve(async (req) => {
         }
       }
 
+      const message = dryRun
+        ? "Dry-run only. No marketing emails were queued or sent."
+        : allowCreateAlertDailyEnqueue
+        ? `Create-alert daily batch queued: ${enqueuedCount} email(s). No emails were sent.`
+        : "One create-alert marketing lifecycle email was queued. No emails were sent.";
+
       return json(200, {
         ok: true,
         dry_run: dryRun,
@@ -588,9 +707,7 @@ serve(async (req) => {
         candidates_checked: result.candidatesChecked,
         ...result.extraCounts,
         sample: sampleRows(result.queueRows),
-        message: dryRun
-          ? "Dry-run only. No marketing emails were queued or sent."
-          : "One create-alert marketing lifecycle email was queued. No emails were sent.",
+        message,
       });
     } catch (error) {
       return json(500, {
