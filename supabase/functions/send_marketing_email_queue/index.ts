@@ -80,6 +80,29 @@ type InsertedUnsubscribeToken = {
   token: string;
 };
 
+type CampaignSettings = {
+  campaign_key: string;
+  enabled: boolean;
+  dry_run: boolean;
+  segment_key: string;
+  sequence_key: string;
+  step_key: string;
+  template_key: string;
+  daily_send_limit: number;
+};
+
+type DailySendLimitDiagnostics = {
+  campaign_key: string | null;
+  segment_key: string | null;
+  template_key: string | null;
+  campaign_enabled: boolean | null;
+  campaign_dry_run: boolean | null;
+  daily_send_limit: number | null;
+  sent_today: number;
+  daily_send_remaining: number | null;
+  daily_send_limit_enforced: boolean;
+};
+
 const MAX_LIMIT = 10;
 const SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE =
   "SEND_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
@@ -88,6 +111,7 @@ const LOCKED_BY = "send_marketing_email_queue_v1";
 const REQUEST_TIMEOUT_MS = 15_000;
 const UNSUBSCRIBE_BASE_URL =
   "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/email_unsubscribe";
+const COUNTED_SENT_STATUSES = ["sent", "delivered", "opened", "clicked"];
 
 const TEMPLATE_KEY_TO_SEGMENT: Record<MarketingEmailKey, string> = {
   payment_attempt_no_success_email_1: "payment_attempt_no_success",
@@ -199,6 +223,13 @@ function metadataString(item: QueueItem, key: string) {
   return asString(item.metadata?.[key]);
 }
 
+function utcDayStartIso() {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString();
+}
+
 function buildResponseItem(
   item: QueueItem,
   action: string,
@@ -303,6 +334,120 @@ async function checkSendCreateAlertDailySafety(supabase: SupabaseClient) {
     since,
     counts,
   };
+}
+
+function emptyDailySendLimitDiagnostics(
+  segmentKey: string,
+  templateKey: string,
+): DailySendLimitDiagnostics {
+  return {
+    campaign_key: null,
+    segment_key: segmentKey || null,
+    template_key: templateKey || null,
+    campaign_enabled: null,
+    campaign_dry_run: null,
+    daily_send_limit: null,
+    sent_today: 0,
+    daily_send_remaining: null,
+    daily_send_limit_enforced: false,
+  };
+}
+
+async function fetchCampaignSettingsForSend(
+  supabase: SupabaseClient,
+  filters: { segmentKey: string; templateKey: string },
+) {
+  if (!filters.segmentKey || !filters.templateKey) return null;
+
+  const { data, error } = await supabase
+    .from("marketing_campaign_settings")
+    .select(
+      "campaign_key,enabled,dry_run,segment_key,sequence_key,step_key,template_key,daily_send_limit",
+    )
+    .eq("segment_key", filters.segmentKey)
+    .eq("template_key", filters.templateKey)
+    .maybeSingle<CampaignSettings>();
+
+  if (error) throw new Error(`campaign_settings_lookup_failed:${error.message}`);
+  return data;
+}
+
+async function countCampaignSentToday(
+  supabase: SupabaseClient,
+  campaign: CampaignSettings,
+) {
+  const todayStart = utcDayStartIso();
+  const base = () =>
+    supabase
+      .from("email_logs")
+      .select("id", { count: "exact", head: true })
+      .in("status", COUNTED_SENT_STATUSES)
+      .eq("segment", campaign.segment_key)
+      .eq("email_key", `${campaign.sequence_key}:${campaign.step_key}`)
+      .eq("metadata->>template_key", campaign.template_key);
+
+  const [sentAtCount, createdAtFallbackCount] = await Promise.all([
+    countExact(
+      base().gte("sent_at", todayStart),
+      "daily_send_sent_at_lookup_failed",
+    ),
+    countExact(
+      base().is("sent_at", null).gte("created_at", todayStart),
+      "daily_send_created_at_lookup_failed",
+    ),
+  ]);
+
+  return sentAtCount + createdAtFallbackCount;
+}
+
+async function getDailySendLimitDiagnostics(
+  supabase: SupabaseClient,
+  filters: { segmentKey: string; templateKey: string },
+): Promise<DailySendLimitDiagnostics> {
+  const campaign = await fetchCampaignSettingsForSend(supabase, filters);
+  if (!campaign) {
+    return emptyDailySendLimitDiagnostics(filters.segmentKey, filters.templateKey);
+  }
+
+  const sentToday = await countCampaignSentToday(supabase, campaign);
+  const dailySendRemaining = Math.max(0, campaign.daily_send_limit - sentToday);
+
+  return {
+    campaign_key: campaign.campaign_key,
+    segment_key: campaign.segment_key,
+    template_key: campaign.template_key,
+    campaign_enabled: campaign.enabled,
+    campaign_dry_run: campaign.dry_run,
+    daily_send_limit: campaign.daily_send_limit,
+    sent_today: sentToday,
+    daily_send_remaining: dailySendRemaining,
+    daily_send_limit_enforced: true,
+  };
+}
+
+function blockedBeforeSendResponse(params: {
+  dryRun: boolean;
+  limitRequested: number;
+  limitApplied: number;
+  blockedReason: string;
+  items: ResponseItem[];
+  diagnostics: DailySendLimitDiagnostics;
+}) {
+  return json(200, {
+    ok: true,
+    dry_run: params.dryRun,
+    limit_requested: params.limitRequested,
+    limit_applied: params.limitApplied,
+    selected_count: 0,
+    would_send_count: 0,
+    sent_count: 0,
+    skipped_count: 0,
+    failed_count: 0,
+    blocked_reason: params.blockedReason,
+    resend_called: false,
+    items: params.items,
+    ...params.diagnostics,
+  });
 }
 
 async function fetchQueueItems(
@@ -771,6 +916,57 @@ serve(async (req) => {
   let failedCount = 0;
 
   try {
+    const dailySendLimitDiagnostics = await getDailySendLimitDiagnostics(
+      supabase,
+      { segmentKey, templateKey },
+    );
+
+    if (
+      !dryRun &&
+      dailySendLimitDiagnostics.daily_send_limit_enforced &&
+      dailySendLimitDiagnostics.campaign_enabled === false
+    ) {
+      return blockedBeforeSendResponse({
+        dryRun,
+        limitRequested,
+        limitApplied,
+        blockedReason: "campaign_disabled",
+        items,
+        diagnostics: dailySendLimitDiagnostics,
+      });
+    }
+
+    if (
+      !dryRun &&
+      dailySendLimitDiagnostics.daily_send_limit_enforced &&
+      dailySendLimitDiagnostics.campaign_dry_run === true
+    ) {
+      return blockedBeforeSendResponse({
+        dryRun,
+        limitRequested,
+        limitApplied,
+        blockedReason: "campaign_dry_run",
+        items,
+        diagnostics: dailySendLimitDiagnostics,
+      });
+    }
+
+    if (
+      !dryRun &&
+      dailySendLimitDiagnostics.daily_send_limit_enforced &&
+      dailySendLimitDiagnostics.daily_send_remaining !== null &&
+      dailySendLimitDiagnostics.daily_send_remaining <= 0
+    ) {
+      return blockedBeforeSendResponse({
+        dryRun,
+        limitRequested,
+        limitApplied,
+        blockedReason: "daily_send_limit_reached",
+        items,
+        diagnostics: dailySendLimitDiagnostics,
+      });
+    }
+
     if (!dryRun && isCreateAlertDailyMode) {
       const safety = await checkSendCreateAlertDailySafety(supabase);
       if (!safety.ok) {
@@ -783,9 +979,15 @@ serve(async (req) => {
       }
     }
 
+    const queueLimit = !dryRun &&
+        dailySendLimitDiagnostics.daily_send_limit_enforced &&
+        dailySendLimitDiagnostics.daily_send_remaining !== null
+      ? Math.min(limitApplied, dailySendLimitDiagnostics.daily_send_remaining)
+      : limitApplied;
+
     const queueItems = await fetchQueueItems(
       supabase,
-      limitApplied,
+      queueLimit,
       isCreateAlertDailyMode
         ? {
           segmentKey: "non_paying_without_alert",
@@ -1035,12 +1237,14 @@ serve(async (req) => {
       dry_run: dryRun,
       limit_requested: limitRequested,
       limit_applied: limitApplied,
+      queue_limit_applied: queueLimit,
       selected_count: queueItems.length,
       would_send_count: wouldSendCount,
       sent_count: sentCount,
       skipped_count: skippedCount,
       failed_count: failedCount,
       items,
+      ...dailySendLimitDiagnostics,
     });
   } catch (error) {
     return json(500, {
