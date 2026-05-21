@@ -6,6 +6,8 @@ import {
 
 type PlannerBody = {
   dry_run?: boolean | null;
+  allow_enqueue?: boolean | null;
+  confirm?: string | null;
   campaign_key?: string | null;
   limit?: number | null;
   write_log?: boolean | null;
@@ -34,9 +36,21 @@ type GlobalSetting = {
   value: string;
 };
 
+type Candidate = {
+  user_id: string;
+  email: string;
+  email_normalized: string;
+  registered_at: string | null;
+  segment: string;
+  suggested_email_key: string;
+};
+
 const DEFAULT_CAMPAIGN_KEY = "non_paying_without_alert";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const CONTROLLED_ENQUEUE_CONFIRM = "ENQUEUE_CREATE_ALERT_EMAIL_1_LIMIT_1";
+const PLANNER_VERSION = "v1.1";
+const PENDING_QUEUE_STATUSES = ["queued", "locked", "processing"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +130,26 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function utcDayStartIso() {
+  const now = new Date();
+  return new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  ).toISOString();
+}
+
+function hoursAgoIso(hours: number) {
+  return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function daysAgoIso(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function logStatus(dryRun: boolean, blockedReason: string | null) {
+  if (dryRun) return "dry_run";
+  return blockedReason ? "skipped" : "success";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -141,19 +175,10 @@ serve(async (req) => {
   const writeLog = body.write_log !== false;
   const campaignKey = (body.campaign_key ?? DEFAULT_CAMPAIGN_KEY).trim();
   const requestedLimit = clampLimit(body.limit, DEFAULT_LIMIT);
+  const trigger = body.trigger ?? "manual";
   const runId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
-
-  if (!dryRun) {
-    return json(409, {
-      ok: false,
-      error: "planner_v1_dry_run_only",
-      message: "marketing_lifecycle_planner V1 only accepts dry_run=true.",
-      queue_written: false,
-      email_sent: false,
-      real_enqueue_attempted: false,
-    });
-  }
+  const realEnqueueAttempted = !dryRun;
 
   let supabase: SupabaseClient;
   try {
@@ -228,6 +253,22 @@ serve(async (req) => {
     ? parsedDailyGlobalCap
     : 0;
 
+  const enqueueGateOk = body.allow_enqueue === true &&
+    body.confirm === CONTROLLED_ENQUEUE_CONFIRM &&
+    typedCampaign.campaign_key === DEFAULT_CAMPAIGN_KEY &&
+    requestedLimit === 1;
+
+  let blockedReason: string | null = null;
+  if (!dryRun && !enqueueGateOk) {
+    blockedReason = "controlled_enqueue_confirmation_missing";
+  } else if (lifecyclePaused) {
+    blockedReason = "lifecycle_paused";
+  } else if (!typedCampaign.enabled) {
+    blockedReason = "campaign_disabled";
+  } else if (!dryRun && typedCampaign.dry_run) {
+    blockedReason = "campaign_dry_run_enabled";
+  }
+
   const effectiveLimit = Math.max(
     0,
     Math.min(
@@ -256,17 +297,264 @@ serve(async (req) => {
 
   const candidateCount = candidateCountRaw ?? 0;
   const wouldPlanBeforeBlocks = Math.min(candidateCount, effectiveLimit);
+  const todayStart = utcDayStartIso();
 
-  let blockedReason: string | null = null;
-  if (lifecyclePaused) {
-    blockedReason = "lifecycle_paused";
-  } else if (!typedCampaign.enabled) {
-    blockedReason = "campaign_disabled";
-  } else if (!typedCampaign.dry_run) {
-    blockedReason = "campaign_not_in_dry_run";
+  const { count: campaignQueuedTodayRaw, error: campaignQueuedTodayError } =
+    await supabase
+      .from("marketing_email_queue")
+      .select("*", { count: "exact", head: true })
+      .eq("segment_key", typedCampaign.segment_key)
+      .eq("template_key", typedCampaign.template_key)
+      .gte("created_at", todayStart);
+
+  if (campaignQueuedTodayError) {
+    return json(500, {
+      ok: false,
+      error: "campaign_daily_queue_count_failed",
+      details: campaignQueuedTodayError.message,
+      queue_written: false,
+      email_sent: false,
+      real_enqueue_attempted: realEnqueueAttempted,
+    });
   }
 
-  const wouldEnqueueCount = blockedReason ? 0 : wouldPlanBeforeBlocks;
+  const { count: globalQueuedTodayRaw, error: globalQueuedTodayError } =
+    await supabase
+      .from("marketing_email_queue")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", todayStart);
+
+  if (globalQueuedTodayError) {
+    return json(500, {
+      ok: false,
+      error: "global_daily_queue_count_failed",
+      details: globalQueuedTodayError.message,
+      queue_written: false,
+      email_sent: false,
+      real_enqueue_attempted: realEnqueueAttempted,
+    });
+  }
+
+  const campaignQueuedToday = campaignQueuedTodayRaw ?? 0;
+  const globalQueuedToday = globalQueuedTodayRaw ?? 0;
+  const { count: successfulRunTodayRaw, error: successfulRunTodayError } =
+    await supabase
+      .from("marketing_planner_logs")
+      .select("*", { count: "exact", head: true })
+      .eq("campaign_key", typedCampaign.campaign_key)
+      .eq("run_date", todayIsoDate())
+      .eq("dry_run", false)
+      .eq("status", "success");
+
+  if (successfulRunTodayError) {
+    return json(500, {
+      ok: false,
+      error: "successful_run_count_failed",
+      details: successfulRunTodayError.message,
+      queue_written: false,
+      email_sent: false,
+      real_enqueue_attempted: realEnqueueAttempted,
+    });
+  }
+
+  const successfulRunToday = successfulRunTodayRaw ?? 0;
+  const campaignDailyRemaining = Math.max(
+    0,
+    typedCampaign.daily_enqueue_limit - campaignQueuedToday,
+  );
+  const globalDailyRemaining = dailyGlobalCap > 0
+    ? Math.max(0, dailyGlobalCap - globalQueuedToday)
+    : requestedLimit;
+
+  let selectedCandidate: Candidate | null = null;
+  let selectedCountBeforeInsert = 0;
+  let queueWritten = false;
+  let enqueueError: string | null = null;
+  let skippedSuppressedCount = 0;
+  let skippedCooldownCount = 0;
+  let skippedTooRecentCount = 0;
+  let skippedDuplicateCount = 0;
+  let skippedDailyCapCount = 0;
+  let skippedGlobalCapCount = 0;
+  if (!blockedReason && campaignDailyRemaining <= 0) {
+    blockedReason = "daily_enqueue_limit_reached";
+    skippedDailyCapCount = candidateCount;
+  }
+  if (!blockedReason && globalDailyRemaining <= 0) {
+    blockedReason = "daily_global_cap_reached";
+    skippedGlobalCapCount = candidateCount;
+  }
+  if (!dryRun && !blockedReason && successfulRunToday > 0) {
+    blockedReason = "successful_real_run_already_exists_today";
+    skippedDuplicateCount = candidateCount;
+  }
+
+  const cappedLimit = Math.max(
+    0,
+    Math.min(effectiveLimit, campaignDailyRemaining, globalDailyRemaining),
+  );
+  const wouldEnqueueCount = blockedReason ? 0 : Math.min(candidateCount, cappedLimit);
+
+  if (!dryRun && !blockedReason) {
+    const { data: candidates, error: candidateSelectError } = await supabase
+      .from("jobradar_marketing_reactivation_candidates")
+      .select(
+        "user_id,email,email_normalized,registered_at,segment,suggested_email_key",
+      )
+      .eq("segment", typedCampaign.segment_key)
+      .eq("suggested_email_key", typedCampaign.template_key)
+      .order("registered_at", { ascending: true })
+      .limit(Math.max(1, Math.min(MAX_LIMIT, candidateCount)));
+
+    if (candidateSelectError) {
+      blockedReason = "candidate_select_failed";
+      enqueueError = candidateSelectError.message;
+    } else {
+      for (const candidate of (candidates ?? []) as Candidate[]) {
+        selectedCountBeforeInsert += 1;
+
+        const { count: suppressionCountRaw, error: suppressionError } =
+          await supabase
+            .from("email_suppressions")
+            .select("*", { count: "exact", head: true })
+            .eq("email_normalized", candidate.email_normalized);
+
+        if (suppressionError) {
+          blockedReason = "suppression_check_failed";
+          enqueueError = suppressionError.message;
+          break;
+        }
+        if ((suppressionCountRaw ?? 0) > 0) {
+          skippedSuppressedCount += 1;
+          continue;
+        }
+
+        const minRegisteredAt = hoursAgoIso(typedCampaign.min_user_age_hours);
+        if (
+          candidate.registered_at &&
+          new Date(candidate.registered_at).getTime() >
+            new Date(minRegisteredAt).getTime()
+        ) {
+          skippedTooRecentCount += 1;
+          continue;
+        }
+
+        const { count: activeAlertCountRaw, error: activeAlertError } =
+          await supabase
+            .from("alerts")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", candidate.user_id)
+            .eq("is_active", true);
+
+        if (activeAlertError) {
+          blockedReason = "active_alert_check_failed";
+          enqueueError = activeAlertError.message;
+          break;
+        }
+        if ((activeAlertCountRaw ?? 0) > 0) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        const { count: sentCountRaw, error: sentError } = await supabase
+          .from("email_logs")
+          .select("*", { count: "exact", head: true })
+          .eq("email_normalized", candidate.email_normalized)
+          .eq("status", "sent")
+          .or(
+            `email_key.eq.${typedCampaign.template_key},segment.eq.${typedCampaign.segment_key}`,
+          );
+
+        if (sentError) {
+          blockedReason = "sent_log_check_failed";
+          enqueueError = sentError.message;
+          break;
+        }
+        if ((sentCountRaw ?? 0) > 0) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        const cooldownSince = daysAgoIso(typedCampaign.cooldown_days);
+        const { count: cooldownCountRaw, error: cooldownError } =
+          await supabase
+            .from("email_logs")
+            .select("*", { count: "exact", head: true })
+            .eq("email_normalized", candidate.email_normalized)
+            .eq("status", "sent")
+            .gte("sent_at", cooldownSince);
+
+        if (cooldownError) {
+          blockedReason = "cooldown_check_failed";
+          enqueueError = cooldownError.message;
+          break;
+        }
+        if ((cooldownCountRaw ?? 0) > 0) {
+          skippedCooldownCount += 1;
+          continue;
+        }
+
+        const { count: pendingCountRaw, error: pendingError } = await supabase
+          .from("marketing_email_queue")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", candidate.user_id)
+          .eq("sequence_key", typedCampaign.sequence_key)
+          .eq("step_key", typedCampaign.step_key)
+          .eq("template_key", typedCampaign.template_key)
+          .in("status", PENDING_QUEUE_STATUSES);
+
+        if (pendingError) {
+          blockedReason = "pending_queue_check_failed";
+          enqueueError = pendingError.message;
+          break;
+        }
+        if ((pendingCountRaw ?? 0) > 0) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
+        selectedCandidate = candidate;
+        break;
+      }
+    }
+
+    if (!blockedReason && !selectedCandidate) {
+      blockedReason = "no_clean_candidate";
+    }
+
+    if (!blockedReason && selectedCandidate) {
+      const { error: insertError } = await supabase
+        .from("marketing_email_queue")
+        .insert({
+          user_id: selectedCandidate.user_id,
+          email: selectedCandidate.email,
+          sequence_key: typedCampaign.sequence_key,
+          step_key: typedCampaign.step_key,
+          template_key: typedCampaign.template_key,
+          segment_key: typedCampaign.segment_key,
+          status: "queued",
+          priority: typedCampaign.priority,
+          scheduled_for: new Date().toISOString(),
+          attempts: 0,
+          max_attempts: 3,
+          provider: "resend",
+          metadata: {
+            planner_version: PLANNER_VERSION,
+            planner_run_id: runId,
+            trigger,
+            controlled_activation: true,
+          },
+        });
+
+      if (insertError) {
+        blockedReason = "queue_insert_failed";
+        enqueueError = insertError.message;
+      } else {
+        queueWritten = true;
+      }
+    }
+  }
+
   const finishedAt = new Date().toISOString();
 
   let plannerLogWritten = false;
@@ -279,18 +567,22 @@ serve(async (req) => {
         run_id: runId,
         run_date: todayIsoDate(),
         campaign_key: typedCampaign.campaign_key,
-        dry_run: true,
-        status: "dry_run",
+        dry_run: dryRun,
+        status: enqueueError ? "failed" : logStatus(dryRun, blockedReason),
         started_at: startedAt,
         finished_at: finishedAt,
         eligible_count: candidateCount,
-        enqueued_count: 0,
-        skipped_daily_cap_count: 0,
-        skipped_global_cap_count: 0,
-        error: null,
+        enqueued_count: queueWritten ? 1 : 0,
+        skipped_suppressed_count: skippedSuppressedCount,
+        skipped_cooldown_count: skippedCooldownCount,
+        skipped_too_recent_count: skippedTooRecentCount,
+        skipped_daily_cap_count: skippedDailyCapCount,
+        skipped_duplicate_count: skippedDuplicateCount,
+        skipped_global_cap_count: skippedGlobalCapCount,
+        error: enqueueError,
         metadata: {
-          planner_version: "v1",
-          trigger: body.trigger ?? "manual",
+          planner_version: PLANNER_VERSION,
+          trigger,
           candidate_source: "jobradar_marketing_reactivation_candidates",
           lifecycle_paused: lifecyclePaused,
           campaign_enabled: typedCampaign.enabled,
@@ -298,10 +590,18 @@ serve(async (req) => {
           blocked_reason: blockedReason,
           requested_limit: requestedLimit,
           effective_limit: effectiveLimit,
+          capped_limit: cappedLimit,
+          campaign_queued_today: campaignQueuedToday,
+          global_queued_today: globalQueuedToday,
+          successful_real_runs_today: successfulRunToday,
+          campaign_daily_remaining: campaignDailyRemaining,
+          global_daily_remaining: globalDailyRemaining,
           would_plan_before_blocks: wouldPlanBeforeBlocks,
-          queue_written: false,
+          queue_written: queueWritten,
           email_sent: false,
-          real_enqueue_attempted: false,
+          real_enqueue_attempted: realEnqueueAttempted,
+          selected_count_before_insert: selectedCountBeforeInsert,
+          selected_user_id: selectedCandidate?.user_id ?? null,
         },
       });
 
@@ -312,10 +612,12 @@ serve(async (req) => {
     }
   }
 
-  return json(200, {
-    ok: true,
-    dry_run: true,
-    planner_version: "v1",
+  const responseStatus = enqueueError ? 500 : (!dryRun && !queueWritten ? 409 : 200);
+
+  return json(responseStatus, {
+    ok: dryRun || queueWritten,
+    dry_run: dryRun,
+    planner_version: PLANNER_VERSION,
     run_id: runId,
     campaign_key: typedCampaign.campaign_key,
     segment_key: typedCampaign.segment_key,
@@ -328,17 +630,32 @@ serve(async (req) => {
     daily_enqueue_limit: typedCampaign.daily_enqueue_limit,
     daily_send_limit: typedCampaign.daily_send_limit,
     daily_global_cap: dailyGlobalCap || null,
+    campaign_queued_today: campaignQueuedToday,
+    global_queued_today: globalQueuedToday,
+    successful_real_runs_today: successfulRunToday,
+    campaign_daily_remaining: campaignDailyRemaining,
+    global_daily_remaining: globalDailyRemaining,
     requested_limit: requestedLimit,
     effective_limit: effectiveLimit,
+    capped_limit: cappedLimit,
     candidate_source: "jobradar_marketing_reactivation_candidates",
     candidate_count: candidateCount,
     would_plan_before_blocks: wouldPlanBeforeBlocks,
-    would_enqueue_count: wouldEnqueueCount,
+    would_enqueue_count: dryRun ? wouldEnqueueCount : 0,
+    enqueued_count: queueWritten ? 1 : 0,
+    skipped_suppressed_count: skippedSuppressedCount,
+    skipped_cooldown_count: skippedCooldownCount,
+    skipped_too_recent_count: skippedTooRecentCount,
+    skipped_daily_cap_count: skippedDailyCapCount,
+    skipped_duplicate_count: skippedDuplicateCount,
+    skipped_global_cap_count: skippedGlobalCapCount,
     blocked_reason: blockedReason,
-    queue_written: false,
+    queue_written: queueWritten,
     email_sent: false,
-    real_enqueue_attempted: false,
+    real_enqueue_attempted: realEnqueueAttempted,
+    selected_count_before_insert: selectedCountBeforeInsert,
     planner_log_written: plannerLogWritten,
     planner_log_error: plannerLogError,
+    enqueue_error: enqueueError,
   });
 });
