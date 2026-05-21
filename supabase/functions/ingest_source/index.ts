@@ -325,10 +325,25 @@ function buildCiRunMeta(params: {
   insertedCount: number;
   updatedCount: number;
   data: Record<string, unknown>;
+  rotation?: {
+    sourceCode: string;
+    stateKey: string;
+    startPage: number;
+    maxPages: number;
+    nextStartPage: number;
+    startPages: number[];
+  };
 }) {
   const pageStats = Array.isArray(params.data.page_stats)
     ? params.data.page_stats
     : [];
+  const rotationWindow = params.rotation
+    ? {
+      start_page: params.rotation.startPage,
+      end_page: params.rotation.startPage + params.rotation.maxPages - 1,
+      max_pages: params.rotation.maxPages,
+    }
+    : null;
   const pagination: Record<string, unknown> = {
     source_code: params.sourceCode,
     requested_limit: params.requestedLimit,
@@ -336,6 +351,10 @@ function buildCiRunMeta(params: {
     start_page: params.data.effective_start_page ?? null,
     max_pages: params.data.effective_max_pages ?? null,
     pages_fetched: params.data.pages_fetched ?? null,
+    next_start_page: params.rotation?.nextStartPage ?? null,
+    rotation_window: rotationWindow,
+    rotation_start_pages: params.rotation?.startPages ?? null,
+    rotation_state_key: params.rotation?.stateKey ?? null,
     pages_with_items: countPagesWithItems(pageStats),
     items_parsed: params.data.parsed ?? null,
     items_deduplicated: sumNumericField(pageStats, "duplicate_count"),
@@ -354,6 +373,91 @@ function buildCiRunMeta(params: {
     write_mode: params.writeMode,
     inserted_count: params.insertedCount,
     updated_count: params.updatedCount,
+  };
+}
+
+const CI_PAGINATION_ROTATION_CONFIG: Record<
+  string,
+  { stateKey: string; startPages: number[]; maxPages: number }
+> = {
+  emploi_ci: {
+    stateKey: "emploi_ci",
+    startPages: [1, 6, 11, 16, 21, 26],
+    maxPages: 5,
+  },
+  emploi_ci__dup__17d5574e: {
+    stateKey: "emploi_ci__dup__17d5574e",
+    startPages: [1, 6, 11],
+    maxPages: 5,
+  },
+};
+
+function getCiPaginationRotation(
+  sourceCode: string,
+  ingestConfig: Record<string, unknown>,
+) {
+  const config = CI_PAGINATION_ROTATION_CONFIG[sourceCode] ??
+    CI_PAGINATION_ROTATION_CONFIG.emploi_ci;
+  const runtimeState = asPlainObject(ingestConfig.runtime_state);
+  const rotationRoot = asPlainObject(runtimeState.ci_pagination_rotation);
+  const sourceState = asPlainObject(rotationRoot[config.stateKey]);
+  const rawNextStartPage = Number(
+    sourceState.next_start_page ?? sourceState.nextStartPage,
+  );
+  const candidateStartPage = Number.isFinite(rawNextStartPage)
+    ? Math.trunc(rawNextStartPage)
+    : 1;
+  const startPage = config.startPages.includes(candidateStartPage)
+    ? candidateStartPage
+    : 1;
+  const currentIndex = config.startPages.indexOf(startPage);
+  const nextStartPage =
+    config.startPages[(currentIndex + 1) % config.startPages.length] ?? 1;
+
+  return {
+    sourceCode,
+    stateKey: config.stateKey,
+    startPage,
+    maxPages: config.maxPages,
+    nextStartPage,
+    startPages: config.startPages,
+  };
+}
+
+function buildNextCiRuntimeState(params: {
+  ingestConfig: Record<string, unknown>;
+  rotation: ReturnType<typeof getCiPaginationRotation>;
+  finishedAt: string;
+  data: Record<string, unknown>;
+  fetchedCount: number;
+  insertedCount: number;
+  updatedCount: number;
+}) {
+  const runtimeState = asPlainObject(params.ingestConfig.runtime_state);
+  const rotationRoot = asPlainObject(runtimeState.ci_pagination_rotation);
+  const previousSourceState = asPlainObject(
+    rotationRoot[params.rotation.stateKey],
+  );
+
+  return {
+    ...runtimeState,
+    ci_pagination_rotation: {
+      ...rotationRoot,
+      [params.rotation.stateKey]: {
+        ...previousSourceState,
+        source_code: params.rotation.sourceCode,
+        start_pages: params.rotation.startPages,
+        window_size_pages: params.rotation.maxPages,
+        last_start_page: params.rotation.startPage,
+        next_start_page: params.rotation.nextStartPage,
+        last_pages_fetched: params.data.pages_fetched ?? null,
+        last_stopped_reason: params.data.stopped_reason ?? null,
+        last_fetched: params.fetchedCount,
+        last_inserted: params.insertedCount,
+        last_updated: params.updatedCount,
+        last_success_at: params.finishedAt,
+      },
+    },
   };
 }
 
@@ -1812,6 +1916,9 @@ Deno.serve(async (req) => {
 
     if (source_code === "emploi_ci") {
       const job_source_id = "ed25b64d-ace6-4296-8985-46702d58785d";
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
       if (!dry_run && hasDiagnosticPaginationParams(asPlainObject(body))) {
         return json({
           ok: false,
@@ -1888,7 +1995,12 @@ Deno.serve(async (req) => {
         });
       }
 
-      const data = await fetchEmploiCiItems(limit);
+      const emploiCiIngestConfig = asPlainObject(jobSource?.ingest_config);
+      const ciRotation = getCiPaginationRotation(source_code, emploiCiIngestConfig);
+      const data = await fetchEmploiCiItems(limit, {
+        startPage: ciRotation.startPage,
+        maxPages: ciRotation.maxPages,
+      });
 
       // job_source_id (fixed seed for this source)
       const now = new Date().toISOString();
@@ -1987,6 +2099,7 @@ Deno.serve(async (req) => {
           insertedCount: inserted,
           updatedCount: updated,
           data: data as Record<string, unknown>,
+          rotation: ciRotation,
         }),
       });
       await patchJobSourceMetadata(supabaseUrl, serviceKey, job_source_id, {
@@ -1994,6 +2107,18 @@ Deno.serve(async (req) => {
         last_ingested_at: finishedAt,
         last_success_at: finishedAt,
         ingest_status: "ready",
+        ingest_config: {
+          ...emploiCiIngestConfig,
+          runtime_state: buildNextCiRuntimeState({
+            ingestConfig: emploiCiIngestConfig,
+            rotation: ciRotation,
+            finishedAt,
+            data: data as Record<string, unknown>,
+            fetchedCount: data.items.length,
+            insertedCount: inserted,
+            updatedCount: updated,
+          }),
+        },
       });
 
       return json({
@@ -2005,6 +2130,10 @@ Deno.serve(async (req) => {
         parsed: data.parsed,
         inserted,
         updated,
+        start_page: data.effective_start_page,
+        max_pages: data.effective_max_pages,
+        pages_fetched: data.pages_fetched,
+        next_start_page: ciRotation.nextStartPage,
       });
     }
 
@@ -2103,7 +2232,15 @@ Deno.serve(async (req) => {
         "ingest",
       );
       currentRunId = runId;
-      const data = await fetchEmploiCiPortalItems(importLimit);
+      const emploiCiPortalIngestConfig = asPlainObject(jobSource.ingest_config);
+      const ciPortalRotation = getCiPaginationRotation(
+        source_code,
+        emploiCiPortalIngestConfig,
+      );
+      const data = await fetchEmploiCiPortalItems(importLimit, {
+        startPage: ciPortalRotation.startPage,
+        maxPages: ciPortalRotation.maxPages,
+      });
       const supabase = createClient(supabaseUrl, serviceKey);
       const now = new Date().toISOString();
       const rows = [];
@@ -2210,6 +2347,7 @@ Deno.serve(async (req) => {
           insertedCount: inserted,
           updatedCount: updated,
           data: data as Record<string, unknown>,
+          rotation: ciPortalRotation,
         }),
       });
       await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
@@ -2217,6 +2355,18 @@ Deno.serve(async (req) => {
         last_ingested_at: finishedAt,
         last_success_at: finishedAt,
         ingest_status: "ready",
+        ingest_config: {
+          ...emploiCiPortalIngestConfig,
+          runtime_state: buildNextCiRuntimeState({
+            ingestConfig: emploiCiPortalIngestConfig,
+            rotation: ciPortalRotation,
+            finishedAt,
+            data: data as Record<string, unknown>,
+            fetchedCount: rows.length,
+            insertedCount: inserted,
+            updatedCount: updated,
+          }),
+        },
       });
 
       return json({
@@ -2229,7 +2379,10 @@ Deno.serve(async (req) => {
         inserted,
         updated,
         skipped_quality_count: data.skipped_quality_count,
+        start_page: data.effective_start_page,
+        max_pages: data.effective_max_pages,
         pages_fetched: data.pages_fetched,
+        next_start_page: ciPortalRotation.nextStartPage,
         stopped_reason: data.stopped_reason,
       });
     }
