@@ -14,6 +14,14 @@ export type EmploiCiItem = {
   expires_at: string | null;
 };
 
+export type EmploiCiPageStat = {
+  page: number;
+  url: string;
+  parsed_count: number;
+  added_count: number;
+  duplicate_count: number;
+};
+
 const BASE_URL = "https://emploi.educarriere.ci";
 const FIRST_PAGE_URL = `${BASE_URL}/nos-offres`;
 const DEFAULT_MAX_PAGES = 31;
@@ -79,8 +87,9 @@ function decodeHtmlEntities(value: string) {
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#(\d+);/g, (_all, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([a-f0-9]+);/gi, (_all, code) =>
-      String.fromCharCode(parseInt(code, 16))
+    .replace(
+      /&#x([a-f0-9]+);/gi,
+      (_all, code) => String.fromCharCode(parseInt(code, 16)),
     );
 }
 
@@ -107,7 +116,9 @@ function stableUrlExternalId(url: string) {
 
 function extractMaxPages(html: string) {
   const text = stripHtml(html);
-  const fromLabel = text.match(/Page\s*n(?:\u00b0|\u00ba)?\s*\d+\s*sur\s*(\d+)/i);
+  const fromLabel = text.match(
+    /Page\s*n(?:\u00b0|\u00ba)?\s*\d+\s*sur\s*(\d+)/i,
+  );
   if (fromLabel) return Number(fromLabel[1]);
 
   let max = 1;
@@ -184,7 +195,9 @@ function parseOffersFromHtml(html: string) {
     const external_id = first.offerId
       ? `educarriere:${first.offerId}`
       : stableUrlExternalId(sourceUrl);
-    const anchorTexts = group.map((item) => item.text);
+    const anchorTexts = group.map((item) =>
+      item.text
+    );
     const dateEdition = extractField(
       segmentText,
       String.raw`Date d['\u2019]\u00e9dition`,
@@ -216,14 +229,17 @@ function delay(ms: number) {
 async function fetchPage(url: string) {
   const res = await fetch(url, {
     headers: {
-      "user-agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
+      "user-agent":
+        "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
       "accept": "text/html,application/xhtml+xml",
     },
     redirect: "follow",
   });
 
   if (!res.ok) {
-    throw new Error(`emploi_ci list fetch failed: ${res.status} ${res.statusText}`);
+    throw new Error(
+      `emploi_ci list fetch failed: ${res.status} ${res.statusText}`,
+    );
   }
 
   return await res.text();
@@ -231,34 +247,51 @@ async function fetchPage(url: string) {
 
 export async function fetchEmploiCiItems(
   limit = 30,
-  options?: { maxPages?: number },
+  options?: { maxPages?: number; startPage?: number },
 ) {
   const capped = Math.max(1, Math.trunc(limit));
-  let maxPages = Math.max(1, Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES));
+  const startPage = Math.max(1, Math.trunc(options?.startPage ?? 1));
+  let maxPages = Math.max(
+    1,
+    Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES),
+  );
+  let lastRequestedPage = startPage + maxPages - 1;
   const items: EmploiCiItem[] = [];
   const seen = new Set<string>();
+  const pageStats: EmploiCiPageStat[] = [];
   let pagesFetched = 0;
   let stoppedReason = "max_pages_reached";
 
-  for (let page = 1; page <= maxPages; page++) {
-    const html = await fetchPage(pageUrl(page));
+  for (let page = startPage; page <= lastRequestedPage; page++) {
+    const url = pageUrl(page);
+    const html = await fetchPage(url);
     pagesFetched++;
 
     if (page === 1) {
       maxPages = Math.min(maxPages, Math.max(1, extractMaxPages(html)));
+      lastRequestedPage = startPage + maxPages - 1;
     }
 
     const pageOffers = parseOffersFromHtml(html);
     if (pageOffers.length === 0) {
+      pageStats.push({
+        page,
+        url,
+        parsed_count: 0,
+        added_count: 0,
+        duplicate_count: 0,
+      });
       stoppedReason = "empty_page";
       break;
     }
 
     let addedFromPage = 0;
+    let duplicateFromPage = 0;
     for (const item of pageOffers) {
       if (seen.has(item.external_id)) {
+        duplicateFromPage++;
         stoppedReason = "duplicate_external_id";
-        page = maxPages + 1;
+        page = lastRequestedPage + 1;
         break;
       }
       seen.add(item.external_id);
@@ -271,6 +304,14 @@ export async function fetchEmploiCiItems(
       }
     }
 
+    pageStats.push({
+      page,
+      url,
+      parsed_count: pageOffers.length,
+      added_count: addedFromPage,
+      duplicate_count: duplicateFromPage,
+    });
+
     if (items.length >= capped || stoppedReason === "duplicate_external_id") {
       break;
     }
@@ -278,12 +319,18 @@ export async function fetchEmploiCiItems(
       stoppedReason = "empty_page";
       break;
     }
-    if (page < maxPages) await delay(FETCH_DELAY_MS);
+    if (page < lastRequestedPage) await delay(FETCH_DELAY_MS);
   }
 
   return {
     list_url: FIRST_PAGE_URL,
+    effective_start_page: startPage,
+    effective_max_pages: maxPages,
     pages_fetched: pagesFetched,
+    page_stats: pageStats,
+    parsed_count_by_page: Object.fromEntries(
+      pageStats.map((stat) => [String(stat.page), stat.added_count]),
+    ),
     parsed: items.length,
     stopped_reason: stoppedReason,
     sample: items.slice(0, 3),

@@ -287,6 +287,207 @@ function toStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function hasOwnKey(value: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function hasDiagnosticPaginationParams(body: Record<string, unknown>) {
+  return ["start_page", "startPage", "max_pages", "maxPages"].some((key) =>
+    hasOwnKey(body, key)
+  );
+}
+
+function sumNumericField(rows: unknown, field: string) {
+  if (!Array.isArray(rows)) return null;
+  return rows.reduce((total, row) => {
+    const value = asPlainObject(row)[field];
+    const numeric = Number(value);
+    return total + (Number.isFinite(numeric) ? numeric : 0);
+  }, 0);
+}
+
+function countPagesWithItems(rows: unknown) {
+  if (!Array.isArray(rows)) return null;
+  return rows.filter((row) => {
+    const stat = asPlainObject(row);
+    const parsed = Number(stat.parsed_count);
+    const added = Number(stat.added_count);
+    return (Number.isFinite(parsed) && parsed > 0) ||
+      (Number.isFinite(added) && added > 0);
+  }).length;
+}
+
+function buildCiRunMeta(params: {
+  sourceCode: string;
+  requestedLimit: number;
+  effectiveLimit: number;
+  writeMode: "dry_run" | "import";
+  insertedCount: number;
+  updatedCount: number;
+  data: Record<string, unknown>;
+}) {
+  const pageStats = Array.isArray(params.data.page_stats)
+    ? params.data.page_stats
+    : [];
+  const pagination: Record<string, unknown> = {
+    source_code: params.sourceCode,
+    requested_limit: params.requestedLimit,
+    effective_limit: params.effectiveLimit,
+    start_page: params.data.effective_start_page ?? null,
+    max_pages: params.data.effective_max_pages ?? null,
+    pages_fetched: params.data.pages_fetched ?? null,
+    pages_with_items: countPagesWithItems(pageStats),
+    items_parsed: params.data.parsed ?? null,
+    items_deduplicated: sumNumericField(pageStats, "duplicate_count"),
+    empty_pages_consecutive: null,
+    stopped_reason: params.data.stopped_reason ?? null,
+    parsed_count_by_page: params.data.parsed_count_by_page ?? {},
+    page_stats: pageStats,
+  };
+
+  if (typeof params.data.skipped_quality_count === "number") {
+    pagination.skipped_quality_count = params.data.skipped_quality_count;
+  }
+
+  return {
+    pagination,
+    write_mode: params.writeMode,
+    inserted_count: params.insertedCount,
+    updated_count: params.updatedCount,
+  };
+}
+
+function uniqueNonEmptyStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => typeof value === "string" ? value.trim() : "")
+        .filter(Boolean),
+    ),
+  );
+}
+
+async function fetchKnownJobValues(
+  supabase: any,
+  jobSourceId: string,
+  column: "source_url" | "external_id",
+  values: string[],
+) {
+  const known = new Set<string>();
+  for (let i = 0; i < values.length; i += 500) {
+    const chunk = values.slice(i, i + 500);
+    const { data, error } = await supabase
+      .from("jobs")
+      .select(column)
+      .eq("job_source_id", jobSourceId)
+      .in(column, chunk);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    for (const row of data ?? []) {
+      const value = typeof row?.[column] === "string" ? row[column].trim() : "";
+      if (value) known.add(value);
+    }
+  }
+  return known;
+}
+
+async function compareDryRunCandidatesWithDb(
+  supabaseUrl: string,
+  serviceKey: string,
+  jobSourceId: string,
+  items: Array<{
+    external_id?: string | null;
+    source_url?: string | null;
+    title?: string | null;
+  }>,
+) {
+  const supabase = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false },
+  });
+  const sourceUrls = uniqueNonEmptyStrings(
+    items.map((item) => item.source_url),
+  );
+  const externalIds = uniqueNonEmptyStrings(
+    items.map((item) => item.external_id),
+  );
+
+  try {
+    const knownUrls = sourceUrls.length > 0
+      ? await fetchKnownJobValues(
+        supabase,
+        jobSourceId,
+        "source_url",
+        sourceUrls,
+      )
+      : new Set<string>();
+    const knownExternalIds = externalIds.length > 0
+      ? await fetchKnownJobValues(
+        supabase,
+        jobSourceId,
+        "external_id",
+        externalIds,
+      )
+      : new Set<string>();
+    const knownExternalIdCount = items.filter((item) => {
+      const externalId = typeof item.external_id === "string"
+        ? item.external_id.trim()
+        : "";
+      return externalId && knownExternalIds.has(externalId);
+    }).length;
+    const newExternalIdCount = items.filter((item) => {
+      const externalId = typeof item.external_id === "string"
+        ? item.external_id.trim()
+        : "";
+      return externalId && !knownExternalIds.has(externalId);
+    }).length;
+    const knownUrlCount = items.filter((item) => {
+      const sourceUrl = typeof item.source_url === "string"
+        ? item.source_url.trim()
+        : "";
+      return sourceUrl && knownUrls.has(sourceUrl);
+    }).length;
+    const newCandidates = items.filter((item) => {
+      const externalId = typeof item.external_id === "string"
+        ? item.external_id.trim()
+        : "";
+      const sourceUrl = typeof item.source_url === "string"
+        ? item.source_url.trim()
+        : "";
+      return externalId && sourceUrl && !knownExternalIds.has(externalId) &&
+        !knownUrls.has(sourceUrl);
+    });
+
+    return {
+      db_comparison_available: true,
+      db_comparison_reason: null,
+      known_url_count: knownUrlCount,
+      new_candidate_count: newCandidates.length,
+      known_external_id_count: knownExternalIdCount,
+      new_external_id_count: newExternalIdCount,
+      sample_new: newCandidates.slice(0, 10).map((item) => ({
+        external_id: item.external_id ?? null,
+        title: item.title ?? null,
+        source_url: item.source_url ?? null,
+      })),
+    };
+  } catch (error) {
+    return {
+      db_comparison_available: false,
+      db_comparison_reason: error instanceof Error
+        ? `jobs_lookup_failed:${error.message}`
+        : "jobs_lookup_failed",
+      known_url_count: null,
+      new_candidate_count: null,
+      known_external_id_count: null,
+      new_external_id_count: null,
+      sample_new: [],
+    };
+  }
+}
+
 function commercialDryRunResponse(data: {
   source_code: string;
   source_family: string;
@@ -1611,6 +1812,17 @@ Deno.serve(async (req) => {
 
     if (source_code === "emploi_ci") {
       const job_source_id = "ed25b64d-ace6-4296-8985-46702d58785d";
+      if (!dry_run && hasDiagnosticPaginationParams(asPlainObject(body))) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "diagnostic_pagination_requires_dry_run",
+          message:
+            "start_page/max_pages are diagnostic-only for emploi_ci until rotation is validated.",
+        }, 409);
+      }
+
       const runId = dry_run ? null : await createRun(
         supabaseUrl,
         serviceKey,
@@ -1618,9 +1830,31 @@ Deno.serve(async (req) => {
         "ingest",
       );
       currentRunId = runId;
-      const data = await fetchEmploiCiItems(limit);
 
       if (dry_run) {
+        const diagnosticStartPage = toBoundedInt(
+          body?.start_page ?? body?.startPage,
+          1,
+          1,
+          1000,
+        );
+        const diagnosticMaxPages = toBoundedInt(
+          body?.max_pages ?? body?.maxPages,
+          31,
+          1,
+          31,
+        );
+        const data = await fetchEmploiCiItems(limit, {
+          startPage: diagnosticStartPage,
+          maxPages: diagnosticMaxPages,
+        });
+        const dbComparison = await compareDryRunCandidatesWithDb(
+          supabaseUrl,
+          serviceKey,
+          job_source_id,
+          data.items,
+        );
+
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
           finished_at: new Date().toISOString(),
           status: "success",
@@ -1636,12 +1870,25 @@ Deno.serve(async (req) => {
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
+          effective_start_page: data.effective_start_page,
+          effective_max_pages: data.effective_max_pages,
           pages_fetched: data.pages_fetched,
+          page_stats: data.page_stats,
+          parsed_count_by_page: data.parsed_count_by_page,
           parsed: data.parsed,
           stopped_reason: data.stopped_reason,
+          sample_source_urls: data.items.slice(0, 20).map((item) =>
+            item.source_url
+          ),
+          sample_external_ids: data.items.slice(0, 20).map((item) =>
+            item.external_id
+          ),
+          ...dbComparison,
           sample: data.sample,
         });
       }
+
+      const data = await fetchEmploiCiItems(limit);
 
       // job_source_id (fixed seed for this source)
       const now = new Date().toISOString();
@@ -1732,6 +1979,15 @@ Deno.serve(async (req) => {
         fetched_count: data.items.length,
         inserted_count: inserted,
         updated_count: updated,
+        meta: buildCiRunMeta({
+          sourceCode: source_code,
+          requestedLimit: limit,
+          effectiveLimit: limit,
+          writeMode: "import",
+          insertedCount: inserted,
+          updatedCount: updated,
+          data: data as Record<string, unknown>,
+        }),
       });
       await patchJobSourceMetadata(supabaseUrl, serviceKey, job_source_id, {
         last_checked_at: finishedAt,
@@ -1754,7 +2010,37 @@ Deno.serve(async (req) => {
 
     if (source_code === "emploi_ci__dup__17d5574e") {
       if (dry_run) {
-        const data = await fetchEmploiCiPortalItems(limit);
+        const diagnosticStartPage = toBoundedInt(
+          body?.start_page ?? body?.startPage,
+          1,
+          1,
+          1000,
+        );
+        const diagnosticMaxPages = toBoundedInt(
+          body?.max_pages ?? body?.maxPages,
+          15,
+          1,
+          15,
+        );
+        const data = await fetchEmploiCiPortalItems(limit, {
+          startPage: diagnosticStartPage,
+          maxPages: diagnosticMaxPages,
+        });
+        const dbComparison = jobSource
+          ? await compareDryRunCandidatesWithDb(
+            supabaseUrl,
+            serviceKey,
+            jobSource.id,
+            data.items,
+          )
+          : {
+            db_comparison_available: false,
+            db_comparison_reason: "job_source_not_found",
+            known_url_count: null,
+            new_candidate_count: null,
+            known_external_id_count: null,
+            new_external_id_count: null,
+          };
 
         return json({
           ok: true,
@@ -1763,12 +2049,34 @@ Deno.serve(async (req) => {
           dry_run: true,
           status: "dry_run_parsed",
           list_url: data.list_url,
+          effective_start_page: data.effective_start_page,
+          effective_max_pages: data.effective_max_pages,
           pages_fetched: data.pages_fetched,
+          page_stats: data.page_stats,
+          parsed_count_by_page: data.parsed_count_by_page,
           parsed: data.parsed,
           skipped_quality_count: data.skipped_quality_count,
           stopped_reason: data.stopped_reason,
+          sample_source_urls: data.items.slice(0, 20).map((item) =>
+            item.source_url
+          ),
+          sample_external_ids: data.items.slice(0, 20).map((item) =>
+            item.external_id
+          ),
+          ...dbComparison,
           sample: data.sample,
         });
+      }
+
+      if (hasDiagnosticPaginationParams(asPlainObject(body))) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "diagnostic_pagination_requires_dry_run",
+          message:
+            "start_page/max_pages are diagnostic-only for emploi_ci__dup__17d5574e until rotation is validated.",
+        }, 409);
       }
 
       if (
@@ -1894,6 +2202,15 @@ Deno.serve(async (req) => {
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+        meta: buildCiRunMeta({
+          sourceCode: source_code,
+          requestedLimit: limit,
+          effectiveLimit: importLimit,
+          writeMode: "import",
+          insertedCount: inserted,
+          updatedCount: updated,
+          data: data as Record<string, unknown>,
+        }),
       });
       await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
         last_checked_at: finishedAt,

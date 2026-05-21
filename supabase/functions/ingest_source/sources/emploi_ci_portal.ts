@@ -15,6 +15,15 @@ export type EmploiCiPortalItem = {
   tags: string[];
 };
 
+export type EmploiCiPortalPageStat = {
+  page: number;
+  url: string;
+  parsed_count: number;
+  added_count: number;
+  duplicate_count: number;
+  skipped_quality_count: number;
+};
+
 const BASE_URL = "https://www.emploi.ci";
 const FIRST_PAGE_URL = `${BASE_URL}/recherche-jobs-cote-ivoire`;
 const DEFAULT_MAX_PAGES = 15;
@@ -69,8 +78,9 @@ function decodeHtmlEntities(value: string) {
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&#(\d+);/g, (_all, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([a-f0-9]+);/gi, (_all, code) =>
-      String.fromCharCode(parseInt(code, 16))
+    .replace(
+      /&#x([a-f0-9]+);/gi,
+      (_all, code) => String.fromCharCode(parseInt(code, 16)),
     );
 }
 
@@ -148,7 +158,9 @@ async function buildExternalId(item: {
   const numericId = extractNumericId(item.source_url);
   if (numericId) return `emploi_ci_portal:${numericId}`;
   const hash = await sha256Hex(
-    `${item.title}|${item.company_name ?? ""}|${item.published_at ?? ""}|${item.source_url}`,
+    `${item.title}|${item.company_name ?? ""}|${
+      item.published_at ?? ""
+    }|${item.source_url}`,
   );
   return `emploi_ci_portal:${hash}`;
 }
@@ -164,7 +176,8 @@ function extractMaxPages(html: string) {
 }
 
 async function parseOffersFromHtml(html: string) {
-  const cardRe = /<div\b[^>]*class=["'][^"']*\bcard\b[^"']*\bcard-job\b[^"']*["'][^>]*>/gi;
+  const cardRe =
+    /<div\b[^>]*class=["'][^"']*\bcard\b[^"']*\bcard-job\b[^"']*["'][^>]*>/gi;
   const matches = Array.from(html.matchAll(cardRe));
   const items: EmploiCiPortalItem[] = [];
   let skippedQualityCount = 0;
@@ -178,19 +191,31 @@ async function parseOffersFromHtml(html: string) {
       continue;
     }
 
-    const title = extractFirst(segment, /<h3[^>]*>\s*<a\b[^>]*>([\s\S]*?)<\/a>\s*<\/h3>/i);
+    const title = extractFirst(
+      segment,
+      /<h3[^>]*>\s*<a\b[^>]*>([\s\S]*?)<\/a>\s*<\/h3>/i,
+    );
     if (!title) continue;
 
-    const companyName =
-      extractFirst(segment, /class=["'][^"']*\bcompany-name\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) ||
+    const companyName = extractFirst(
+      segment,
+      /class=["'][^"']*\bcompany-name\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
+    ) ||
       null;
-    const descriptionText =
-      extractFirst(segment, /<div\b[^>]*class=["'][^"']*\bcard-job-description\b[^"']*["'][^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/i) ||
+    const descriptionText = extractFirst(
+      segment,
+      /<div\b[^>]*class=["'][^"']*\bcard-job-description\b[^"']*["'][^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/i,
+    ) ||
       null;
-    const contractType = extractStrongAfterLabel(segment, "Contrat\\s+propos") || null;
-    const location = extractStrongAfterLabel(segment, "R(?:\\u00e9|e)gion\\s+de") ||
+    const contractType =
+      extractStrongAfterLabel(segment, "Contrat\\s+propos") || null;
+    const location =
+      extractStrongAfterLabel(segment, "R(?:\\u00e9|e)gion\\s+de") ||
       "Cote d'Ivoire";
-    const rawTags = extractStrongAfterLabel(segment, "Comp(?:\\u00e9|e)tences\\s+cl(?:\\u00e9|e)s");
+    const rawTags = extractStrongAfterLabel(
+      segment,
+      "Comp(?:\\u00e9|e)tences\\s+cl(?:\\u00e9|e)s",
+    );
     const publishedAt = extractAttr(
       segment.match(/<time\b[^>]*datetime=["'][^"']+["'][^>]*>/i)?.[0] ?? "",
       "datetime",
@@ -239,12 +264,16 @@ function delay(ms: number) {
 
 async function fetchPage(url: string) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort("page_timeout"), PAGE_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort("page_timeout"),
+    PAGE_TIMEOUT_MS,
+  );
   const startedAt = Date.now();
   try {
     const res = await fetch(url, {
       headers: {
-        "user-agent": "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
+        "user-agent":
+          "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)",
         "accept": "text/html,application/xhtml+xml",
       },
       redirect: "follow",
@@ -252,10 +281,14 @@ async function fetchPage(url: string) {
     });
     const elapsedMs = Date.now() - startedAt;
     if (elapsedMs > PAGE_TIMEOUT_MS) {
-      throw new Error(`emploi_ci_portal page fetch exceeded ${PAGE_TIMEOUT_MS}ms`);
+      throw new Error(
+        `emploi_ci_portal page fetch exceeded ${PAGE_TIMEOUT_MS}ms`,
+      );
     }
     if (!res.ok) {
-      throw new Error(`emploi_ci_portal list fetch failed: ${res.status} ${res.statusText}`);
+      throw new Error(
+        `emploi_ci_portal list fetch failed: ${res.status} ${res.statusText}`,
+      );
     }
     return await res.text();
   } finally {
@@ -265,36 +298,54 @@ async function fetchPage(url: string) {
 
 export async function fetchEmploiCiPortalItems(
   limit = 30,
-  options?: { maxPages?: number },
+  options?: { maxPages?: number; startPage?: number },
 ) {
   const capped = Math.max(1, Math.trunc(limit));
-  let maxPages = Math.max(1, Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES));
+  const startPage = Math.max(1, Math.trunc(options?.startPage ?? 1));
+  let maxPages = Math.max(
+    1,
+    Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES),
+  );
+  let lastRequestedPage = startPage + maxPages - 1;
   const items: EmploiCiPortalItem[] = [];
   const seen = new Set<string>();
+  const pageStats: EmploiCiPortalPageStat[] = [];
   let pagesFetched = 0;
   let skippedQualityCount = 0;
   let stoppedReason = "max_pages_reached";
 
-  for (let page = 1; page <= maxPages; page++) {
-    const html = await fetchPage(pageUrl(page));
+  for (let page = startPage; page <= lastRequestedPage; page++) {
+    const url = pageUrl(page);
+    const html = await fetchPage(url);
     pagesFetched++;
 
     if (page === 1) {
       maxPages = Math.min(maxPages, Math.max(1, extractMaxPages(html)));
+      lastRequestedPage = startPage + maxPages - 1;
     }
 
     const parsedPage = await parseOffersFromHtml(html);
     skippedQualityCount += parsedPage.skippedQualityCount;
     if (parsedPage.items.length === 0) {
+      pageStats.push({
+        page,
+        url,
+        parsed_count: 0,
+        added_count: 0,
+        duplicate_count: 0,
+        skipped_quality_count: parsedPage.skippedQualityCount,
+      });
       stoppedReason = "empty_page";
       break;
     }
 
     let addedFromPage = 0;
+    let duplicateFromPage = 0;
     for (const item of parsedPage.items) {
       if (seen.has(item.external_id)) {
+        duplicateFromPage++;
         stoppedReason = "duplicate_external_id";
-        page = maxPages + 1;
+        page = lastRequestedPage + 1;
         break;
       }
       seen.add(item.external_id);
@@ -307,6 +358,15 @@ export async function fetchEmploiCiPortalItems(
       }
     }
 
+    pageStats.push({
+      page,
+      url,
+      parsed_count: parsedPage.items.length,
+      added_count: addedFromPage,
+      duplicate_count: duplicateFromPage,
+      skipped_quality_count: parsedPage.skippedQualityCount,
+    });
+
     if (items.length >= capped || stoppedReason === "duplicate_external_id") {
       break;
     }
@@ -314,12 +374,18 @@ export async function fetchEmploiCiPortalItems(
       stoppedReason = "empty_page";
       break;
     }
-    if (page < maxPages) await delay(FETCH_DELAY_MS);
+    if (page < lastRequestedPage) await delay(FETCH_DELAY_MS);
   }
 
   return {
     list_url: FIRST_PAGE_URL,
+    effective_start_page: startPage,
+    effective_max_pages: maxPages,
     pages_fetched: pagesFetched,
+    page_stats: pageStats,
+    parsed_count_by_page: Object.fromEntries(
+      pageStats.map((stat) => [String(stat.page), stat.added_count]),
+    ),
     parsed: items.length,
     skipped_quality_count: skippedQualityCount,
     stopped_reason: stoppedReason,
