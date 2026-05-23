@@ -19,6 +19,13 @@ function normalizeDesiredRole(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function buildOnboardingFeedHref(desiredRole: string) {
+  const role = normalizeDesiredRole(desiredRole);
+  if (!role) return "/jobradar/feed";
+  const params = new URLSearchParams({ q: role, source: "onboarding" });
+  return `/jobradar/feed?${params.toString()}`;
+}
+
 function GateLoader() {
   return (
     <div className="desiredRoleGate desiredRoleGate--loading">
@@ -119,9 +126,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
     setOnboardingState(nextOnboarding);
     setDesiredRoleInput(nextDesiredRole);
 
-    if (location.pathname.startsWith("/jobradar/onboarding")) {
-      navigate("/jobradar/feed", { replace: true });
-    }
+    navigate(buildOnboardingFeedHref(nextDesiredRole), { replace: true });
   }
 
   if (isAdminPath) {

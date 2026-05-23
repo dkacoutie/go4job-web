@@ -160,7 +160,8 @@ function normalizeText(input: string) {
 
 function getRelevanceLabel(score: number) {
   if (score >= 70) return "Très pertinent";
-  return "Pour toi";
+  if (score >= 50) return "Pour toi";
+  return "À explorer";
 }
 
 const WHY_MAX_LEN = 72;
@@ -324,6 +325,19 @@ function readFeedFiltersFromSearch(search: string) {
   );
 
   return { q, country, countries, contract, workMode };
+}
+
+function hasFeedSearchCriteria(params: { q: string; countries: string[]; contract: string; workMode: string }) {
+  return Boolean(normalizeSearchText(params.q) || params.countries.length || params.contract || params.workMode);
+}
+
+function buildFeedCriteriaKey(params: { q: string; countries: string[]; contract: string; workMode: string }) {
+  return JSON.stringify({
+    q: normalizeSearchText(params.q),
+    countries: params.countries,
+    contract: params.contract,
+    workMode: params.workMode,
+  });
 }
 
 const CONTRACT_ALIASES: Record<string, string[]> = {
@@ -782,6 +796,12 @@ export default function JobRadarFeedPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const lastServerSearchQueryRef = useRef("");
+  const currentFeedCriteriaRef = useRef({
+    q: initialFeedFilters.q,
+    countries: initialFeedFilters.countries,
+    contract: initialFeedFilters.contract,
+    workMode: initialFeedFilters.workMode,
+  });
   const feedBackendShadowFlag = (import.meta.env.VITE_JOBRADAR_FEED_BACKEND_SHADOW ?? "").trim() === "1";
 
   const [offerUnlockModal, setOfferUnlockModal] = useState<{ title: string } | null>(null);
@@ -843,6 +863,15 @@ export default function JobRadarFeedPage() {
     setWorkModeFilter(next.workMode);
   }, [location.search]);
 
+  useEffect(() => {
+    currentFeedCriteriaRef.current = {
+      q,
+      countries: countryFilters,
+      contract: contractFilter,
+      workMode: workModeFilter,
+    };
+  }, [q, countryFilters, contractFilter, workModeFilter]);
+
   const KEYWORDS_MAX_UNIQ = 60;
   const KEYWORDS_CAP = 20;
   const CV_SKILLS_CAP = 14;
@@ -875,7 +904,7 @@ export default function JobRadarFeedPage() {
 
   const geoPrefs = useMemo(() => buildGeoPreferences(alerts), [alerts]);
   const hasActiveSearchCriteria = useMemo(
-    () => Boolean(normalizeSearchText(q) || countryFilters.length || contractFilter || workModeFilter),
+    () => hasFeedSearchCriteria({ q, countries: countryFilters, contract: contractFilter, workMode: workModeFilter }),
     [q, countryFilters, contractFilter, workModeFilter]
   );
 
@@ -982,6 +1011,11 @@ export default function JobRadarFeedPage() {
     if (error) throw error;
     return ((data ?? []) as JobRow[]).filter((job) => jobMatchesSearchQuery(job, rawQuery)).filter(jobMatchesVisibleFilters);
   }, [countryFilters, jobMatchesVisibleFilters]);
+  const fetchJobsSearchRef = useRef(fetchJobsSearch);
+
+  useEffect(() => {
+    fetchJobsSearchRef.current = fetchJobsSearch;
+  }, [fetchJobsSearch]);
 
   const fetchProfileContext = useCallback(async () => {
     try {
@@ -1072,6 +1106,8 @@ export default function JobRadarFeedPage() {
     setErrorMsg(null);
 
     try {
+      const initialCriteria = currentFeedCriteriaRef.current;
+      const shouldSearchInitial = hasFeedSearchCriteria(initialCriteria);
       const [{ data: aData, error: aErr }, cvContext, nextProfileContext, fetchedJobs] = await Promise.all([
         supabase
           .from("alerts")
@@ -1081,7 +1117,7 @@ export default function JobRadarFeedPage() {
           .order("created_at", { ascending: false }),
         fetchCvContext(),
         fetchProfileContext(),
-        fetchJobsRange(0, PAGE_SIZE - 1),
+        shouldSearchInitial ? fetchJobsSearchRef.current(initialCriteria.q) : fetchJobsRange(0, PAGE_SIZE - 1),
       ]);
 
       if (aErr) throw aErr;
@@ -1093,7 +1129,8 @@ export default function JobRadarFeedPage() {
       setProfileDesiredRole(nextProfileContext.desiredRole);
       setJobs(fetchedJobs);
       setPageFrom(fetchedJobs.length);
-      setHasMore(fetchedJobs.length === PAGE_SIZE);
+      setHasMore(shouldSearchInitial ? false : fetchedJobs.length === PAGE_SIZE);
+      lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(initialCriteria) : "";
       setBusy(false);
 
       void fetchShadowFeed()
@@ -1105,7 +1142,14 @@ export default function JobRadarFeedPage() {
       setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
       setBusy(false);
     }
-  }, [fetchCvContext, fetchJobsRange, fetchProfileContext, fetchShadowFeed, loadUserJobState, userId]);
+  }, [
+    fetchCvContext,
+    fetchJobsRange,
+    fetchProfileContext,
+    fetchShadowFeed,
+    loadUserJobState,
+    userId,
+  ]);
 
   async function loadMore() {
     if (!userId) return;
@@ -1139,13 +1183,14 @@ export default function JobRadarFeedPage() {
 
     const rawQuery = q;
     const normalizedQuery = normalizeSearchText(rawQuery);
-    const criteriaKey = JSON.stringify({
-      q: normalizedQuery,
+    const criteriaKey = buildFeedCriteriaKey({
+      q: rawQuery,
       countries: countryFilters,
       contract: contractFilter,
       workMode: workModeFilter,
     });
     if (!normalizedQuery && !hasActiveSearchCriteria && !lastServerSearchQueryRef.current) return;
+    if (criteriaKey === lastServerSearchQueryRef.current) return;
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {

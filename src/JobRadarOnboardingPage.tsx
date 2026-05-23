@@ -97,6 +97,13 @@ function normalizeText(input: string) {
   return (input ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 }
 
+function buildOnboardingFeedHref(desiredRole: string | null | undefined) {
+  const role = String(desiredRole ?? "").replace(/\s+/g, " ").trim();
+  if (!role) return "/jobradar/feed";
+  const params = new URLSearchParams({ q: role, source: "onboarding" });
+  return `/jobradar/feed?${params.toString()}`;
+}
+
 function normKeyword(input: string) {
   return canonicalizeText(input ?? "").toLowerCase().trim();
 }
@@ -591,7 +598,7 @@ export default function JobRadarOnboardingPage() {
   useEffect(() => {
     if (onboarding.loading) return;
     if (onboarding.isOnboarded) {
-      navigate("/jobradar/feed", { replace: true });
+      navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole), { replace: true });
       return;
     }
     if (!onboarding.isOnboarded) {
@@ -602,7 +609,16 @@ export default function JobRadarOnboardingPage() {
         return;
       }
     }
-  }, [onboarding.loading, onboarding.isOnboarded, onboarding.hasActivePass, onboarding.nextStep, currentStep, navigate]);
+  }, [
+    onboarding.loading,
+    onboarding.isOnboarded,
+    onboarding.hasActivePass,
+    onboarding.nextStep,
+    onboarding.onboarding.profile?.desiredRole,
+    desiredRole,
+    currentStep,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (currentStep !== "preview") return;
@@ -1277,7 +1293,7 @@ export default function JobRadarOnboardingPage() {
           {onboarding.alertsCount > 0 ? "Gérer mes alertes" : "Activer mes alertes"}
         </button>
         {onboarding.alertsCount > 0 && (
-          <button className="btn btnGhost" type="button" onClick={() => { void onboarding.markOnboardingComplete().then(() => navigate("/jobradar/feed")); }}>
+          <button className="btn btnGhost" type="button" onClick={() => { void onboarding.markOnboardingComplete().then(() => navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole))); }}>
             Ouvrir mes offres
           </button>
         )}
