@@ -340,6 +340,14 @@ function buildFeedCriteriaKey(params: { q: string; countries: string[]; contract
   });
 }
 
+const AMBIGUOUS_ALERT_KEYWORDS = new Set(["chef"]);
+
+function keepActionableAlertKeyword(keyword: string) {
+  const normalized = norm(canonicalizeText(keyword));
+  if (!normalized) return false;
+  return !AMBIGUOUS_ALERT_KEYWORDS.has(normalized);
+}
+
 const CONTRACT_ALIASES: Record<string, string[]> = {
   cdi: ["cdi", "permanent", "long terme", "full time", "full-time"],
   cdd: ["cdd", "contract", "contrat", "temporary", "fixed term", "mission"],
@@ -361,10 +369,12 @@ function pickLocationLabel(job: JobRow) {
 function pickAlertKeyword(why: MatchWhy, alertDisplay: Map<string, string>) {
   const matched = why.details?.breakdown?.alert?.matched_keywords ?? [];
   for (const key of matched) {
+    if (!keepActionableAlertKeyword(key)) continue;
     const display = alertDisplay.get(key) ?? alertDisplay.get(norm(canonicalizeText(key)));
     if (display) return humanizeAlertKeyword(display);
   }
   for (const key of why.alert) {
+    if (!keepActionableAlertKeyword(key)) continue;
     const display = alertDisplay.get(key) ?? alertDisplay.get(norm(canonicalizeText(key)));
     if (display) return humanizeAlertKeyword(display);
   }
@@ -543,7 +553,8 @@ function extractKeywordsFromAlertName(name: string): string[] {
     .map((w) => w.trim())
     .filter(Boolean)
     .filter((w) => w.length >= 3)
-    .filter((w) => !STOP_WORDS.has(w));
+    .filter((w) => !STOP_WORDS.has(w))
+    .filter(keepActionableAlertKeyword);
 
   return uniq([phrase, ...tokens]).slice(0, 5);
 }
@@ -879,7 +890,7 @@ export default function JobRadarFeedPage() {
   const alertKeywords = useMemo(() => {
     const fromKeywords = alerts.flatMap((a) => a.keywords ?? []);
     const fromNames = alerts.flatMap((a) => extractKeywordsFromAlertName(a.name ?? ""));
-    return uniq([...fromKeywords, ...fromNames]).slice(0, KEYWORDS_MAX_UNIQ);
+    return uniq([...fromKeywords, ...fromNames].filter(keepActionableAlertKeyword)).slice(0, KEYWORDS_MAX_UNIQ);
   }, [alerts]);
 
   const alertDisplayMap = useMemo(() => {
@@ -1107,8 +1118,7 @@ export default function JobRadarFeedPage() {
 
     try {
       const initialCriteria = currentFeedCriteriaRef.current;
-      const shouldSearchInitial = hasFeedSearchCriteria(initialCriteria);
-      const [{ data: aData, error: aErr }, cvContext, nextProfileContext, fetchedJobs] = await Promise.all([
+      const [{ data: aData, error: aErr }, cvContext, nextProfileContext] = await Promise.all([
         supabase
           .from("alerts")
           .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
@@ -1117,10 +1127,23 @@ export default function JobRadarFeedPage() {
           .order("created_at", { ascending: false }),
         fetchCvContext(),
         fetchProfileContext(),
-        shouldSearchInitial ? fetchJobsSearchRef.current(initialCriteria.q) : fetchJobsRange(0, PAGE_SIZE - 1),
       ]);
 
       if (aErr) throw aErr;
+
+      const effectiveCriteria = {
+        ...initialCriteria,
+        q: initialCriteria.q || nextProfileContext.desiredRole,
+      };
+      const shouldSearchInitial = hasFeedSearchCriteria(effectiveCriteria);
+      const fetchedJobs = shouldSearchInitial
+        ? await fetchJobsSearchRef.current(effectiveCriteria.q)
+        : await fetchJobsRange(0, PAGE_SIZE - 1);
+
+      if (!initialCriteria.q && effectiveCriteria.q) {
+        setQ(effectiveCriteria.q);
+        currentFeedCriteriaRef.current = effectiveCriteria;
+      }
 
       setAlerts((aData ?? []) as AlertRow[]);
       setCvSkills(cvContext.skills);
@@ -1130,7 +1153,7 @@ export default function JobRadarFeedPage() {
       setJobs(fetchedJobs);
       setPageFrom(fetchedJobs.length);
       setHasMore(shouldSearchInitial ? false : fetchedJobs.length === PAGE_SIZE);
-      lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(initialCriteria) : "";
+      lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(effectiveCriteria) : "";
       setBusy(false);
 
       void fetchShadowFeed()
