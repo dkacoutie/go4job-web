@@ -1,4 +1,4 @@
-﻿import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import {
   createClient,
   type SupabaseClient,
@@ -9,6 +9,8 @@ type PlannerBody = {
   allow_enqueue?: boolean | null;
   confirm?: string | null;
   campaign_key?: string | null;
+  segment_key?: string | null;
+  template_key?: string | null;
   limit?: number | null;
   write_log?: boolean | null;
   trigger?: string | null;
@@ -49,8 +51,12 @@ const DEFAULT_CAMPAIGN_KEY = "non_paying_without_alert";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const CONTROLLED_ENQUEUE_CONFIRM = "ENQUEUE_CREATE_ALERT_EMAIL_1_LIMIT_1";
+const CONTROLLED_DAILY_ENQUEUE_CONFIRM =
+  "ENQUEUE_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
+const CONTROLLED_DAILY_MAX_LIMIT = 10;
 const PLANNER_VERSION = "v1.1";
 const PENDING_QUEUE_STATUSES = ["queued", "locked", "processing"];
+const CONTROLLED_DAILY_TRIGGERS = new Set(["cron", "manual_daily_test"]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,6 +156,102 @@ function logStatus(dryRun: boolean, blockedReason: string | null) {
   return blockedReason ? "skipped" : "success";
 }
 
+function controlledEnqueueGate(
+  body: PlannerBody,
+  campaign: CampaignSettings,
+  requestedLimit: number,
+  dryRun: boolean,
+) {
+  if (dryRun) return { ok: true, mode: "dry_run", reason: null };
+  if (body.allow_enqueue !== true) {
+    return {
+      ok: false,
+      mode: "none",
+      reason: "controlled_enqueue_confirmation_missing",
+    };
+  }
+  if (campaign.campaign_key !== DEFAULT_CAMPAIGN_KEY) {
+    return {
+      ok: false,
+      mode: "none",
+      reason: "controlled_enqueue_confirmation_missing",
+    };
+  }
+
+  if (body.confirm === CONTROLLED_ENQUEUE_CONFIRM) {
+    if (requestedLimit !== 1) {
+      return {
+        ok: false,
+        mode: "limit_1",
+        reason: "controlled_enqueue_confirmation_missing",
+      };
+    }
+    return { ok: true, mode: "limit_1", reason: null };
+  }
+
+  if (body.confirm === CONTROLLED_DAILY_ENQUEUE_CONFIRM) {
+    const trigger = body.trigger ?? "manual";
+    const campaignKey = (body.campaign_key ?? "").trim();
+    const segmentKey = (body.segment_key ?? "").trim();
+    const templateKey = (body.template_key ?? "").trim();
+
+    if (!CONTROLLED_DAILY_TRIGGERS.has(trigger)) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_trigger_not_allowed",
+      };
+    }
+    if (campaignKey !== DEFAULT_CAMPAIGN_KEY) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_campaign_mismatch",
+      };
+    }
+    if (
+      segmentKey !== DEFAULT_CAMPAIGN_KEY || segmentKey !== campaign.segment_key
+    ) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_segment_mismatch",
+      };
+    }
+    if (
+      templateKey !== "create_alert_email_1" ||
+      templateKey !== campaign.template_key
+    ) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_template_mismatch",
+      };
+    }
+    if (typeof body.limit !== "number" || !Number.isInteger(body.limit)) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_limit_not_integer",
+      };
+    }
+    if (requestedLimit <= 1 || requestedLimit > CONTROLLED_DAILY_MAX_LIMIT) {
+      return {
+        ok: false,
+        mode: "daily_limit_10",
+        reason: "controlled_enqueue_limit_not_allowed",
+      };
+    }
+    return { ok: true, mode: "daily_limit_10", reason: null };
+  }
+
+  return {
+    ok: false,
+    mode: "none",
+    reason: "controlled_enqueue_confirmation_missing",
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -244,7 +346,10 @@ serve(async (req) => {
     ((globalRows ?? []) as GlobalSetting[]).map((row) => [row.key, row.value]),
   );
 
-  const lifecyclePaused = parseBoolSetting(globalSettings.lifecycle_paused, true);
+  const lifecyclePaused = parseBoolSetting(
+    globalSettings.lifecycle_paused,
+    true,
+  );
   const parsedDailyGlobalCap = Number.parseInt(
     globalSettings.daily_global_cap ?? "0",
     10,
@@ -253,14 +358,16 @@ serve(async (req) => {
     ? parsedDailyGlobalCap
     : 0;
 
-  const enqueueGateOk = body.allow_enqueue === true &&
-    body.confirm === CONTROLLED_ENQUEUE_CONFIRM &&
-    typedCampaign.campaign_key === DEFAULT_CAMPAIGN_KEY &&
-    requestedLimit === 1;
+  const enqueueGate = controlledEnqueueGate(
+    body,
+    typedCampaign,
+    requestedLimit,
+    dryRun,
+  );
 
   let blockedReason: string | null = null;
-  if (!dryRun && !enqueueGateOk) {
-    blockedReason = "controlled_enqueue_confirmation_missing";
+  if (!dryRun && !enqueueGate.ok) {
+    blockedReason = enqueueGate.reason;
   } else if (lifecyclePaused) {
     blockedReason = "lifecycle_paused";
   } else if (!typedCampaign.enabled) {
@@ -366,7 +473,7 @@ serve(async (req) => {
     ? Math.max(0, dailyGlobalCap - globalQueuedToday)
     : requestedLimit;
 
-  let selectedCandidate: Candidate | null = null;
+  const selectedCandidates: Candidate[] = [];
   let selectedCountBeforeInsert = 0;
   let queueWritten = false;
   let enqueueError: string | null = null;
@@ -393,7 +500,9 @@ serve(async (req) => {
     0,
     Math.min(effectiveLimit, campaignDailyRemaining, globalDailyRemaining),
   );
-  const wouldEnqueueCount = blockedReason ? 0 : Math.min(candidateCount, cappedLimit);
+  const wouldEnqueueCount = blockedReason
+    ? 0
+    : Math.min(candidateCount, cappedLimit);
 
   if (!dryRun && !blockedReason) {
     const { data: candidates, error: candidateSelectError } = await supabase
@@ -476,13 +585,12 @@ serve(async (req) => {
         }
 
         const cooldownSince = daysAgoIso(typedCampaign.cooldown_days);
-        const { count: cooldownCountRaw, error: cooldownError } =
-          await supabase
-            .from("email_logs")
-            .select("*", { count: "exact", head: true })
-            .eq("email_normalized", candidate.email_normalized)
-            .eq("status", "sent")
-            .gte("sent_at", cooldownSince);
+        const { count: cooldownCountRaw, error: cooldownError } = await supabase
+          .from("email_logs")
+          .select("*", { count: "exact", head: true })
+          .eq("email_normalized", candidate.email_normalized)
+          .eq("status", "sent")
+          .gte("sent_at", cooldownSince);
 
         if (cooldownError) {
           blockedReason = "cooldown_check_failed";
@@ -513,21 +621,23 @@ serve(async (req) => {
           continue;
         }
 
-        selectedCandidate = candidate;
-        break;
+        selectedCandidates.push(candidate);
+        if (selectedCandidates.length >= cappedLimit) {
+          break;
+        }
       }
     }
 
-    if (!blockedReason && !selectedCandidate) {
+    if (!blockedReason && selectedCandidates.length === 0) {
       blockedReason = "no_clean_candidate";
     }
 
-    if (!blockedReason && selectedCandidate) {
+    if (!blockedReason && selectedCandidates.length > 0) {
       const { error: insertError } = await supabase
         .from("marketing_email_queue")
-        .insert({
-          user_id: selectedCandidate.user_id,
-          email: selectedCandidate.email,
+        .insert(selectedCandidates.map((candidate) => ({
+          user_id: candidate.user_id,
+          email: candidate.email,
           sequence_key: typedCampaign.sequence_key,
           step_key: typedCampaign.step_key,
           template_key: typedCampaign.template_key,
@@ -543,8 +653,9 @@ serve(async (req) => {
             planner_run_id: runId,
             trigger,
             controlled_activation: true,
+            controlled_enqueue_mode: enqueueGate.mode,
           },
-        });
+        })));
 
       if (insertError) {
         blockedReason = "queue_insert_failed";
@@ -554,6 +665,11 @@ serve(async (req) => {
       }
     }
   }
+
+  const enqueuedCount = queueWritten ? selectedCandidates.length : 0;
+  const selectedUserIds = selectedCandidates.map((candidate) =>
+    candidate.user_id
+  );
 
   const finishedAt = new Date().toISOString();
 
@@ -572,7 +688,7 @@ serve(async (req) => {
         started_at: startedAt,
         finished_at: finishedAt,
         eligible_count: candidateCount,
-        enqueued_count: queueWritten ? 1 : 0,
+        enqueued_count: enqueuedCount,
         skipped_suppressed_count: skippedSuppressedCount,
         skipped_cooldown_count: skippedCooldownCount,
         skipped_too_recent_count: skippedTooRecentCount,
@@ -601,7 +717,9 @@ serve(async (req) => {
           email_sent: false,
           real_enqueue_attempted: realEnqueueAttempted,
           selected_count_before_insert: selectedCountBeforeInsert,
-          selected_user_id: selectedCandidate?.user_id ?? null,
+          selected_count: selectedCandidates.length,
+          selected_user_ids: selectedUserIds,
+          controlled_enqueue_mode: enqueueGate.mode,
         },
       });
 
@@ -612,7 +730,9 @@ serve(async (req) => {
     }
   }
 
-  const responseStatus = enqueueError ? 500 : (!dryRun && !queueWritten ? 409 : 200);
+  const responseStatus = enqueueError
+    ? 500
+    : (!dryRun && !queueWritten ? 409 : 200);
 
   return json(responseStatus, {
     ok: dryRun || queueWritten,
@@ -642,7 +762,7 @@ serve(async (req) => {
     candidate_count: candidateCount,
     would_plan_before_blocks: wouldPlanBeforeBlocks,
     would_enqueue_count: dryRun ? wouldEnqueueCount : 0,
-    enqueued_count: queueWritten ? 1 : 0,
+    enqueued_count: enqueuedCount,
     skipped_suppressed_count: skippedSuppressedCount,
     skipped_cooldown_count: skippedCooldownCount,
     skipped_too_recent_count: skippedTooRecentCount,
@@ -654,6 +774,9 @@ serve(async (req) => {
     email_sent: false,
     real_enqueue_attempted: realEnqueueAttempted,
     selected_count_before_insert: selectedCountBeforeInsert,
+    selected_count: selectedCandidates.length,
+    selected_user_ids: selectedUserIds,
+    controlled_enqueue_mode: enqueueGate.mode,
     planner_log_written: plannerLogWritten,
     planner_log_error: plannerLogError,
     enqueue_error: enqueueError,
