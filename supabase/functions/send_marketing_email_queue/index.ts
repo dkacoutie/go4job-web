@@ -103,12 +103,14 @@ type DailySendLimitDiagnostics = {
   daily_send_limit_enforced: boolean;
 };
 
-const MAX_LIMIT = 10;
+const MAX_LIMIT = 31;
 const SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE =
   "SEND_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
 const CREATE_ALERT_DAILY_MAX_LIMIT = 10;
 const SEND_PAYSTACK_RECOVERY_CONFIRM_PHRASE = "SEND_PAYSTACK_RECOVERY_LIMIT_5";
+const SEND_PAYSTACK_PENDING_CONFIRM_PHRASE = "SEND_PAYSTACK_RECOVERY_PENDING_LIMIT_31";
 const PAYSTACK_RECOVERY_MAX_LIMIT = 5;
+const PAYSTACK_PENDING_MAX_LIMIT = 31;
 const PAYSTACK_RECOVERY_SEGMENT_KEY = "paystack_abandoned_checkout";
 const PAYSTACK_RECOVERY_SEQUENCE_KEY = "paystack_abandoned_checkout";
 const PAYSTACK_RECOVERY_STEP_KEY = "email_1";
@@ -696,6 +698,30 @@ async function markQueueSent(
   if (error) throw new Error(`queue_sent_update_failed:${error.message}`);
 }
 
+async function markPaystackRecoveryLeadSent(
+  supabase: SupabaseClient,
+  item: QueueItem,
+  sentAt: string,
+) {
+  if (item.template_key !== PAYSTACK_RECOVERY_TEMPLATE_KEY) return true;
+
+  const leadId = metadataString(item, "lead_id");
+  if (!leadId) return false;
+
+  const { data, error } = await supabase
+    .from("paystack_checkout_recovery_leads")
+    .update({
+      recommended_state: "sent",
+      sent_at: sentAt,
+    })
+    .eq("id", leadId)
+    .eq("recommended_state", "queued")
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  return !error && Boolean(data?.id);
+}
+
 async function markQueueSkipped(
   supabase: SupabaseClient,
   item: QueueItem,
@@ -878,8 +904,11 @@ serve(async (req) => {
   const limitApplied = parseLimit(limitRequested);
   const isCreateAlertDailyMode =
     body.confirm === SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE;
-  const isPaystackRecoveryMode =
+  const isPaystackRecoveryLimit5Mode =
     body.confirm === SEND_PAYSTACK_RECOVERY_CONFIRM_PHRASE;
+  const isPaystackPendingMode =
+    body.confirm === SEND_PAYSTACK_PENDING_CONFIRM_PHRASE;
+  const isPaystackRecoveryMode = isPaystackRecoveryLimit5Mode || isPaystackPendingMode;
   const segmentKey = cleanText(body.segment_key);
   const templateKey = cleanText(body.template_key);
   const trigger = cleanText(body.trigger);
@@ -907,7 +936,7 @@ serve(async (req) => {
     }
   }
 
-  if (isPaystackRecoveryMode) {
+  if (isPaystackRecoveryLimit5Mode) {
     if (
       dryRun ||
       !Number.isInteger(body.limit) ||
@@ -926,6 +955,25 @@ serve(async (req) => {
     }
   }
 
+  if (isPaystackPendingMode) {
+    if (
+      dryRun ||
+      !Number.isInteger(body.limit) ||
+      body.limit < 1 ||
+      body.limit > PAYSTACK_PENDING_MAX_LIMIT ||
+      segmentKey !== PAYSTACK_RECOVERY_SEGMENT_KEY ||
+      templateKey !== PAYSTACK_RECOVERY_TEMPLATE_KEY ||
+      trigger !== "manual"
+    ) {
+      return json(400, {
+        ok: false,
+        error: "send_paystack_pending_request_invalid",
+        message:
+          "Pending Paystack recovery send requires dry_run=false, confirm=SEND_PAYSTACK_RECOVERY_PENDING_LIMIT_31, segment_key=paystack_abandoned_checkout, template_key=paystack_abandoned_checkout_email_1, trigger=manual, and integer limit between 1 and 31.",
+      });
+    }
+  }
+
   if (
     !dryRun &&
     !isPaystackRecoveryMode &&
@@ -938,7 +986,7 @@ serve(async (req) => {
       ok: false,
       error: "send_paystack_recovery_confirm_required",
       message:
-        "Paystack recovery real send requires confirm=SEND_PAYSTACK_RECOVERY_LIMIT_5.",
+        "Paystack recovery real send requires confirm=SEND_PAYSTACK_RECOVERY_LIMIT_5 or confirm=SEND_PAYSTACK_RECOVERY_PENDING_LIMIT_31.",
     });
   }
 
@@ -978,6 +1026,7 @@ serve(async (req) => {
   let sentCount = 0;
   let skippedCount = 0;
   let failedCount = 0;
+  let leadStateUpdateFailedCount = 0;
 
   try {
     const dailySendLimitDiagnostics = await getDailySendLimitDiagnostics(
@@ -1267,7 +1316,15 @@ serve(async (req) => {
             },
           });
           await markQueueSent(supabase, item, resendResult.resendEmailId);
-          items.push(buildResponseItem(item, "sent", "accepted"));
+          const leadStateUpdated = await markPaystackRecoveryLeadSent(supabase, item, now);
+          if (!leadStateUpdated && item.template_key === PAYSTACK_RECOVERY_TEMPLATE_KEY) {
+            leadStateUpdateFailedCount += 1;
+          }
+          items.push(buildResponseItem(
+            item,
+            "sent",
+            leadStateUpdated ? "accepted" : "accepted_lead_state_update_failed",
+          ));
           continue;
         }
 
@@ -1330,6 +1387,7 @@ serve(async (req) => {
       sent_count: sentCount,
       skipped_count: skippedCount,
       failed_count: failedCount,
+      lead_state_update_failed_count: leadStateUpdateFailedCount,
       items,
       ...dailySendLimitDiagnostics,
     });
@@ -1344,6 +1402,7 @@ serve(async (req) => {
       sent_count: sentCount,
       skipped_count: skippedCount,
       failed_count: failedCount + 1,
+      lead_state_update_failed_count: leadStateUpdateFailedCount,
       items,
       error: error instanceof Error ? error.message : "unknown_error",
     });

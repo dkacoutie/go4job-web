@@ -15,6 +15,7 @@ type RecoveryRequest = {
   limit?: number | null;
   allow_enqueue?: boolean | null;
   confirm?: string | null;
+  trigger?: string | null;
 };
 
 type RecoveryLead = {
@@ -47,8 +48,10 @@ const TEMPLATE_KEY = "paystack_abandoned_checkout_email_1";
 const SEQUENCE_KEY = CAMPAIGN_KEY;
 const STEP_KEY = "email_1";
 const MAX_DRY_RUN_LIMIT = 100;
-const MAX_REAL_ENQUEUE_LIMIT = 5;
-const RESERVED_REAL_ENQUEUE_CONFIRM = "ENQUEUE_PAYSTACK_RECOVERY_LIMIT_5";
+const MAX_PRIORITY_ENQUEUE_LIMIT = 5;
+const MAX_PENDING_ENQUEUE_LIMIT = 31;
+const PRIORITY_ENQUEUE_CONFIRM = "ENQUEUE_PAYSTACK_RECOVERY_LIMIT_5";
+const PENDING_ENQUEUE_CONFIRM = "ENQUEUE_PAYSTACK_RECOVERY_PENDING_LIMIT_31";
 
 const SEGMENT_MESSAGES: Record<RecoverySegment, string> = {
   card_abandoned:
@@ -248,6 +251,7 @@ Deno.serve(async (req) => {
   const campaignKey = clean(body.campaign_key);
   const templateKey = clean(body.template_key);
   const priorityFilter = clean(body.priority_filter);
+  const trigger = clean(body.trigger);
   const limit = parseLimit(body.limit);
 
   if (typeof body.dry_run !== "boolean") {
@@ -277,14 +281,20 @@ Deno.serve(async (req) => {
   }
 
   if (!body.dry_run) {
-    const guardsSatisfied = body.allow_enqueue === true &&
-      body.confirm === RESERVED_REAL_ENQUEUE_CONFIRM &&
+    const isPriorityEnqueue = body.allow_enqueue === true &&
+      body.confirm === PRIORITY_ENQUEUE_CONFIRM &&
       priorityFilter === "P1" &&
       Number.isInteger(body.limit) &&
       (body.limit as number) >= 1 &&
-      (body.limit as number) <= MAX_REAL_ENQUEUE_LIMIT;
+      (body.limit as number) <= MAX_PRIORITY_ENQUEUE_LIMIT;
+    const isPendingEnqueue = body.allow_enqueue === true &&
+      body.confirm === PENDING_ENQUEUE_CONFIRM &&
+      trigger === "manual" &&
+      Number.isInteger(body.limit) &&
+      (body.limit as number) >= 1 &&
+      (body.limit as number) <= MAX_PENDING_ENQUEUE_LIMIT;
 
-    if (!guardsSatisfied) {
+    if (!isPriorityEnqueue && !isPendingEnqueue) {
       return json(400, {
         ok: false,
         dry_run: false,
@@ -293,10 +303,19 @@ Deno.serve(async (req) => {
         queue_written: false,
         stop_reason: "real_enqueue_guardrails_not_satisfied",
         required: {
-          allow_enqueue: true,
-          confirm: RESERVED_REAL_ENQUEUE_CONFIRM,
-          priority_filter: "P1",
-          maximum_limit: MAX_REAL_ENQUEUE_LIMIT,
+          priority_batch: {
+            allow_enqueue: true,
+            confirm: PRIORITY_ENQUEUE_CONFIRM,
+            priority_filter: "P1",
+            maximum_limit: MAX_PRIORITY_ENQUEUE_LIMIT,
+          },
+          pending_batch: {
+            allow_enqueue: true,
+            confirm: PENDING_ENQUEUE_CONFIRM,
+            trigger: "manual",
+            maximum_limit: MAX_PENDING_ENQUEUE_LIMIT,
+            priority_filter: "optional",
+          },
         },
       });
     }
@@ -566,6 +585,7 @@ Deno.serve(async (req) => {
         campaign_key: CAMPAIGN_KEY,
         template_key: TEMPLATE_KEY,
         priority_filter: priorityFilter,
+        trigger: trigger || null,
         limit_applied: limit,
         queue_written: queuedLeads.length > 0,
         queued_count: queuedLeads.length,
