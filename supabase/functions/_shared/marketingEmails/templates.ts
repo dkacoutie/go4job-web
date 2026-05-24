@@ -2,7 +2,8 @@ export type MarketingEmailKey =
   | "payment_attempt_no_success_email_1"
   | "interested_no_payment_attempt_email_1"
   | "buyer_feedback_email_1"
-  | "create_alert_email_1";
+  | "create_alert_email_1"
+  | "paystack_abandoned_checkout_email_1";
 
 export type MarketingEmailVariables = {
   email?: string | null;
@@ -12,6 +13,8 @@ export type MarketingEmailVariables = {
   pricing_url?: string | null;
   feed_url?: string | null;
   alert_url?: string | null;
+  recovery_url?: string | null;
+  segment_message?: string | null;
 };
 
 export type RenderedMarketingEmail = {
@@ -40,6 +43,8 @@ type NormalizedMarketingEmailVariables = {
   pricing_url: string;
   feed_url: string;
   alert_url: string;
+  recovery_url: string;
+  segment_message: string;
 };
 
 const TEMPLATE_VERSION = "2026-05-02.v1";
@@ -49,6 +54,7 @@ const SENDABLE_MARKETING_EMAIL_KEYS = new Set<string>([
   "interested_no_payment_attempt_email_1",
   "buyer_feedback_email_1",
   "create_alert_email_1",
+  "paystack_abandoned_checkout_email_1",
 ]);
 
 function cleanText(value: string | null | undefined) {
@@ -75,6 +81,7 @@ function escapeAttr(value: string) {
 
 function normalizeVariables(input: MarketingEmailVariables): NormalizedMarketingEmailVariables {
   const appUrl = normalizeBaseUrl(input.app_url);
+  const recoveryUrl = cleanText(input.recovery_url);
   return {
     email: cleanText(input.email),
     poste_recherche: cleanText(input.poste_recherche),
@@ -84,6 +91,10 @@ function normalizeVariables(input: MarketingEmailVariables): NormalizedMarketing
     pricing_url: cleanText(input.pricing_url) || `${appUrl}/pricing`,
     feed_url: cleanText(input.feed_url) || `${appUrl}/jobradar/feed`,
     alert_url: cleanText(input.alert_url) || `${appUrl}/jobradar/alerts`,
+    recovery_url: recoveryUrl
+      ? recoveryUrl.startsWith("/") ? `${appUrl}${recoveryUrl}` : recoveryUrl
+      : `${appUrl}/jobradar/feed?utm_source=email&utm_medium=recovery&utm_campaign=paystack_abandoned_checkout_email_1`,
+    segment_message: cleanText(input.segment_message),
   };
 }
 
@@ -415,6 +426,64 @@ ${variables.unsubscribe_url}`;
   return { html, text };
 }
 
+function paystackAbandonedCheckoutEmail(variables: NormalizedMarketingEmailVariables) {
+  const segmentMessage = variables.segment_message ||
+    "Ce n'est peut-être qu'une interruption — ça arrive. Tu peux reprendre là où tu t'étais arrêté.";
+  const html = renderLayout({
+    preheader: "Des offres complètes, des alertes personnalisées — en quelques secondes.",
+    title: "Tu étais à deux clics d'accéder à JobRadar",
+    introHtml: `
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">Bonjour,</p>
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
+        Tu avais commencé à activer ton accès JobRadar — il ne manquait plus grand-chose.
+      </p>`,
+    bodyHtml: `
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
+        ${escapeHtml(segmentMessage)}
+      </p>
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
+        Avec JobRadar, tu peux accéder aux offres complètes, créer des alertes sur les postes qui te correspondent
+        et gagner du temps dans ta recherche. L'accès est immédiat dès que le paiement est validé.
+      </p>
+      <p style="margin:0;font-size:15px;line-height:1.7;color:#374151;">
+        Si quelque chose a bloqué pendant le paiement, réponds simplement à ce mail. On regarde avec toi.
+      </p>`,
+    primaryHref: variables.recovery_url,
+    primaryLabel: "Accéder aux offres maintenant",
+    postCtaHtml: `
+      <p style="margin:24px 0 0;font-size:15px;line-height:1.7;color:#374151;">
+        L'équipe JobRadar
+      </p>
+      <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:#64748b;">
+        Tu reçois ce mail car tu as initié une activation sur JobRadar. Tu peux te désabonner à tout moment.
+      </p>`,
+    unsubscribeUrl: variables.unsubscribe_url,
+    brandSubtitle: "par Go4Job",
+    headerLogoUrl: "https://jobradar.go4jobapp.com/go4job-logo-email.png",
+    hideUnsubscribeUrlInHtml: true,
+  });
+
+  const text = `Bonjour,
+
+Tu avais commencé à activer ton accès JobRadar — il ne manquait plus grand-chose.
+
+${segmentMessage}
+
+Avec JobRadar, tu peux accéder aux offres complètes, créer des alertes sur les postes qui te correspondent et gagner du temps dans ta recherche. L'accès est immédiat dès que le paiement est validé.
+
+Si quelque chose a bloqué pendant le paiement, réponds simplement à ce mail. On regarde avec toi.
+
+Accéder aux offres maintenant
+${variables.recovery_url}
+
+L'équipe JobRadar
+
+Tu reçois ce mail car tu as initié une activation sur JobRadar. Tu peux te désabonner à tout moment.
+Se désabonner : ${variables.unsubscribe_url}`;
+
+  return { html, text };
+}
+
 const TEMPLATES: Record<string, TemplateDefinition> = {
   payment_attempt_no_success_email_1: {
     email_key: "payment_attempt_no_success_email_1",
@@ -439,6 +508,12 @@ const TEMPLATES: Record<string, TemplateDefinition> = {
     template_version: TEMPLATE_VERSION,
     subject: "Il manque une chose pour que JobRadar travaille pour toi",
     render: createAlertEmail,
+  },
+  paystack_abandoned_checkout_email_1: {
+    email_key: "paystack_abandoned_checkout_email_1",
+    template_version: TEMPLATE_VERSION,
+    subject: "Tu étais à deux clics d'accéder à JobRadar",
+    render: paystackAbandonedCheckoutEmail,
   },
 };
 

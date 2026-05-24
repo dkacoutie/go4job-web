@@ -107,17 +107,24 @@ const MAX_LIMIT = 10;
 const SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE =
   "SEND_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
 const CREATE_ALERT_DAILY_MAX_LIMIT = 10;
+const SEND_PAYSTACK_RECOVERY_CONFIRM_PHRASE = "SEND_PAYSTACK_RECOVERY_LIMIT_5";
+const PAYSTACK_RECOVERY_MAX_LIMIT = 5;
+const PAYSTACK_RECOVERY_SEGMENT_KEY = "paystack_abandoned_checkout";
+const PAYSTACK_RECOVERY_SEQUENCE_KEY = "paystack_abandoned_checkout";
+const PAYSTACK_RECOVERY_STEP_KEY = "email_1";
 const LOCKED_BY = "send_marketing_email_queue_v1";
 const REQUEST_TIMEOUT_MS = 15_000;
 const UNSUBSCRIBE_BASE_URL =
   "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/email_unsubscribe";
 const COUNTED_SENT_STATUSES = ["sent", "delivered", "opened", "clicked"];
+const PAYSTACK_RECOVERY_TEMPLATE_KEY = "paystack_abandoned_checkout_email_1";
 
 const TEMPLATE_KEY_TO_SEGMENT: Record<MarketingEmailKey, string> = {
   payment_attempt_no_success_email_1: "payment_attempt_no_success",
   interested_no_payment_attempt_email_1: "interested_no_payment_attempt",
   buyer_feedback_email_1: "buyer_feedback",
   create_alert_email_1: "non_paying_without_alert",
+  paystack_abandoned_checkout_email_1: "paystack_abandoned_checkout",
 };
 
 const VALID_SEGMENTS = new Set([
@@ -125,6 +132,7 @@ const VALID_SEGMENTS = new Set([
   "interested_no_payment_attempt",
   "buyer_feedback",
   "non_paying_without_alert",
+  "paystack_abandoned_checkout",
   "incomplete_onboarding",
   "expired_pass",
   "former_buyer",
@@ -453,7 +461,13 @@ function blockedBeforeSendResponse(params: {
 async function fetchQueueItems(
   supabase: SupabaseClient,
   limit: number,
-  filters: { segmentKey?: string; templateKey?: string } = {},
+  filters: {
+    segmentKey?: string;
+    sequenceKey?: string;
+    stepKey?: string;
+    templateKey?: string;
+    excludeTemplateKey?: string;
+  } = {},
 ) {
   const now = new Date().toISOString();
   let query = supabase
@@ -480,8 +494,20 @@ async function fetchQueueItems(
     query = query.eq("segment_key", filters.segmentKey);
   }
 
+  if (filters.sequenceKey) {
+    query = query.eq("sequence_key", filters.sequenceKey);
+  }
+
+  if (filters.stepKey) {
+    query = query.eq("step_key", filters.stepKey);
+  }
+
   if (filters.templateKey) {
     query = query.eq("template_key", filters.templateKey);
+  }
+
+  if (filters.excludeTemplateKey) {
+    query = query.neq("template_key", filters.excludeTemplateKey);
   }
 
   const { data, error } = await query
@@ -852,6 +878,8 @@ serve(async (req) => {
   const limitApplied = parseLimit(limitRequested);
   const isCreateAlertDailyMode =
     body.confirm === SEND_CREATE_ALERT_DAILY_CONFIRM_PHRASE;
+  const isPaystackRecoveryMode =
+    body.confirm === SEND_PAYSTACK_RECOVERY_CONFIRM_PHRASE;
   const segmentKey = cleanText(body.segment_key);
   const templateKey = cleanText(body.template_key);
   const trigger = cleanText(body.trigger);
@@ -879,7 +907,42 @@ serve(async (req) => {
     }
   }
 
-  if (!dryRun && !isCreateAlertDailyMode && limitApplied !== 1) {
+  if (isPaystackRecoveryMode) {
+    if (
+      dryRun ||
+      !Number.isInteger(body.limit) ||
+      body.limit < 1 ||
+      body.limit > PAYSTACK_RECOVERY_MAX_LIMIT ||
+      segmentKey !== PAYSTACK_RECOVERY_SEGMENT_KEY ||
+      templateKey !== PAYSTACK_RECOVERY_TEMPLATE_KEY ||
+      trigger !== "manual"
+    ) {
+      return json(400, {
+        ok: false,
+        error: "send_paystack_recovery_request_invalid",
+        message:
+          "Paystack recovery send requires dry_run=false, confirm=SEND_PAYSTACK_RECOVERY_LIMIT_5, segment_key=paystack_abandoned_checkout, template_key=paystack_abandoned_checkout_email_1, trigger=manual, and integer limit between 1 and 5.",
+      });
+    }
+  }
+
+  if (
+    !dryRun &&
+    !isPaystackRecoveryMode &&
+    (
+      segmentKey === PAYSTACK_RECOVERY_SEGMENT_KEY ||
+      templateKey === PAYSTACK_RECOVERY_TEMPLATE_KEY
+    )
+  ) {
+    return json(400, {
+      ok: false,
+      error: "send_paystack_recovery_confirm_required",
+      message:
+        "Paystack recovery real send requires confirm=SEND_PAYSTACK_RECOVERY_LIMIT_5.",
+    });
+  }
+
+  if (!dryRun && !isCreateAlertDailyMode && !isPaystackRecoveryMode && limitApplied !== 1) {
     return json(400, {
       ok: false,
       error: "real_send_limit_one_required",
@@ -895,7 +958,8 @@ serve(async (req) => {
 
   const resendKey = cleanSecret(Deno.env.get("RESEND_API_KEY"));
   const resendFrom = cleanSecret(Deno.env.get("RESEND_FROM"));
-  const resendReplyTo = cleanSecret(Deno.env.get("RESEND_REPLY_TO"));
+  const resendReplyTo = cleanSecret(Deno.env.get("MARKETING_REPLY_TO_EMAIL")) ||
+    cleanSecret(Deno.env.get("RESEND_REPLY_TO"));
 
   if (!dryRun && (!resendKey || !resendFrom)) {
     return json(500, {
@@ -993,7 +1057,21 @@ serve(async (req) => {
           segmentKey: "non_paying_without_alert",
           templateKey: "create_alert_email_1",
         }
-        : {},
+        : isPaystackRecoveryMode
+        ? {
+          segmentKey: PAYSTACK_RECOVERY_SEGMENT_KEY,
+          sequenceKey: PAYSTACK_RECOVERY_SEQUENCE_KEY,
+          stepKey: PAYSTACK_RECOVERY_STEP_KEY,
+          templateKey: PAYSTACK_RECOVERY_TEMPLATE_KEY,
+        }
+        : !dryRun
+        ? {
+          excludeTemplateKey: PAYSTACK_RECOVERY_TEMPLATE_KEY,
+        }
+        : {
+          ...(segmentKey ? { segmentKey } : {}),
+          ...(templateKey ? { templateKey } : {}),
+        },
     );
 
     for (const item of queueItems) {
@@ -1033,6 +1111,12 @@ serve(async (req) => {
 
       if (dryRun) {
         items.push(buildResponseItem(item, "would_send", "eligible"));
+        continue;
+      }
+
+      if (item.template_key === PAYSTACK_RECOVERY_TEMPLATE_KEY && !resendReplyTo) {
+        failedCount += 1;
+        items.push(buildResponseItem(item, "blocked", "missing_marketing_reply_to"));
         continue;
       }
 
@@ -1094,6 +1178,9 @@ serve(async (req) => {
           app_url: metadataString(item, "app_url") || null,
           pricing_url: metadataString(item, "pricing_url") || null,
           feed_url: metadataString(item, "feed_url") || null,
+          recovery_url: metadataString(item, "recovery_url") ||
+            metadataString(item, "cta_url") || null,
+          segment_message: metadataString(item, "segment_message") || null,
         });
         const withFooter = ensureUnsubscribeFooter(
           rendered.html,
