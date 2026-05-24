@@ -27,6 +27,8 @@ export type AlertRow = {
   search_query?: string | null;
   employment_types?: string[] | null;
   work_modes?: string[] | null;
+  skills_keywords?: string[] | null;
+  excluded_keywords?: string[] | null;
   frequency?: string | null;
   channels?: string[] | null;
   is_active?: boolean | null;
@@ -72,6 +74,7 @@ export type Diagnostics = {
   excluded_poor_data: number;
   excluded_low_score: number;
   excluded_weak_match_signal: number;
+  excluded_keyword_match: number;
   excluded_over_limit: number;
   excluded_below_preview_threshold: number;
   excluded_incomplete_profile: boolean;
@@ -93,6 +96,7 @@ export type Diagnostics = {
 type RejectionReason =
   | "low_score"
   | "weak_job_signal"
+  | "excluded_keyword"
   | "no_url"
   | "inactive"
   | "saved_or_applied"
@@ -210,6 +214,7 @@ export function baseDiagnostics(): Diagnostics {
     excluded_poor_data: 0,
     excluded_low_score: 0,
     excluded_weak_match_signal: 0,
+    excluded_keyword_match: 0,
     excluded_over_limit: 0,
     excluded_below_preview_threshold: 0,
     excluded_incomplete_profile: false,
@@ -242,6 +247,7 @@ export function finalizeDiagnostics(diagnostics: Diagnostics, selectedRelevantJo
     diagnostics.excluded_poor_data +
     diagnostics.excluded_low_score +
     diagnostics.excluded_weak_match_signal +
+    diagnostics.excluded_keyword_match +
     diagnostics.excluded_over_limit +
     diagnostics.excluded_below_preview_threshold +
     selectedRelevantJobs;
@@ -257,6 +263,16 @@ export function cleanString(value: unknown): string {
 function cleanArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return uniq(value.map(cleanString).filter(Boolean));
+}
+
+// Alert refinements preserve storage meaning: null = not configured; [] = configured
+// but empty. Both yield no active terms while invalid runtime values safely become [].
+function refinedKeywordArray(value: unknown): string[] {
+  return cleanArray(value);
+}
+
+function normalizedRefinedKeywordArray(value: unknown): string[] {
+  return refinedKeywordArray(value).map(normalizeText).filter(Boolean);
 }
 
 function uniq(values: string[]): string[] {
@@ -410,6 +426,21 @@ function haystack(job: JobRow): string {
   ].filter(Boolean).join(" "));
 }
 
+function exclusionHaystack(job: JobRow): string {
+  return normalizeText([job.title, job.description_text].filter(Boolean).join(" "));
+}
+
+function skillsHaystack(job: JobRow): string {
+  return normalizeText([
+    job.title,
+    job.description_text,
+    ...normalizeTags(job.tags),
+    ...(job.required_skills ?? []),
+    ...(job.optional_skills ?? []),
+    ...(job.job_skills ?? []),
+  ].filter(Boolean).join(" "));
+}
+
 function countryMatches(criteria: Criteria, job: JobRow): boolean {
   if (criteria.countries.length === 0) return false;
   const jobCountry = normalizeText(cleanString(job.country));
@@ -553,6 +584,34 @@ function hasUsefulMatchSignal(criteria: Criteria, reasons: string[]): boolean {
   return supportingSignals >= 2;
 }
 
+function alertAppliesHistorically(job: JobRow, alert: AlertRow): boolean {
+  const alertCriteria = buildCriteria(null, [alert]);
+  const scored = scoreJob(job, alertCriteria);
+  return hasUsefulMatchSignal(alertCriteria, scored.reasons);
+}
+
+function applyAlertRefinements(job: JobRow, criteria: Criteria): { excluded: boolean; skillsBoost: number } {
+  const applicableAlerts = criteria.activeAlerts.filter((alert) => alertAppliesHistorically(job, alert));
+  if (applicableAlerts.length === 0) return { excluded: false, skillsBoost: 0 };
+
+  const excludedText = exclusionHaystack(job);
+  const receivableAlerts = applicableAlerts.filter((alert) => {
+    const excludedKeywords = normalizedRefinedKeywordArray(alert.excluded_keywords);
+    return !excludedKeywords.some((keyword) => excludedText.includes(keyword));
+  });
+
+  if (receivableAlerts.length === 0) return { excluded: true, skillsBoost: 0 };
+
+  const skillText = skillsHaystack(job);
+  const skillsBoost = receivableAlerts.reduce((bestBoost, alert) => {
+    const matchedSkillsKeywords = normalizedRefinedKeywordArray(alert.skills_keywords)
+      .filter((keyword) => skillText.includes(keyword));
+    return Math.max(bestBoost, Math.min(10, matchedSkillsKeywords.length * 3));
+  }, 0);
+
+  return { excluded: false, skillsBoost };
+}
+
 export function selectRelevantJobs(params: {
   jobs: JobRow[];
   criteria: Criteria;
@@ -598,6 +657,13 @@ export function selectRelevantJobs(params: {
       continue;
     }
 
+    const refinement = applyAlertRefinements(job, params.criteria);
+    if (refinement.excluded) {
+      params.diagnostics.excluded_keyword_match += 1;
+      recordRejectedJob(params.diagnostics, job, "excluded_keyword");
+      continue;
+    }
+
     const scored = scoreJob(job, params.criteria);
     if (scored.score < params.minScorePreview) {
       params.diagnostics.excluded_low_score += 1;
@@ -610,6 +676,10 @@ export function selectRelevantJobs(params: {
       continue;
     }
 
+    const refinedScore = Math.min(100, scored.score + refinement.skillsBoost);
+    const refinedReasons = refinement.skillsBoost > 0
+      ? uniq([...scored.reasons, "skills_keywords_match"])
+      : scored.reasons;
     const relevantMs = getJobTimeMs(job);
     selected.push({
       id: job.id,
@@ -620,8 +690,8 @@ export function selectRelevantJobs(params: {
       remote_type: cleanString(job.remote_type) || null,
       contract_type: cleanString(job.contract_type) || null,
       job_family: cleanString(job.job_family) || null,
-      score: scored.score,
-      score_reasons: scored.reasons,
+      score: refinedScore,
+      score_reasons: refinedReasons,
       url_available: true,
       freshness_ms: relevantMs,
       relevant_at: relevantMs ? new Date(relevantMs).toISOString() : null,

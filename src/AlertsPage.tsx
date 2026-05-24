@@ -21,6 +21,8 @@ type AlertRow = {
   search_query?: string | null;
   employment_types?: string[] | null;
   work_modes?: string[] | null;
+  skills_keywords?: string[] | null;
+  excluded_keywords?: string[] | null;
 
   frequency: "instant" | "daily" | "weekly" | string;
   channels: string[];
@@ -366,6 +368,10 @@ export default function AlertsPage() {
   const [name, setName] = useState("");
   const [keywordsText, setKeywordsText] = useState("");
   const [keywordsDirty, setKeywordsDirty] = useState(false);
+  const [skillsKeywordsText, setSkillsKeywordsText] = useState("");
+  const [skillsKeywordsConfigured, setSkillsKeywordsConfigured] = useState(false);
+  const [excludedKeywordsText, setExcludedKeywordsText] = useState("");
+  const [excludedKeywordsConfigured, setExcludedKeywordsConfigured] = useState(false);
   const [lastSuggestedFor, setLastSuggestedFor] = useState("");
   const [lastSuggestedText, setLastSuggestedText] = useState("");
 
@@ -444,7 +450,7 @@ export default function AlertsPage() {
 
     const { data, error } = await supabase
       .from("alerts")
-      .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+      .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, skills_keywords, excluded_keywords, frequency, channels, is_active, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -509,6 +515,8 @@ export default function AlertsPage() {
 
     const n = name.trim();
     const kw = uniqClean(keywordsText.split(",").map((s) => s.trim()).filter(Boolean));
+    const skillsKeywords = uniqClean(skillsKeywordsText.split(",").map((s) => s.trim()).filter(Boolean));
+    const excludedKeywords = uniqClean(excludedKeywordsText.split(",").map((s) => s.trim()).filter(Boolean));
     const channels = uniqClean([chEmail ? "email" : ""]).filter(Boolean);
 
     // OK countries: null = Tous pays, sinon array
@@ -571,6 +579,8 @@ export default function AlertsPage() {
       user_id: userId,
       name: n,
       keywords: kw,
+      skills_keywords: skillsKeywordsConfigured ? skillsKeywords : null,
+      excluded_keywords: excludedKeywordsConfigured ? excludedKeywords : null,
 
       // OK nouveau champ
       countries: countriesToSave,
@@ -601,6 +611,10 @@ export default function AlertsPage() {
     setName("");
     setKeywordsText("");
     setKeywordsDirty(false);
+    setSkillsKeywordsText("");
+    setSkillsKeywordsConfigured(false);
+    setExcludedKeywordsText("");
+    setExcludedKeywordsConfigured(false);
     setLastSuggestedFor("");
     setLastSuggestedText("");
 
@@ -816,6 +830,36 @@ export default function AlertsPage() {
             />
           </label>
 
+          <div className="row2 advancedFields">
+            <label className="label">
+              Compétences ou outils recherchés
+              <input
+                className="input"
+                value={skillsKeywordsText}
+                onChange={(e) => {
+                  setSkillsKeywordsConfigured(true);
+                  setSkillsKeywordsText(e.target.value);
+                }}
+                placeholder="Agile, SAP, ERP, Salesforce, Excel, Paie"
+              />
+              <span className="fieldHint">Exemple : Agile, SAP, ERP, Salesforce, Excel, Paie</span>
+            </label>
+
+            <label className="label">
+              Mots à exclure
+              <input
+                className="input"
+                value={excludedKeywordsText}
+                onChange={(e) => {
+                  setExcludedKeywordsConfigured(true);
+                  setExcludedKeywordsText(e.target.value);
+                }}
+                placeholder="BTP, chantier, restauration, formation"
+              />
+              <span className="fieldHint">Exemple : BTP, chantier, restauration, formation</span>
+            </label>
+          </div>
+
           <div className="row2">
             <label className="label">
               Pays (optionnel)
@@ -955,6 +999,18 @@ export default function AlertsPage() {
                       <span className="k">Mots-clés</span>
                       <span className="kw">{(a.keywords ?? []).join(", ")}</span>
                     </div>
+                    {a.skills_keywords !== null && a.skills_keywords !== undefined ? (
+                      <div className="keywordsLine">
+                        <span className="k">Compétences ou outils recherchés</span>
+                        <span className="kw">{a.skills_keywords.length ? a.skills_keywords.join(", ") : "Aucun mot renseigné"}</span>
+                      </div>
+                    ) : null}
+                    {a.excluded_keywords !== null && a.excluded_keywords !== undefined ? (
+                      <div className="keywordsLine">
+                        <span className="k">Mots à exclure</span>
+                        <span className="kw">{a.excluded_keywords.length ? a.excluded_keywords.join(", ") : "Aucun mot renseigné"}</span>
+                      </div>
+                    ) : null}
 
                     <div className="metaRow">
                       {codes.length ? (
