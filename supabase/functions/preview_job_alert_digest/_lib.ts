@@ -591,7 +591,15 @@ function alertAppliesHistorically(job: JobRow, alert: AlertRow): boolean {
 }
 
 function applyAlertRefinements(job: JobRow, criteria: Criteria): { excluded: boolean; skillsBoost: number } {
-  const applicableAlerts = criteria.activeAlerts.filter((alert) => alertAppliesHistorically(job, alert));
+  const singleActiveAlert = criteria.activeAlerts.length === 1 ? criteria.activeAlerts[0] : null;
+  const singleAlertHasExclusions = Boolean(
+    singleActiveAlert && normalizedRefinedKeywordArray(singleActiveAlert.excluded_keywords).length > 0,
+  );
+  // With one active refined alert there is no competing alert path: its exclusions
+  // must also cover jobs admitted by profile/onboarding criteria.
+  const applicableAlerts: AlertRow[] = singleActiveAlert && singleAlertHasExclusions
+    ? [singleActiveAlert]
+    : criteria.activeAlerts.filter((alert) => alertAppliesHistorically(job, alert));
   if (applicableAlerts.length === 0) return { excluded: false, skillsBoost: 0 };
 
   const excludedText = exclusionHaystack(job);
@@ -657,13 +665,6 @@ export function selectRelevantJobs(params: {
       continue;
     }
 
-    const refinement = applyAlertRefinements(job, params.criteria);
-    if (refinement.excluded) {
-      params.diagnostics.excluded_keyword_match += 1;
-      recordRejectedJob(params.diagnostics, job, "excluded_keyword");
-      continue;
-    }
-
     const scored = scoreJob(job, params.criteria);
     if (scored.score < params.minScorePreview) {
       params.diagnostics.excluded_low_score += 1;
@@ -673,6 +674,13 @@ export function selectRelevantJobs(params: {
     if (!hasUsefulMatchSignal(params.criteria, scored.reasons)) {
       params.diagnostics.excluded_weak_match_signal += 1;
       recordRejectedJob(params.diagnostics, job, "weak_job_signal", scored);
+      continue;
+    }
+
+    const refinement = applyAlertRefinements(job, params.criteria);
+    if (refinement.excluded) {
+      params.diagnostics.excluded_keyword_match += 1;
+      recordRejectedJob(params.diagnostics, job, "excluded_keyword", scored);
       continue;
     }
 
