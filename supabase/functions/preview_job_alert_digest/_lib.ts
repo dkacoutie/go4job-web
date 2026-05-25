@@ -167,6 +167,55 @@ const DEFAULT_MIN_SCORE_PREVIEW = 30;
 const DEFAULT_MIN_SCORE_TO_SEND = 35;
 const DEFAULT_MAX_BLOCKS = 5;
 
+const WEAK_MATCH_TERMS = new Set([
+  "chef",
+  "responsable",
+  "manager",
+  "directeur",
+  "directrice",
+  "coordinateur",
+  "coordinatrice",
+  "superviseur",
+  "assistant",
+  "assistante",
+  "charge",
+  "chargee",
+  "agent",
+  "technicien",
+  "technicienne",
+  "conseiller",
+  "conseillere",
+  "projet",
+  "equipe",
+  "service",
+  "poste",
+  "profil",
+  "candidat",
+  "candidate",
+  "gestion",
+  "suivi",
+  "support",
+  "pilotage",
+  "conducteur",
+  "conductrice",
+]);
+
+const STRONG_EXACT_ALERT_PHRASES = new Set([
+  "chef de projet",
+  "assistant administratif",
+  "assistant de direction",
+  "charge de communication",
+  "chargee de communication",
+  "charge de recrutement",
+  "chargee de recrutement",
+  "responsable rh",
+  "responsable ressources humaines",
+  "responsable commercial",
+  "chef comptable",
+  "directeur financier",
+  "directrice financiere",
+]);
+
 const DOMAIN_TERMS: Record<string, string[]> = {
   data: ["data", "analytics", "bi", "sql", "power bi", "tableau"],
   engineering: ["developer", "developpeur", "software", "frontend", "backend", "fullstack", "devops"],
@@ -484,12 +533,24 @@ function scoreJob(job: JobRow, criteria: Criteria): { score: number; reasons: st
     reasons.push("desired_role_match");
   }
 
-  const keywordMatches = criteria.keywords
+  const normalizedKeywords = criteria.keywords
     .map((keyword) => normalizeText(keyword))
-    .filter((keyword) => keyword.length >= 3 && text.includes(keyword));
-  if (keywordMatches.length > 0) {
-    score += Math.min(24, keywordMatches.length * 6);
-    reasons.push("alert_keyword_match");
+    .filter((keyword) => keyword.length >= 3);
+  const keywordMatches = normalizedKeywords.filter((keyword) => text.includes(keyword));
+  const exactAlertPhraseMatches = Array.from(STRONG_EXACT_ALERT_PHRASES)
+    .filter((phrase) => text.includes(phrase) && normalizedKeywords.some((keyword) => keyword.includes(phrase)));
+  const strongKeywordMatches = keywordMatches.filter((keyword) =>
+    !WEAK_MATCH_TERMS.has(keyword) && !STRONG_EXACT_ALERT_PHRASES.has(keyword)
+  );
+  const scoredKeywordCount = exactAlertPhraseMatches.length + strongKeywordMatches.length;
+  if (scoredKeywordCount > 0) {
+    score += Math.min(24, scoredKeywordCount * 6);
+  }
+  if (exactAlertPhraseMatches.length > 0) {
+    reasons.push("exact_alert_phrase_match");
+  }
+  if (strongKeywordMatches.length > 0) {
+    reasons.push("strong_alert_keyword_match");
   }
 
   if (countryMatches(criteria, job)) {
@@ -522,7 +583,7 @@ function scoreJob(job: JobRow, criteria: Criteria): { score: number; reasons: st
   if (jobUrlAvailable(job)) score += 8;
   if (!cleanString(job.company_name)) score -= 4;
   if (!cleanString(job.location) && !cleanString(job.country)) score -= 4;
-  if (!role && keywordMatches.length === 0 && !countryMatches(criteria, job)) {
+  if (!role && scoredKeywordCount === 0 && !countryMatches(criteria, job)) {
     score -= 10;
     reasons.push("weak_match_signal");
   }
@@ -567,7 +628,13 @@ function hasSpecificIntent(criteria: Criteria): boolean {
 }
 
 function hasUsefulMatchSignal(criteria: Criteria, reasons: string[]): boolean {
-  if (reasons.includes("desired_role_match") || reasons.includes("alert_keyword_match")) {
+  if (
+    reasons.includes("desired_role_match") ||
+    reasons.includes("profile_role_match") ||
+    reasons.includes("exact_alert_phrase_match") ||
+    reasons.includes("strong_alert_keyword_match") ||
+    reasons.includes("skills_keywords_match")
+  ) {
     return true;
   }
 
@@ -595,11 +662,17 @@ function applyAlertRefinements(job: JobRow, criteria: Criteria): { excluded: boo
   const singleAlertHasExclusions = Boolean(
     singleActiveAlert && normalizedRefinedKeywordArray(singleActiveAlert.excluded_keywords).length > 0,
   );
+  const skillText = skillsHaystack(job);
+  const skillsBoostForAlert = (alert: AlertRow) => {
+    const matchedSkillsKeywords = normalizedRefinedKeywordArray(alert.skills_keywords)
+      .filter((keyword) => skillText.includes(keyword));
+    return Math.min(10, matchedSkillsKeywords.length * 3);
+  };
   // With one active refined alert there is no competing alert path: its exclusions
   // must also cover jobs admitted by profile/onboarding criteria.
   const applicableAlerts: AlertRow[] = singleActiveAlert && singleAlertHasExclusions
     ? [singleActiveAlert]
-    : criteria.activeAlerts.filter((alert) => alertAppliesHistorically(job, alert));
+    : criteria.activeAlerts.filter((alert) => alertAppliesHistorically(job, alert) || skillsBoostForAlert(alert) > 0);
   if (applicableAlerts.length === 0) return { excluded: false, skillsBoost: 0 };
 
   const excludedText = exclusionHaystack(job);
@@ -610,11 +683,8 @@ function applyAlertRefinements(job: JobRow, criteria: Criteria): { excluded: boo
 
   if (receivableAlerts.length === 0) return { excluded: true, skillsBoost: 0 };
 
-  const skillText = skillsHaystack(job);
   const skillsBoost = receivableAlerts.reduce((bestBoost, alert) => {
-    const matchedSkillsKeywords = normalizedRefinedKeywordArray(alert.skills_keywords)
-      .filter((keyword) => skillText.includes(keyword));
-    return Math.max(bestBoost, Math.min(10, matchedSkillsKeywords.length * 3));
+    return Math.max(bestBoost, skillsBoostForAlert(alert));
   }, 0);
 
   return { excluded: false, skillsBoost };
@@ -666,17 +736,6 @@ export function selectRelevantJobs(params: {
     }
 
     const scored = scoreJob(job, params.criteria);
-    if (scored.score < params.minScorePreview) {
-      params.diagnostics.excluded_low_score += 1;
-      recordRejectedJob(params.diagnostics, job, "low_score", scored);
-      continue;
-    }
-    if (!hasUsefulMatchSignal(params.criteria, scored.reasons)) {
-      params.diagnostics.excluded_weak_match_signal += 1;
-      recordRejectedJob(params.diagnostics, job, "weak_job_signal", scored);
-      continue;
-    }
-
     const refinement = applyAlertRefinements(job, params.criteria);
     if (refinement.excluded) {
       params.diagnostics.excluded_keyword_match += 1;
@@ -688,6 +747,18 @@ export function selectRelevantJobs(params: {
     const refinedReasons = refinement.skillsBoost > 0
       ? uniq([...scored.reasons, "skills_keywords_match"])
       : scored.reasons;
+    const refinedScored = { score: refinedScore, reasons: refinedReasons };
+    if (refinedScore < params.minScorePreview) {
+      params.diagnostics.excluded_low_score += 1;
+      recordRejectedJob(params.diagnostics, job, "low_score", refinedScored);
+      continue;
+    }
+    if (!hasUsefulMatchSignal(params.criteria, refinedReasons)) {
+      params.diagnostics.excluded_weak_match_signal += 1;
+      recordRejectedJob(params.diagnostics, job, "weak_job_signal", refinedScored);
+      continue;
+    }
+
     const relevantMs = getJobTimeMs(job);
     selected.push({
       id: job.id,
