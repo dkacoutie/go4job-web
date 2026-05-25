@@ -52,8 +52,8 @@ function buildAlertFeedUrl(alert?: AlertRow | null) {
   const keywords = uniqClean(alert?.keywords ?? []);
   const query =
     alert?.search_query?.trim() ||
-    keywords.join(" ") ||
     alert?.name?.trim() ||
+    keywords[0] ||
     "";
   const countries = uniqClean([...(alert?.countries ?? []), alert?.country ?? ""])
     .map(normalizeAlertCountry)
