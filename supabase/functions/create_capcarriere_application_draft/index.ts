@@ -78,6 +78,10 @@ type DraftPayload = {
   metadata_json: Record<string, unknown>;
 };
 
+type AuthResult =
+  | { ok: true; mode: "cron_secret" | "admin_preview_jwt" }
+  | { ok: false; status: number; reason: string; details?: unknown };
+
 const FUNCTION_NAME = "create_capcarriere_application_draft";
 const FUNCTION_VERSION = "v1";
 const CONFIRM_TOKEN = "CREATE_CC_DRAFT_INTERNAL_TEST_V1";
@@ -182,7 +186,37 @@ function extractReference(applyIntel: ApplyIntelRow, job: JobRow): string {
   return match?.[0] ?? "44 TSEF 052026";
 }
 
-function buildPayload(userId: string, applyIntel: ApplyIntelRow, job: JobRow, dryRun: boolean): DraftPayload {
+function buildSubject(job: JobRow, reference: string): string {
+  return `Candidature - ${job.title ?? "Offre"} - Ref. ${reference}`;
+}
+
+function buildPreview(applyIntel: ApplyIntelRow, job: JobRow) {
+  const reference = extractReference(applyIntel, job);
+
+  return {
+    job_title: job.title,
+    company_name: job.company_name,
+    recipient_email: normalizeEmail(applyIntel.apply_email ?? ""),
+    subject: buildSubject(job, reference),
+    reference,
+    deadline: job.expires_at,
+    status_label: "Brouillon de candidature pret a verifier",
+    safety: {
+      email_sent: false,
+      real_application_created: false,
+      database_write: false,
+      requires_human_validation: true,
+    },
+    next_step: "Verifier le destinataire, le sujet et les pieces attendues avant toute creation de brouillon.",
+  };
+}
+
+function buildPayload(
+  userId: string,
+  applyIntel: ApplyIntelRow,
+  job: JobRow,
+  dryRun: boolean,
+): DraftPayload {
   const recipientEmail = normalizeEmail(applyIntel.apply_email ?? "");
   const reference = extractReference(applyIntel, job);
   const evidenceSnippet = metadataString(applyIntel, "evidence_snippet");
@@ -195,7 +229,7 @@ function buildPayload(userId: string, applyIntel: ApplyIntelRow, job: JobRow, dr
     application_channel: applyIntel.apply_channel ?? "email_direct_reliable",
     recipient_email: recipientEmail,
     cc_emails: [],
-    subject: `Candidature - ${job.title ?? "Offre"} - Ref. ${reference}`,
+    subject: buildSubject(job, reference),
     email_body: null,
     cover_letter_body: null,
     language: "fr",
@@ -312,6 +346,67 @@ async function findActiveDraft(supabase: SupabaseClient, userId: string, jobId: 
     .maybeSingle();
 }
 
+async function authorizeRequest(
+  req: Request,
+  body: NormalizedRequestBody,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<AuthResult> {
+  const expectedSecret = cleanSecret(Deno.env.get("CRON_SECRET"));
+  if (!expectedSecret) {
+    return { ok: false, status: 500, reason: "server_misconfigured_missing_cron_secret" };
+  }
+
+  const providedSecret = cleanSecret(req.headers.get("x-cron-secret"));
+  if (providedSecret === expectedSecret) {
+    return { ok: true, mode: "cron_secret" };
+  }
+
+  if (!body.dry_run) {
+    return { ok: false, status: 401, reason: "unauthorized" };
+  }
+
+  const authHeader = req.headers.get("authorization") ?? "";
+  if (!authHeader.toLowerCase().startsWith("bearer ")) {
+    return { ok: false, status: 401, reason: "unauthorized" };
+  }
+
+  const accessToken = authHeader.slice(7).trim();
+  if (!accessToken) {
+    return { ok: false, status: 401, reason: "missing_access_token" };
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+  if (userError || !userData.user?.id) {
+    return { ok: false, status: 401, reason: "invalid_access_token", details: userError?.message };
+  }
+
+  if (userData.user.id !== INTERNAL_TEST_USER_ID || body.user_id !== INTERNAL_TEST_USER_ID) {
+    return { ok: false, status: 403, reason: "user_not_allowed_for_internal_test_v1" };
+  }
+
+  const profileResult = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (profileResult.error) {
+    return { ok: false, status: 500, reason: "admin_profile_lookup_failed", details: profileResult.error.message };
+  }
+
+  if (profileResult.data?.is_admin !== true) {
+    return { ok: false, status: 403, reason: "admin_required_for_preview" };
+  }
+
+  // Admin JWT auth is reserved for visible dry-run previews. It must never send email or write durable drafts.
+  return { ok: true, mode: "admin_preview_jwt" };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -319,16 +414,6 @@ serve(async (req) => {
 
   if (req.method !== "POST") {
     return json(405, { ok: false, reason: "method_not_allowed" });
-  }
-
-  const expectedSecret = cleanSecret(Deno.env.get("CRON_SECRET"));
-  if (!expectedSecret) {
-    return json(500, { ok: false, reason: "server_misconfigured_missing_cron_secret" });
-  }
-
-  const providedSecret = cleanSecret(req.headers.get("x-cron-secret"));
-  if (providedSecret !== expectedSecret) {
-    return json(401, { ok: false, reason: "unauthorized" });
   }
 
   let rawBody: RequestBody;
@@ -355,6 +440,11 @@ serve(async (req) => {
   const serviceRoleKey = cleanSecret(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
   if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { ok: false, reason: "server_misconfigured_missing_supabase_env" });
+  }
+
+  const auth = await authorizeRequest(req, body, supabaseUrl, serviceRoleKey);
+  if (!auth.ok) {
+    return json(auth.status, { ok: false, reason: auth.reason, details: auth.details });
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -391,11 +481,25 @@ serve(async (req) => {
   const payload = buildPayload(body.user_id, loaded.applyIntel, loaded.job, body.dry_run);
 
   if (body.dry_run) {
+    const preview = buildPreview(loaded.applyIntel, loaded.job);
+
+    if (auth.mode === "admin_preview_jwt") {
+      return json(200, {
+        ok: true,
+        dry_run: true,
+        would_insert: true,
+        auth_mode: auth.mode,
+        preview,
+      });
+    }
+
     return json(200, {
       ok: true,
       dry_run: true,
       would_insert: true,
+      auth_mode: auth.mode,
       payload,
+      preview,
     });
   }
 
