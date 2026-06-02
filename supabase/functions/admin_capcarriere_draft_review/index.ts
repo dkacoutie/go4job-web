@@ -14,6 +14,47 @@ type RequestBody = {
   draftId?: string | null;
 };
 
+type DeadlineInfo = {
+  value: string | null;
+  source: "draft_metadata" | "apply_intel_metadata" | "job_expires_at" | "not_found";
+  label: "offre_validated" | "job_expiration" | "not_found";
+};
+
+function stringFromRecord(record: Record<string, unknown> | null, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function metadataFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function pickDeadline(
+  draft: Record<string, unknown>,
+  applyIntel: Record<string, unknown> | null,
+  job: Record<string, unknown> | null,
+): DeadlineInfo {
+  const draftMetadata = metadataFrom(draft.metadata_json);
+  const applyIntelMetadata = metadataFrom(applyIntel?.metadata_json);
+  const draftDeadline = stringFromRecord(draftMetadata, "application_deadline");
+  const applyIntelDeadline = stringFromRecord(applyIntelMetadata, "deadline");
+  const jobExpiresAt = typeof job?.expires_at === "string" && job.expires_at.trim() ? job.expires_at.trim() : null;
+
+  if (draftDeadline) {
+    return { value: draftDeadline, source: "draft_metadata", label: "offre_validated" };
+  }
+
+  if (applyIntelDeadline) {
+    return { value: applyIntelDeadline, source: "apply_intel_metadata", label: "offre_validated" };
+  }
+
+  if (jobExpiresAt) {
+    return { value: jobExpiresAt, source: "job_expires_at", label: "job_expiration" };
+  }
+
+  return { value: null, source: "not_found", label: "not_found" };
+}
+
 function cleanSecret(value: string | undefined | null): string {
   let v = (value ?? "").trim();
   v = v.replace(/^['"]|['"]$/g, "");
@@ -185,6 +226,7 @@ serve(async (req) => {
 
   let sourceName: string | null = null;
   const job = jobRes.data as unknown as Record<string, unknown> | null;
+  const applyIntel = applyIntelRes.data as unknown as Record<string, unknown> | null;
   const jobSourceId = typeof job?.job_source_id === "string" ? job.job_source_id : "";
 
   if (isUuid(jobSourceId)) {
@@ -201,6 +243,34 @@ serve(async (req) => {
     sourceName = typeof sourceRes.data?.name === "string" ? sourceRes.data.name : null;
   }
 
+  const profileRes = await serviceClient
+    .from("profiles")
+    .select("cv_file_path,cv_filename,cv_updated_at")
+    .eq("user_id", String(draft.user_id))
+    .maybeSingle();
+
+  if (profileRes.error) {
+    return json(500, { ok: false, error: "profile_cv_lookup_failed", message: profileRes.error.message }, headers);
+  }
+
+  const profile = profileRes.data as unknown as Record<string, unknown> | null;
+  const cvPath = typeof profile?.cv_file_path === "string" && profile.cv_file_path.trim()
+    ? profile.cv_file_path.trim()
+    : null;
+  let cvSignedUrl: string | null = null;
+  let cvUrlError: string | null = null;
+
+  if (cvPath) {
+    const signedUrlRes = await serviceClient.storage.from("cvs").createSignedUrl(cvPath, 3600);
+    if (signedUrlRes.error || !signedUrlRes.data?.signedUrl) {
+      cvUrlError = signedUrlRes.error?.message ?? "signed_url_unavailable";
+    } else {
+      cvSignedUrl = signedUrlRes.data.signedUrl;
+    }
+  }
+
+  const deadline = pickDeadline(draft, applyIntel, job);
+
   return json(200, {
     ok: true,
     scope: "capcarriere_draft_review_b1_read_only",
@@ -216,8 +286,18 @@ serve(async (req) => {
           expires_at: job.expires_at,
         }
         : null,
-      apply_intel: applyIntelRes.data,
+      apply_intel: applyIntel,
       events: eventsRes.data ?? [],
+      deadline,
+      cv: {
+        signed_url: cvSignedUrl,
+        filename: typeof profile?.cv_filename === "string" ? profile.cv_filename : null,
+        updated_at: typeof profile?.cv_updated_at === "string" ? profile.cv_updated_at : null,
+        source: cvPath ? "profiles.cv_file_path" : "not_found",
+        storage_path_found: Boolean(cvPath),
+        signed_url_expires_in_seconds: cvSignedUrl ? 3600 : null,
+        error: cvUrlError,
+      },
       safety: {
         read_only: true,
         internal_only: true,

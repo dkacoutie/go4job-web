@@ -60,6 +60,20 @@ export type AdminCapcarriereDraftReview = {
   job: AdminCapcarriereJob | null;
   apply_intel: AdminCapcarriereApplyIntel | null;
   events: AdminCapcarriereEvent[];
+  deadline?: {
+    value: string | null;
+    source: "draft_metadata" | "apply_intel_metadata" | "job_expires_at" | "not_found";
+    label: "offre_validated" | "job_expiration" | "not_found";
+  };
+  cv?: {
+    signed_url: string | null;
+    filename: string | null;
+    updated_at: string | null;
+    source: "profiles.cv_file_path" | "not_found" | string;
+    storage_path_found: boolean;
+    signed_url_expires_in_seconds: number | null;
+    error: string | null;
+  };
   safety: {
     read_only: boolean;
     internal_only: boolean;
