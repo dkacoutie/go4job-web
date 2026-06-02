@@ -25,12 +25,16 @@ type AejPageDiagnostic = {
   status: number;
   content_type: string;
   body_length: number;
+  parser_mode: string | null;
+  component: string | null;
   parsed_candidate_count: number;
   accepted_count: number;
   duplicate_count: number;
   skipped_quality_count: number;
+  current_page: number | null;
   last_page: number | null;
   total: number | null;
+  next_page_url: string | null;
   error?: string;
 };
 
@@ -67,11 +71,15 @@ export type AejFetchResult = {
     stopped_reason: string;
     legacy_config_url_ignored: boolean;
     canonical_list_url: string;
+    parser_mode: string | null;
+    component: string | null;
+    current_page: number | null;
+    last_next_page_url: string | null;
   };
 };
 
 const AEJ_BASE_URL = "https://agenceemploijeunes.ci";
-const AEJ_CANONICAL_LIST_URL = `${AEJ_BASE_URL}/offres-emploi`;
+const AEJ_CANONICAL_LIST_URL = `${AEJ_BASE_URL}/offres-emploi?show_all=1`;
 const USER_AGENT =
   "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)";
 const PAGE_TIMEOUT_MS = 20000;
@@ -222,6 +230,33 @@ function pageUrl(listUrl: string, page: number) {
   return url.toString();
 }
 
+function normalizeAejPaginationUrl(value: unknown) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  const decoded = raw
+    .replace(/\\u0026/gi, "&")
+    .replace(/&amp;/gi, "&");
+
+  try {
+    const url = new URL(decoded, AEJ_BASE_URL);
+    if (url.hostname.toLowerCase().replace(/^www\./, "") !== "agenceemploijeunes.ci") {
+      return null;
+    }
+    if (url.pathname.replace(/\/+/g, "/").replace(/\/$/g, "") !== "/offres-emploi") {
+      return null;
+    }
+    url.searchParams.set("show_all", "1");
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function fallbackNextPageUrl(currentPage: number | null, lastPage: number | null) {
+  if (!currentPage || !lastPage || currentPage >= lastPage) return null;
+  return pageUrl(AEJ_CANONICAL_LIST_URL, currentPage + 1);
+}
+
 async function fetchHtml(url: string) {
   const controller = new AbortController();
   const timeoutId = setTimeout(
@@ -279,7 +314,14 @@ function propsObject(page: Record<string, unknown> | null) {
 function offersPayload(props: Record<string, unknown>) {
   const offres = props.offres;
   if (!offres || typeof offres !== "object" || Array.isArray(offres)) {
-    return { data: [] as AejRawOffer[], total: null, lastPage: null };
+    return {
+      data: [] as AejRawOffer[],
+      total: null,
+      lastPage: null,
+      currentPage: null,
+      nextPageUrl: null,
+      hasPayload: false,
+    };
   }
   const payload = offres as Record<string, unknown>;
   const data = Array.isArray(payload.data)
@@ -289,7 +331,14 @@ function offersPayload(props: Record<string, unknown>) {
     data,
     total: typeof payload.total === "number" ? payload.total : null,
     lastPage: typeof payload.last_page === "number" ? payload.last_page : null,
+    currentPage: typeof payload.current_page === "number" ? payload.current_page : null,
+    nextPageUrl: normalizeAejPaginationUrl(payload.next_page_url),
+    hasPayload: true,
   };
+}
+
+function inertiaComponent(page: Record<string, unknown> | null) {
+  return typeof page?.component === "string" ? page.component : null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -416,10 +465,15 @@ export async function fetchAejItems(
   let lastPageDetected: number | null = null;
   let firstPageFetched: number | null = null;
   let lastPageFetched: number | null = null;
+  let currentPageDetected: number | null = null;
+  let lastNextPageUrl: string | null = null;
+  let parserMode: string | null = null;
+  let lastComponent: string | null = null;
+  let nextListUrl: string | null = pageUrl(listUrl, startPage);
 
   for (let pageOffset = 0; pageOffset < maxPages; pageOffset++) {
     const page = startPage + pageOffset;
-    const url = pageUrl(listUrl, page);
+    const url = nextListUrl ?? pageUrl(listUrl, page);
     const response = await fetchHtml(url);
     const diagnostic: AejPageDiagnostic = {
       page,
@@ -427,12 +481,16 @@ export async function fetchAejItems(
       status: response.status,
       content_type: response.contentType,
       body_length: response.text.length,
+      parser_mode: null,
+      component: null,
       parsed_candidate_count: 0,
       accepted_count: 0,
       duplicate_count: 0,
       skipped_quality_count: 0,
+      current_page: null,
       last_page: null,
       total: null,
+      next_page_url: null,
       error: response.error,
     };
 
@@ -448,12 +506,41 @@ export async function fetchAejItems(
     firstPageFetched ??= page;
     lastPageFetched = page;
     const inertia = parseInertiaPage(response.text);
-    const offers = offersPayload(propsObject(inertia));
+    const component = inertiaComponent(inertia);
+    const props = propsObject(inertia);
+    const offers = offersPayload(props);
+    lastComponent = component;
+    diagnostic.component = component;
+
+    if (!inertia) {
+      diagnostic.error = "inertia_parse_failed";
+      diagnostics.push(diagnostic);
+      stoppedReason = "inertia_parse_failed";
+      warnings.push("aej_inertia_parse_failed");
+      break;
+    }
+
+    if (!offers.hasPayload) {
+      diagnostic.error = component === "Opportunities/Explorer"
+        ? "explorer_without_offers"
+        : "offres_payload_missing";
+      diagnostics.push(diagnostic);
+      stoppedReason = diagnostic.error;
+      warnings.push(`aej_${diagnostic.error}`);
+      break;
+    }
+
+    parserMode = "inertia_show_all_offres";
+    diagnostic.parser_mode = parserMode;
     diagnostic.parsed_candidate_count = offers.data.length;
+    diagnostic.current_page = offers.currentPage;
     diagnostic.last_page = offers.lastPage;
     diagnostic.total = offers.total;
+    diagnostic.next_page_url = offers.nextPageUrl;
+    currentPageDetected = offers.currentPage ?? currentPageDetected;
     totalAvailable = offers.total ?? totalAvailable;
     lastPageDetected = offers.lastPage ?? lastPageDetected;
+    lastNextPageUrl = offers.nextPageUrl ?? lastNextPageUrl;
     fetchedCount += offers.data.length;
 
     if (lastPageDetected !== null && startPage > lastPageDetected) {
@@ -464,8 +551,8 @@ export async function fetchAejItems(
     }
 
     if (offers.data.length === 0) {
-      stoppedReason = "empty_page";
-      warnings.push("aej_empty_page");
+      stoppedReason = "offres_empty_data";
+      warnings.push("aej_offres_empty_data");
       diagnostics.push(diagnostic);
       break;
     }
@@ -520,8 +607,15 @@ export async function fetchAejItems(
       warnings.push("aej_page_had_no_new_valid_urls");
       break;
     }
-    if (lastPageDetected !== null && page >= lastPageDetected) {
-      stoppedReason = "last_page_reached";
+    const currentPageForStop = offers.currentPage ?? page;
+    if (lastPageDetected !== null && currentPageForStop >= lastPageDetected) {
+      stoppedReason = "pagination_stopped_normally";
+      break;
+    }
+    nextListUrl = offers.nextPageUrl ??
+      fallbackNextPageUrl(currentPageForStop, offers.lastPage);
+    if (!nextListUrl) {
+      stoppedReason = "pagination_stopped_normally";
       break;
     }
     if (delayMs > 0) await sleep(delayMs);
@@ -567,6 +661,10 @@ export async function fetchAejItems(
       stopped_reason: stoppedReason,
       legacy_config_url_ignored: canonical.legacyIgnored,
       canonical_list_url: AEJ_CANONICAL_LIST_URL,
+      parser_mode: parserMode,
+      component: lastComponent,
+      current_page: currentPageDetected,
+      last_next_page_url: lastNextPageUrl,
     },
   };
 }
