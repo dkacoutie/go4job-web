@@ -11,6 +11,7 @@ import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
+import { fetchProjobivoireRssDryRun } from "./sources/projobivoire_rss.ts";
 import { fetchMyJobMagPortalItems } from "./sources/myjobmag_portal.ts";
 import { fetchMyJobMagRssItems } from "./sources/myjobmag_rss.ts";
 import { fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
@@ -1055,6 +1056,22 @@ Deno.serve(async (req) => {
 
   let currentRunId: string | null = null;
   try {
+    if (source_code === "projobivoire_rss") {
+      if (dry_run !== true) {
+        return json({
+          ok: false,
+          error: "dry_run_only_source",
+          message: "projobivoire_rss is dry-run only and cannot import jobs yet",
+        }, 409);
+      }
+
+      return json(await fetchProjobivoireRssDryRun({
+        dryRun: true,
+        maxPages: body?.max_pages ?? body?.maxPages,
+        limit,
+      }));
+    }
+
     if (source_code === "emploisenegal_portal") {
       // Senegal pilot dry-run stays read-only: no job_sources lookup, no runs, no DB writes.
       if (dry_run) {
