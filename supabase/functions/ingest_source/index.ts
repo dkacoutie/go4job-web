@@ -11,7 +11,10 @@ import { fetchFranceTravailItems } from "./sources/france_travail_api.ts";
 import { fetchHimalayasItems } from "./sources/himalayas_api.ts";
 import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
-import { fetchProjobivoireRssDryRun } from "./sources/projobivoire_rss.ts";
+import {
+  fetchProjobivoireRssDryRun,
+  type ProjobivoireRssCompareItem,
+} from "./sources/projobivoire_rss.ts";
 import { fetchMyJobMagPortalItems } from "./sources/myjobmag_portal.ts";
 import { fetchMyJobMagRssItems } from "./sources/myjobmag_rss.ts";
 import { fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
@@ -1016,6 +1019,314 @@ function isGoAfricaOnlineCiImportConfirmed(confirm: unknown, requestedLimit: num
   return confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL_LIMIT_150";
 }
 
+type ProjobivoireDbJobCandidate = {
+  id?: string | null;
+  title?: string | null;
+  company_name?: string | null;
+  source_url?: string | null;
+  canonical_url?: string | null;
+  expires_at?: string | null;
+  job_source_id?: string | null;
+  job_sources?: { code?: string | null } | Array<{ code?: string | null }> | null;
+};
+
+type ProjobivoireDuplicateSample = {
+  projobivoire_title: string | null;
+  projobivoire_company: string | null;
+  projobivoire_canonical_url: string | null;
+  matched_job_id: string | null;
+  matched_source_code: string | null;
+  matched_title: string | null;
+  matched_company: string | null;
+  duplicate_level: "strong" | "probable" | "weak";
+  reasons: string[];
+};
+
+type ProjobivoireDbDuplicateDiagnostics = {
+  compare_db: true;
+  items_considered_for_db_compare: number;
+  strong_duplicate_count: number;
+  probable_duplicate_count: number;
+  weak_match_count: number;
+  unique_candidate_count: number;
+  ambiguous_excluded_count: number;
+  expired_excluded_count: number;
+  db_candidates_scanned: number;
+  matches_by_source_code: Record<string, number>;
+  sample_duplicates: ProjobivoireDuplicateSample[];
+  sample_unique_candidates: Array<{
+    external_id_candidate: string | null;
+    title: string | null;
+    company: string | null;
+    canonical_url_candidate: string | null;
+    expires_at: string | null;
+    country_classification: string;
+  }>;
+};
+
+const PROJOBIVOIRE_DB_COMPARE_STOPWORDS = new Set([
+  "chef",
+  "directeur",
+  "directrice",
+  "assistant",
+  "assistante",
+  "stagiaire",
+  "responsable",
+  "charge",
+  "chargee",
+  "emploi",
+  "stage",
+  "cote",
+  "ivoire",
+  "abidjan",
+  "pour",
+  "avec",
+  "dans",
+  "une",
+  "des",
+  "les",
+  "aux",
+  "sur",
+]);
+
+function normalizeProjobivoireCompareValue(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&[a-z0-9#]+;/gi, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function countProjobivoireWhere<T>(items: T[], predicate: (item: T) => boolean) {
+  return items.filter(predicate).length;
+}
+
+function tokenizeProjobivoireCompare(value: string | null | undefined) {
+  return normalizeProjobivoireCompareValue(value)
+    .split(/\s+/)
+    .filter((token) =>
+      token.length >= 4 && !PROJOBIVOIRE_DB_COMPARE_STOPWORDS.has(token)
+    );
+}
+
+function pickProjobivoireTitleNeedle(title: string | null | undefined) {
+  return tokenizeProjobivoireCompare(title)
+    .sort((left, right) => right.length - left.length)[0] ?? null;
+}
+
+function tokenSimilarity(left: string | null | undefined, right: string | null | undefined) {
+  const leftTokens = new Set(tokenizeProjobivoireCompare(left));
+  const rightTokens = new Set(tokenizeProjobivoireCompare(right));
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) intersection += 1;
+  }
+  return intersection / Math.max(leftTokens.size, rightTokens.size);
+}
+
+function sourceCodeFromDbCandidate(candidate: ProjobivoireDbJobCandidate) {
+  const relation = candidate.job_sources;
+  if (Array.isArray(relation)) return relation[0]?.code ?? null;
+  return relation?.code ?? null;
+}
+
+function normalizeDateToken(value: string | null | undefined) {
+  const normalized = normalizeProjobivoireCompareValue(value);
+  if (!normalized) return "";
+  const directDate = new Date(value ?? "");
+  if (!Number.isNaN(directDate.getTime())) {
+    return directDate.toISOString().slice(0, 10);
+  }
+  return normalized;
+}
+
+function classifyProjobivoireDbMatch(
+  item: ProjobivoireRssCompareItem,
+  candidate: ProjobivoireDbJobCandidate,
+) {
+  const reasons: string[] = [];
+  const itemUrl = normalizeOptionalUrl(item.canonical_url_candidate);
+  const candidateCanonicalUrl = normalizeOptionalUrl(candidate.canonical_url);
+  const candidateSourceUrl = normalizeOptionalUrl(candidate.source_url);
+  if (
+    itemUrl &&
+    (itemUrl === candidateCanonicalUrl || itemUrl === candidateSourceUrl)
+  ) {
+    reasons.push("same_canonical_or_source_url");
+    return { level: "strong" as const, reasons };
+  }
+
+  const itemTitle = normalizeProjobivoireCompareValue(item.title);
+  const candidateTitle = normalizeProjobivoireCompareValue(candidate.title);
+  const itemCompany = normalizeProjobivoireCompareValue(item.company);
+  const candidateCompany = normalizeProjobivoireCompareValue(candidate.company_name);
+  const sameTitle = itemTitle.length > 0 && itemTitle === candidateTitle;
+  const sameCompany = itemCompany.length > 0 && itemCompany === candidateCompany;
+  const titleScore = tokenSimilarity(item.title, candidate.title);
+  const companyScore = tokenSimilarity(item.company, candidate.company_name);
+  const itemDeadline = normalizeDateToken(item.expires_at);
+  const candidateDeadline = normalizeDateToken(candidate.expires_at);
+  const sameDeadline = itemDeadline.length > 0 && itemDeadline === candidateDeadline;
+
+  if (sameTitle) reasons.push("same_normalized_title");
+  if (sameCompany) reasons.push("same_normalized_company");
+  if (titleScore >= 0.82) reasons.push(`title_similarity:${titleScore.toFixed(2)}`);
+  if (companyScore >= 0.67) reasons.push(`company_similarity:${companyScore.toFixed(2)}`);
+  if (sameDeadline) reasons.push("same_deadline");
+
+  if (sameTitle && sameCompany) {
+    return { level: "strong" as const, reasons };
+  }
+  if (titleScore >= 0.82 && (sameCompany || companyScore >= 0.67 || sameDeadline)) {
+    return { level: "probable" as const, reasons };
+  }
+  if (titleScore >= 0.65 || (sameCompany && titleScore >= 0.45)) {
+    return { level: "weak" as const, reasons };
+  }
+  return null;
+}
+
+async function fetchProjobivoireDbCandidatesForItem(
+  params: {
+    supabaseUrl: string;
+    serviceKey: string;
+    item: ProjobivoireRssCompareItem;
+  },
+) {
+  const select =
+    "id,title,company_name,source_url,canonical_url,expires_at,job_source_id,job_sources(code)";
+  const candidates = new Map<string, ProjobivoireDbJobCandidate>();
+  const addCandidates = (rows: ProjobivoireDbJobCandidate[]) => {
+    for (const row of rows) {
+      const key = row.id ?? `${row.title ?? ""}|${row.company_name ?? ""}`;
+      if (key) candidates.set(key, row);
+    }
+  };
+
+  const url = normalizeOptionalUrl(params.item.canonical_url_candidate);
+  if (url) {
+    const urlQuery = `${params.supabaseUrl}/rest/v1/jobs?select=${select}` +
+      `&or=(canonical_url.eq.${encodeURIComponent(url)},source_url.eq.${encodeURIComponent(url)})` +
+      `&limit=10`;
+    addCandidates(await sbGet<ProjobivoireDbJobCandidate[]>(urlQuery, params.serviceKey));
+  }
+
+  const titleNeedle = pickProjobivoireTitleNeedle(params.item.title);
+  if (titleNeedle) {
+    const titleQuery = `${params.supabaseUrl}/rest/v1/jobs?select=${select}` +
+      `&title=ilike.*${encodeURIComponent(titleNeedle)}*` +
+      `&order=created_at.desc&limit=25`;
+    addCandidates(await sbGet<ProjobivoireDbJobCandidate[]>(titleQuery, params.serviceKey));
+  }
+
+  return [...candidates.values()].slice(0, 30);
+}
+
+async function compareProjobivoireDbDuplicates(
+  params: {
+    supabaseUrl: string;
+    serviceKey: string;
+    items: ProjobivoireRssCompareItem[];
+  },
+): Promise<ProjobivoireDbDuplicateDiagnostics> {
+  const ambiguousExcludedCount = countProjobivoireWhere(
+    params.items,
+    (item) => item.country_classification === "ambiguous",
+  );
+  const expiredExcludedCount = countProjobivoireWhere(params.items, (item) => item.is_expired === true);
+  const itemsToCompare = params.items.filter((item) =>
+    item.country_classification === "probable_ci" && item.is_expired === false
+  );
+
+  let strongDuplicateCount = 0;
+  let probableDuplicateCount = 0;
+  let weakMatchCount = 0;
+  let dbCandidatesScanned = 0;
+  const matchesBySourceCode: Record<string, number> = {};
+  const sampleDuplicates: ProjobivoireDuplicateSample[] = [];
+  const sampleUniqueCandidates: ProjobivoireDbDuplicateDiagnostics["sample_unique_candidates"] = [];
+
+  for (const item of itemsToCompare) {
+    const candidates = await fetchProjobivoireDbCandidatesForItem({
+      supabaseUrl: params.supabaseUrl,
+      serviceKey: params.serviceKey,
+      item,
+    });
+    dbCandidatesScanned += candidates.length;
+
+    const matches = candidates
+      .map((candidate) => ({
+        candidate,
+        match: classifyProjobivoireDbMatch(item, candidate),
+      }))
+      .filter((entry): entry is {
+        candidate: ProjobivoireDbJobCandidate;
+        match: NonNullable<ReturnType<typeof classifyProjobivoireDbMatch>>;
+      } => Boolean(entry.match))
+      .sort((left, right) => {
+        const rank = { strong: 3, probable: 2, weak: 1 };
+        return rank[right.match.level] - rank[left.match.level];
+      });
+
+    const best = matches[0] ?? null;
+    if (!best) {
+      if (sampleUniqueCandidates.length < 5) {
+        sampleUniqueCandidates.push({
+          external_id_candidate: item.external_id_candidate,
+          title: item.title,
+          company: item.company,
+          canonical_url_candidate: item.canonical_url_candidate,
+          expires_at: item.expires_at,
+          country_classification: item.country_classification,
+        });
+      }
+      continue;
+    }
+
+    if (best.match.level === "strong") strongDuplicateCount += 1;
+    if (best.match.level === "probable") probableDuplicateCount += 1;
+    if (best.match.level === "weak") weakMatchCount += 1;
+
+    const sourceCode = sourceCodeFromDbCandidate(best.candidate) ?? "unknown";
+    matchesBySourceCode[sourceCode] = (matchesBySourceCode[sourceCode] ?? 0) + 1;
+
+    if (sampleDuplicates.length < 5) {
+      sampleDuplicates.push({
+        projobivoire_title: item.title,
+        projobivoire_company: item.company,
+        projobivoire_canonical_url: item.canonical_url_candidate,
+        matched_job_id: best.candidate.id ?? null,
+        matched_source_code: sourceCode,
+        matched_title: best.candidate.title ?? null,
+        matched_company: best.candidate.company_name ?? null,
+        duplicate_level: best.match.level,
+        reasons: best.match.reasons,
+      });
+    }
+  }
+
+  return {
+    compare_db: true,
+    items_considered_for_db_compare: itemsToCompare.length,
+    strong_duplicate_count: strongDuplicateCount,
+    probable_duplicate_count: probableDuplicateCount,
+    weak_match_count: weakMatchCount,
+    unique_candidate_count: Math.max(
+      0,
+      itemsToCompare.length - strongDuplicateCount - probableDuplicateCount - weakMatchCount,
+    ),
+    ambiguous_excluded_count: ambiguousExcludedCount,
+    expired_excluded_count: expiredExcludedCount,
+    db_candidates_scanned: dbCandidatesScanned,
+    matches_by_source_code: matchesBySourceCode,
+    sample_duplicates: sampleDuplicates,
+    sample_unique_candidates: sampleUniqueCandidates,
+  };
+}
+
 Deno.serve(async (req) => {
   // Healthcheck
   if (req.method === "GET") {
@@ -1065,11 +1376,31 @@ Deno.serve(async (req) => {
         }, 409);
       }
 
-      return json(await fetchProjobivoireRssDryRun({
+      const compareDb = body?.compare_db === true;
+      const data = await fetchProjobivoireRssDryRun({
         dryRun: true,
         maxPages: body?.max_pages ?? body?.maxPages,
         limit,
-      }));
+        includeItemsForDbCompare: compareDb,
+      });
+
+      const { items_for_db_compare, ...response } = data;
+      if (!compareDb) {
+        return json(response);
+      }
+
+      const supabaseUrl = mustEnv("SUPABASE_URL");
+      const serviceKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
+      const dbDuplicateDiagnostics = await compareProjobivoireDbDuplicates({
+        supabaseUrl,
+        serviceKey,
+        items: items_for_db_compare ?? [],
+      });
+
+      return json({
+        ...response,
+        db_duplicate_diagnostics: dbDuplicateDiagnostics,
+      });
     }
 
     if (source_code === "emploisenegal_portal") {

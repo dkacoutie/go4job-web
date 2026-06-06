@@ -2,11 +2,12 @@ export type ProjobivoireRssDryRunOptions = {
   dryRun: boolean;
   maxPages?: number;
   limit?: number;
+  includeItemsForDbCompare?: boolean;
 };
 
 type CountryClassification = "probable_ci" | "probable_non_ci" | "ambiguous";
 
-type ProjobivoireRssItem = {
+export type ProjobivoireRssCompareItem = {
   external_id_candidate: string | null;
   canonical_url_candidate: string | null;
   title: string | null;
@@ -19,6 +20,10 @@ type ProjobivoireRssItem = {
   country_classification: CountryClassification;
   classification_reasons: string[];
   is_expired: boolean | null;
+  wp_post_id: string | null;
+};
+
+type ProjobivoireRssItem = ProjobivoireRssCompareItem & {
   wp_post_id: string | null;
   guid: string | null;
   description: string | null;
@@ -54,6 +59,7 @@ export type ProjobivoireRssDryRunResult = {
     active_or_unknown_count: number;
     internal_duplicate_count: number;
   };
+  items_for_db_compare?: ProjobivoireRssCompareItem[];
   sample_items: Array<{
     external_id_candidate: string | null;
     canonical_url_candidate: string | null;
@@ -377,6 +383,7 @@ function buildResult(
   items: ProjobivoireRssItem[],
   pagesFetched: number,
   parseErrors: string[],
+  includeItemsForDbCompare: boolean,
 ): ProjobivoireRssDryRunResult {
   const pubDates = items
     .map((item) => item.published_at)
@@ -385,7 +392,7 @@ function buildResult(
   const internalDuplicateCount = countInternalDuplicates(items);
   const expiredCount = countWhere(items, (item) => item.is_expired === true);
 
-  return {
+  const result: ProjobivoireRssDryRunResult = {
     ok: parseErrors.length === 0,
     dry_run: true,
     source_code: SOURCE_CODE,
@@ -439,6 +446,26 @@ function buildResult(
       is_expired: item.is_expired,
     })),
   };
+
+  if (includeItemsForDbCompare) {
+    result.items_for_db_compare = items.map((item) => ({
+      external_id_candidate: item.external_id_candidate,
+      canonical_url_candidate: item.canonical_url_candidate,
+      title: item.title,
+      company: item.company,
+      location: item.location,
+      published_at: item.published_at,
+      expires_at: item.expires_at,
+      job_type: item.job_type,
+      category: item.category,
+      country_classification: item.country_classification,
+      classification_reasons: item.classification_reasons,
+      is_expired: item.is_expired,
+      wp_post_id: item.wp_post_id,
+    }));
+  }
+
+  return result;
 }
 
 export async function fetchProjobivoireRssDryRun(
@@ -479,5 +506,10 @@ export async function fetchProjobivoireRssDryRun(
     }
   }
 
-  return buildResult(allItems.slice(0, limit), pagesFetched, parseErrors);
+  return buildResult(
+    allItems.slice(0, limit),
+    pagesFetched,
+    parseErrors,
+    opts.includeItemsForDbCompare === true,
+  );
 }
