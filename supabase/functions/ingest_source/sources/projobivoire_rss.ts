@@ -106,6 +106,20 @@ const CI_SIGNALS = [
 ];
 
 const NON_CI_SIGNALS = [
+  "Bamako",
+  "Dakar",
+  "LomÃ©",
+  "Lome",
+  "Cotonou",
+  "Niamey",
+  "Ouagadougou",
+  "YaoundÃ©",
+  "Yaounde",
+  "Douala",
+  "Accra",
+  "Lagos",
+  "Conakry",
+  "Kinshasa",
   "Bénin",
   "Benin",
   "Mali",
@@ -117,6 +131,9 @@ const NON_CI_SIGNALS = [
   "Togo",
   "Niger",
   "Ghana",
+  "Nigeria",
+  "GuinÃ©e",
+  "Guinee",
   "RDC",
   "Congo",
 ];
@@ -200,39 +217,84 @@ function collectSignals(text: string, signals: string[]) {
   return [...new Set(found)];
 }
 
+function collectSignalsWithPrefix(
+  text: string,
+  signals: string[],
+  prefix: string,
+) {
+  return collectSignals(text, signals).map((signal) => `${prefix}_${signal}`);
+}
+
+function ciReason(signal: string) {
+  return signal.toLowerCase().includes("abidjan")
+    ? "ci_signal:address_abidjan"
+    : `ci_signal:${signal}`;
+}
+
 function classifyCountry(item: Pick<
   ProjobivoireRssItem,
-  "title" | "location" | "description" | "content_encoded"
+  | "title"
+  | "canonical_url_candidate"
+  | "location"
+  | "description"
+  | "content_encoded"
 >) {
+  const titleText = normalizeForSignal(item.title);
+  const urlText = normalizeForSignal(item.canonical_url_candidate);
+  const locationText = normalizeForSignal(item.location);
+  const bodyText = normalizeForSignal([
+    item.description,
+    stripHtml(item.content_encoded),
+  ].filter(Boolean).join(" "));
   const text = normalizeForSignal([
     item.title,
+    item.canonical_url_candidate,
     item.location,
     item.description,
     stripHtml(item.content_encoded),
   ].filter(Boolean).join(" "));
   const ciSignals = collectSignals(text, CI_SIGNALS);
-  const nonCiSignals = collectSignals(text, NON_CI_SIGNALS);
+  const nonCiSignals = [
+    ...collectSignalsWithPrefix(titleText, NON_CI_SIGNALS, "title"),
+    ...collectSignalsWithPrefix(urlText, NON_CI_SIGNALS, "url"),
+    ...collectSignalsWithPrefix(locationText, NON_CI_SIGNALS, "address"),
+    ...collectSignalsWithPrefix(bodyText, NON_CI_SIGNALS, "body"),
+  ];
 
   if (ciSignals.length > 0 && nonCiSignals.length === 0) {
     return {
       country_classification: "probable_ci" as const,
-      classification_reasons: ciSignals.map((signal) => `ci_signal:${signal}`),
+      classification_reasons: ciSignals.map(ciReason),
     };
   }
-  if (nonCiSignals.length > 0 && ciSignals.length === 0) {
+
+  if (nonCiSignals.length > 0) {
+    const nonCiReasons = nonCiSignals.map((signal) => `non_ci_signal:${signal}`);
+    if (ciSignals.length > 0) {
+      return {
+        country_classification: "ambiguous" as const,
+        classification_reasons: [
+          ...ciSignals.map(ciReason),
+          ...nonCiReasons,
+          "conflict:ci_and_non_ci_signals",
+          "excluded_from_ci_due_to_non_ci_geo_signal",
+        ],
+      };
+    }
     return {
       country_classification: "probable_non_ci" as const,
-      classification_reasons: nonCiSignals.map((signal) => `non_ci_signal:${signal}`),
+      classification_reasons: [
+        ...nonCiReasons,
+        "excluded_from_ci_due_to_non_ci_geo_signal",
+      ],
     };
   }
+
   return {
     country_classification: "ambiguous" as const,
     classification_reasons: [
-      ...ciSignals.map((signal) => `ci_signal:${signal}`),
-      ...nonCiSignals.map((signal) => `non_ci_signal:${signal}`),
-      ...(ciSignals.length === 0 && nonCiSignals.length === 0
-        ? ["no_country_signal"]
-        : ["mixed_country_signals"]),
+      ...ciSignals.map(ciReason),
+      "no_country_signal",
     ],
   };
 }

@@ -1065,19 +1065,60 @@ type ProjobivoireDbDuplicateDiagnostics = {
 };
 
 const PROJOBIVOIRE_DB_COMPARE_STOPWORDS = new Set([
+  "assistant",
+  "assistante",
+  "junior",
+  "senior",
+  "stagiaire",
+  "stage",
+  "responsable",
   "chef",
   "directeur",
   "directrice",
-  "assistant",
-  "assistante",
-  "stagiaire",
-  "responsable",
+  "manager",
+  "coordinateur",
+  "coordinatrice",
   "charge",
   "chargee",
+  "technicien",
+  "technicienne",
+  "ingenieur",
+  "expert",
+  "consultante",
+  "consultant",
+  "analyste",
+  "agent",
+  "confirme",
+  "confirmee",
+  "experimente",
+  "debutant",
   "emploi",
-  "stage",
+  "poste",
+  "recrutement",
   "cote",
   "ivoire",
+  "ci",
+  "noc",
+  "ter",
+  "btp",
+  "rh",
+  "it",
+  "si",
+  "dsi",
+  "daf",
+  "drh",
+  "gestion",
+  "service",
+  "services",
+  "departement",
+  "general",
+  "generale",
+  "adjoint",
+  "adjointe",
+  "hf",
+  "fh",
+  "h",
+  "f",
   "abidjan",
   "pour",
   "avec",
@@ -1107,7 +1148,7 @@ function tokenizeProjobivoireCompare(value: string | null | undefined) {
   return normalizeProjobivoireCompareValue(value)
     .split(/\s+/)
     .filter((token) =>
-      token.length >= 4 && !PROJOBIVOIRE_DB_COMPARE_STOPWORDS.has(token)
+      token.length >= 3 && !PROJOBIVOIRE_DB_COMPARE_STOPWORDS.has(token)
     );
 }
 
@@ -1116,15 +1157,31 @@ function pickProjobivoireTitleNeedle(title: string | null | undefined) {
     .sort((left, right) => right.length - left.length)[0] ?? null;
 }
 
-function tokenSimilarity(left: string | null | undefined, right: string | null | undefined) {
+function analyzeProjobivoireTitleTokens(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
   const leftTokens = new Set(tokenizeProjobivoireCompare(left));
   const rightTokens = new Set(tokenizeProjobivoireCompare(right));
-  if (!leftTokens.size || !rightTokens.size) return 0;
-  let intersection = 0;
+  const sharedTokens: string[] = [];
   for (const token of leftTokens) {
-    if (rightTokens.has(token)) intersection += 1;
+    if (rightTokens.has(token)) sharedTokens.push(token);
   }
-  return intersection / Math.max(leftTokens.size, rightTokens.size);
+  const comparableTokenCount = Math.min(leftTokens.size, rightTokens.size);
+  const score = leftTokens.size && rightTokens.size
+    ? sharedTokens.length / Math.max(leftTokens.size, rightTokens.size)
+    : 0;
+  return {
+    leftTokens,
+    rightTokens,
+    sharedTokens,
+    comparableTokenCount,
+    score,
+  };
+}
+
+function tokenSimilarity(left: string | null | undefined, right: string | null | undefined) {
+  return analyzeProjobivoireTitleTokens(left, right).score;
 }
 
 function sourceCodeFromDbCandidate(candidate: ProjobivoireDbJobCandidate) {
@@ -1165,14 +1222,20 @@ function classifyProjobivoireDbMatch(
   const candidateCompany = normalizeProjobivoireCompareValue(candidate.company_name);
   const sameTitle = itemTitle.length > 0 && itemTitle === candidateTitle;
   const sameCompany = itemCompany.length > 0 && itemCompany === candidateCompany;
-  const titleScore = tokenSimilarity(item.title, candidate.title);
+  const titleAnalysis = analyzeProjobivoireTitleTokens(item.title, candidate.title);
+  const titleScore = titleAnalysis.score;
   const companyScore = tokenSimilarity(item.company, candidate.company_name);
   const itemDeadline = normalizeDateToken(item.expires_at);
   const candidateDeadline = normalizeDateToken(candidate.expires_at);
   const sameDeadline = itemDeadline.length > 0 && itemDeadline === candidateDeadline;
+  const hasEnoughWeakTitleSignal = titleAnalysis.sharedTokens.length >= 2 ||
+    (titleAnalysis.comparableTokenCount >= 3 && titleScore >= 0.82);
 
   if (sameTitle) reasons.push("same_normalized_title");
   if (sameCompany) reasons.push("same_normalized_company");
+  if (titleAnalysis.sharedTokens.length > 0) {
+    reasons.push(`shared_significant_tokens:${titleAnalysis.sharedTokens.join(",")}`);
+  }
   if (titleScore >= 0.82) reasons.push(`title_similarity:${titleScore.toFixed(2)}`);
   if (companyScore >= 0.67) reasons.push(`company_similarity:${companyScore.toFixed(2)}`);
   if (sameDeadline) reasons.push("same_deadline");
@@ -1183,8 +1246,23 @@ function classifyProjobivoireDbMatch(
   if (titleScore >= 0.82 && (sameCompany || companyScore >= 0.67 || sameDeadline)) {
     return { level: "probable" as const, reasons };
   }
-  if (titleScore >= 0.65 || (sameCompany && titleScore >= 0.45)) {
+  if (
+    hasEnoughWeakTitleSignal &&
+    (titleScore >= 0.65 || (sameCompany && titleScore >= 0.45))
+  ) {
     return { level: "weak" as const, reasons };
+  }
+  if (
+    titleScore > 0 &&
+    (titleAnalysis.leftTokens.size < 2 || titleAnalysis.rightTokens.size < 2)
+  ) {
+    reasons.push("insufficient_significant_title_tokens");
+  }
+  if (titleScore > 0 && titleAnalysis.sharedTokens.length < 2) {
+    reasons.push("generic_only_match_ignored");
+  }
+  if (!sameCompany && companyScore < 0.67) {
+    reasons.push("company_missing_or_different");
   }
   return null;
 }
