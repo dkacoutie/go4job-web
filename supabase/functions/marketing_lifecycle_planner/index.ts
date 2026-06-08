@@ -50,6 +50,8 @@ type Candidate = {
 const DEFAULT_CAMPAIGN_KEY = "non_paying_without_alert";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const MIN_CANDIDATE_SCAN_POOL = 200;
+const MAX_CANDIDATE_SCAN_POOL = 500;
 const CONTROLLED_ENQUEUE_CONFIRM = "ENQUEUE_CREATE_ALERT_EMAIL_1_LIMIT_1";
 const CONTROLLED_DAILY_ENQUEUE_CONFIRM =
   "ENQUEUE_CREATE_ALERT_EMAIL_1_DAILY_LIMIT_10";
@@ -481,6 +483,7 @@ serve(async (req) => {
   let skippedCooldownCount = 0;
   let skippedTooRecentCount = 0;
   let skippedDuplicateCount = 0;
+  let duplicateWindowCount = 0;
   let skippedDailyCapCount = 0;
   let skippedGlobalCapCount = 0;
   if (!blockedReason && campaignDailyRemaining <= 0) {
@@ -503,6 +506,13 @@ serve(async (req) => {
   const wouldEnqueueCount = blockedReason
     ? 0
     : Math.min(candidateCount, cappedLimit);
+  const candidateScanLimit = (!blockedReason && cappedLimit > 0)
+    ? Math.min(
+      candidateCount,
+      Math.max(cappedLimit * 10, MIN_CANDIDATE_SCAN_POOL),
+      MAX_CANDIDATE_SCAN_POOL,
+    )
+    : 0;
 
   if (!dryRun && !blockedReason) {
     const { data: candidates, error: candidateSelectError } = await supabase
@@ -513,7 +523,7 @@ serve(async (req) => {
       .eq("segment", typedCampaign.segment_key)
       .eq("suggested_email_key", typedCampaign.template_key)
       .order("registered_at", { ascending: true })
-      .limit(Math.max(1, Math.min(MAX_LIMIT, candidateCount)));
+      .limit(Math.max(1, candidateScanLimit));
 
     if (candidateSelectError) {
       blockedReason = "candidate_select_failed";
@@ -562,6 +572,7 @@ serve(async (req) => {
         }
         if ((activeAlertCountRaw ?? 0) > 0) {
           skippedDuplicateCount += 1;
+          duplicateWindowCount += 1;
           continue;
         }
 
@@ -581,6 +592,7 @@ serve(async (req) => {
         }
         if ((sentCountRaw ?? 0) > 0) {
           skippedDuplicateCount += 1;
+          duplicateWindowCount += 1;
           continue;
         }
 
@@ -618,6 +630,7 @@ serve(async (req) => {
         }
         if ((pendingCountRaw ?? 0) > 0) {
           skippedDuplicateCount += 1;
+          duplicateWindowCount += 1;
           continue;
         }
 
@@ -716,6 +729,10 @@ serve(async (req) => {
           queue_written: queueWritten,
           email_sent: false,
           real_enqueue_attempted: realEnqueueAttempted,
+          candidate_scan_limit: candidateScanLimit,
+          candidates_scanned: selectedCountBeforeInsert,
+          clean_candidates_found: selectedCandidates.length,
+          duplicate_window_count: duplicateWindowCount,
           selected_count_before_insert: selectedCountBeforeInsert,
           selected_count: selectedCandidates.length,
           selected_user_ids: selectedUserIds,
@@ -773,6 +790,10 @@ serve(async (req) => {
     queue_written: queueWritten,
     email_sent: false,
     real_enqueue_attempted: realEnqueueAttempted,
+    candidate_scan_limit: candidateScanLimit,
+    candidates_scanned: selectedCountBeforeInsert,
+    clean_candidates_found: selectedCandidates.length,
+    duplicate_window_count: duplicateWindowCount,
     selected_count_before_insert: selectedCountBeforeInsert,
     selected_count: selectedCandidates.length,
     selected_user_ids: selectedUserIds,
