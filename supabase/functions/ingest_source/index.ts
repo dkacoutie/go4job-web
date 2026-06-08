@@ -1692,6 +1692,7 @@ Deno.serve(async (req) => {
             wp_post_id: item.wp_post_id,
             guid: item.guid,
             category: item.category,
+            company_name_source: item.company_name_source,
             country_classification: item.country_classification,
             classification_reasons: item.classification_reasons,
             raw_expires_at: item.expires_at,

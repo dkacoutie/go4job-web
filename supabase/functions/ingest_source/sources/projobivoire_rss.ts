@@ -8,6 +8,14 @@ export type ProjobivoireRssDryRunOptions = {
 
 type CountryClassification = "probable_ci" | "probable_non_ci" | "ambiguous";
 
+type CompanyNameSource =
+  | "rss_job_company"
+  | "description_enterprise_label"
+  | "description_recrute_phrase"
+  | "description_for_account_of"
+  | "description_society_phrase"
+  | "unknown";
+
 export type ProjobivoireRssCompareItem = {
   external_id_candidate: string | null;
   canonical_url_candidate: string | null;
@@ -37,6 +45,7 @@ export type ProjobivoireRssImportItem = {
   apply_url: string | null;
   title: string | null;
   company_name: string | null;
+  company_name_source: CompanyNameSource;
   location: string | null;
   published_at: string | null;
   expires_at: string | null;
@@ -361,6 +370,130 @@ function closingDateIso(closing: string | null) {
   return parseFrenchClosingDate(closing)?.toISOString() ?? null;
 }
 
+function cleanCompanyCandidate(value: string | null, title: string | null) {
+  if (!value) return null;
+  const stopPattern =
+    /\s+(?:recrute|recherche|date limite|type de contrat|categorie|catégorie|lieu|adresse|mission|missions|profil|poste|description)\b[\s\S]*$/i;
+  const cleaned = decodeHtml(value)
+    ?.replace(/^[\s:;.,-]+|[\s:;.,-]+$/g, "")
+    .replace(stopPattern, "")
+    .replace(/\s+/g, " ")
+    .trim() ?? null;
+  if (!cleaned) return null;
+
+  const normalized = normalizedKey(cleaned);
+  const normalizedTitle = normalizedKey(title);
+  if (!normalized || normalized === normalizedTitle) return null;
+
+  const genericValues = new Set([
+    "entreprise",
+    "societe",
+    "societe anonyme",
+    "groupe",
+    "recrutement",
+    "offre d emploi",
+    "non precise",
+    "n a",
+  ]);
+  if (genericValues.has(normalized)) return null;
+  if (cleaned.length < 2 || cleaned.length > 120) return null;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length > 16) return null;
+
+  return cleaned;
+}
+
+function firstCredibleCompanyMatch(
+  text: string,
+  title: string | null,
+  pattern: RegExp,
+  buildCandidate = (match: RegExpMatchArray) => match[1] ?? null,
+) {
+  for (const match of text.matchAll(pattern)) {
+    const candidate = cleanCompanyCandidate(buildCandidate(match), title);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function extractCompanyName(params: {
+  title: string | null;
+  rssCompany: string | null;
+  description: string | null;
+  contentEncoded: string | null;
+}): { companyName: string | null; source: CompanyNameSource } {
+  const rssCompany = cleanCompanyCandidate(params.rssCompany, params.title);
+  if (rssCompany) {
+    return { companyName: rssCompany, source: "rss_job_company" };
+  }
+
+  const descriptionText = [
+    params.description,
+    stripHtml(params.contentEncoded),
+  ].filter(Boolean).join(" ");
+  const text = decodeHtml(descriptionText)?.replace(/\s+/g, " ").trim() ?? "";
+  if (!text) return { companyName: null, source: "unknown" };
+
+  const enterpriseLabel = firstCredibleCompanyMatch(
+    text,
+    params.title,
+    /\bEntreprise\s*[:：-]\s*([^.;|]{2,120})/gi,
+  );
+  if (enterpriseLabel) {
+    return {
+      companyName: enterpriseLabel,
+      source: "description_enterprise_label",
+    };
+  }
+
+  const groupRecrute = firstCredibleCompanyMatch(
+    text,
+    params.title,
+    /\b(?:Le\s+)?Groupe\s+([^.;]{2,100}?)\s+recrute\b/gi,
+    (match) => `Groupe ${match[1] ?? ""}`,
+  );
+  if (groupRecrute) {
+    return { companyName: groupRecrute, source: "description_recrute_phrase" };
+  }
+
+  const cautiousRecrute = firstCredibleCompanyMatch(
+    text,
+    params.title,
+    /(?:^|[.!?]\s+)([\p{Lu}0-9][^.;!?]{2,100}?)\s+recrute\b/giu,
+  );
+  if (cautiousRecrute) {
+    return {
+      companyName: cautiousRecrute,
+      source: "description_recrute_phrase",
+    };
+  }
+
+  const forAccountOf = firstCredibleCompanyMatch(
+    text,
+    params.title,
+    /\bpour\s+le\s+compte\s+de\s+([^.;]{2,120})/gi,
+  );
+  if (forAccountOf) {
+    return { companyName: forAccountOf, source: "description_for_account_of" };
+  }
+
+  const societyPhrase = firstCredibleCompanyMatch(
+    text,
+    params.title,
+    /\b(?:La\s+)?Soci\S*t\S*\s+([^.;]{2,120}?\([A-Z0-9 .&-]{2,}\))/giu,
+    (match) => `Societe ${match[1] ?? ""}`,
+  );
+  if (societyPhrase) {
+    return {
+      companyName: societyPhrase,
+      source: "description_society_phrase",
+    };
+  }
+
+  return { companyName: null, source: "unknown" };
+}
+
 function parsePubDate(value: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -556,26 +689,36 @@ function buildResult(
   }
 
   if (includeItemsForImport) {
-    result.items_for_import = items.map((item) => ({
-      external_id: item.external_id_candidate,
-      source_url: item.canonical_url_candidate,
-      apply_url: item.canonical_url_candidate,
-      title: item.title,
-      company_name: item.company,
-      location: item.location,
-      published_at: item.published_at,
-      expires_at: item.expires_at,
-      expires_at_iso: closingDateIso(item.expires_at),
-      contract_type: item.job_type,
-      category: item.category,
-      country_classification: item.country_classification,
-      classification_reasons: item.classification_reasons,
-      is_expired: item.is_expired,
-      wp_post_id: item.wp_post_id,
-      guid: item.guid,
-      description_text: item.description ?? stripHtml(item.content_encoded),
-      description_html: item.content_encoded,
-    }));
+    result.items_for_import = items.map((item) => {
+      const company = extractCompanyName({
+        title: item.title,
+        rssCompany: item.company,
+        description: item.description,
+        contentEncoded: item.content_encoded,
+      });
+
+      return {
+        external_id: item.external_id_candidate,
+        source_url: item.canonical_url_candidate,
+        apply_url: item.canonical_url_candidate,
+        title: item.title,
+        company_name: company.companyName,
+        company_name_source: company.source,
+        location: item.location,
+        published_at: item.published_at,
+        expires_at: item.expires_at,
+        expires_at_iso: closingDateIso(item.expires_at),
+        contract_type: item.job_type,
+        category: item.category,
+        country_classification: item.country_classification,
+        classification_reasons: item.classification_reasons,
+        is_expired: item.is_expired,
+        wp_post_id: item.wp_post_id,
+        guid: item.guid,
+        description_text: item.description ?? stripHtml(item.content_encoded),
+        description_html: item.content_encoded,
+      };
+    });
   }
 
   return result;
