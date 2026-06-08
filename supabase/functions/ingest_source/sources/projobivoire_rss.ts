@@ -374,10 +374,16 @@ function cleanCompanyCandidate(value: string | null, title: string | null) {
   if (!value) return null;
   const stopPattern =
     /\s+(?:recrute|recherche|date limite|type de contrat|categorie|catégorie|lieu|adresse|mission|missions|profil|poste|description)\b[\s\S]*$/i;
+  const locationMarkerPattern =
+    /\s*(?:[📍📌🏢]|•|\b(?:lieu|localisation|adresse)\s*[:：-])[\s\S]*$/iu;
+  const decorativeMarkerPattern = /[📍🎯💼📌🏢👉✅🔹•]/gu;
   const cleaned = decodeHtml(value)
     ?.replace(/^[\s:;.,-]+|[\s:;.,-]+$/g, "")
+    .replace(locationMarkerPattern, "")
     .replace(stopPattern, "")
+    .replace(decorativeMarkerPattern, " ")
     .replace(/\s+/g, " ")
+    .replace(/^[\s:;.,-]+|[\s:;.,-]+$/g, "")
     .trim() ?? null;
   if (!cleaned) return null;
 
