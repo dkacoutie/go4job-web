@@ -44,7 +44,6 @@ type AlertRow = {
   keywords: string[];
   country: string | null;
   countries?: string[] | null;
-  search_query?: string | null;
   employment_types?: string[] | null;
   work_modes?: string[] | null;
   frequency: string;
@@ -168,6 +167,10 @@ const WHY_MAX_LEN = 72;
 
 function collapseSpaces(input: string) {
   return (input ?? "").replace(/\s+/g, " ").trim();
+}
+
+function buildAlertSearchFallback(alert: AlertRow) {
+  return collapseSpaces([alert.name, ...(alert.keywords ?? [])].filter(Boolean).join(" "));
 }
 
 function keyify(input: string) {
@@ -592,9 +595,15 @@ const JOB_SELECT_FIELDS = `
   required_skills,
   optional_skills,
   experience_years_min,
-  experience_years_max,
+  experience_years_max
+`;
+
+const JOB_DESCRIPTION_SELECT_FIELDS = `
+  id,
   description:description_text
 `;
+
+const ALERT_SELECT_FIELDS = "id, user_id, name, keywords, country, countries, employment_types, work_modes, frequency, channels, is_active, created_at";
 
 const TEXT_SEARCH_MIN_LENGTH = 2;
 
@@ -736,6 +745,9 @@ export default function JobRadarFeedPage() {
   const userId = session?.user?.id ?? null;
   const paymentMarket = usePaymentMarket(userId);
   const initialFeedFilters = readFeedFiltersFromSearch(location.search);
+  const feedPerfDebug = import.meta.env.DEV || new URLSearchParams(location.search).get("perf") === "1";
+  const feedMountedAtRef = useRef(typeof performance !== "undefined" ? performance.now() : 0);
+  const firstCardsLoggedRef = useRef(false);
   const startingPremiumLabel = getStartingPremiumLabel(paymentMarket.resolution.market);
 
   const FEED_PREVIEW_LIMIT = 4;
@@ -818,6 +830,18 @@ export default function JobRadarFeedPage() {
   const feedBackendShadowFlag = (import.meta.env.VITE_JOBRADAR_FEED_BACKEND_SHADOW ?? "").trim() === "1";
 
   const [offerUnlockModal, setOfferUnlockModal] = useState<{ title: string } | null>(null);
+
+  const logFeedPerf = useCallback(
+    (label: string, payload: Record<string, unknown> = {}) => {
+      if (!feedPerfDebug) return;
+      const now = typeof performance !== "undefined" ? performance.now() : 0;
+      console.info("[JobRadar feed perf]", label, {
+        at_ms: Math.round(now - feedMountedAtRef.current),
+        ...payload,
+      });
+    },
+    [feedPerfDebug]
+  );
 
   const clearDeferredFeedTasks = useCallback(() => {
     for (const timerId of deferredFeedTimersRef.current) {
@@ -1052,6 +1076,56 @@ export default function JobRadarFeedPage() {
     fetchJobsSearchRef.current = fetchJobsSearch;
   }, [fetchJobsSearch]);
 
+  const hydrateJobDescriptions = useCallback(
+    async (jobIds: string[], loadRunId: number, source: string) => {
+      const ids = uniq(jobIds).slice(0, 30);
+      if (!ids.length) return;
+
+      const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      try {
+        const { data, error } = await supabase
+          .from("jobs")
+          .select(JOB_DESCRIPTION_SELECT_FIELDS)
+          .in("id", ids);
+
+        if (error) throw error;
+        if (loadRunIdRef.current !== loadRunId) return;
+
+        const descriptions = new Map<string, string | null>();
+        let descriptionChars = 0;
+        for (const row of (data ?? []) as Array<{ id?: string; description?: string | null }>) {
+          if (!row.id) continue;
+          const description = row.description ?? null;
+          descriptions.set(row.id, description);
+          descriptionChars += description?.length ?? 0;
+        }
+
+        setJobs((prev) =>
+          prev.map((job) =>
+            descriptions.has(job.id)
+              ? { ...job, description: descriptions.get(job.id) ?? null }
+              : job
+          )
+        );
+
+        logFeedPerf("hydrate descriptions", {
+          source,
+          jobs: descriptions.size,
+          description_chars: descriptionChars,
+          duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - startedAt),
+        });
+      } catch (e: unknown) {
+        if (loadRunIdRef.current !== loadRunId) return;
+        logFeedPerf("hydrate descriptions failed", {
+          source,
+          error: getErrorMessage(e),
+          duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - startedAt),
+        });
+      }
+    },
+    [logFeedPerf]
+  );
+
   const fetchProfileContext = useCallback(async () => {
     try {
       const { data: pData, error: pErr } = await supabase
@@ -1141,16 +1215,19 @@ export default function JobRadarFeedPage() {
     const loadRunId = loadRunIdRef.current + 1;
     loadRunIdRef.current = loadRunId;
     const isCurrentLoad = () => loadRunIdRef.current === loadRunId;
+    const loadStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
 
     setBusy(true);
     setErrorMsg(null);
+    firstCardsLoggedRef.current = false;
+    logFeedPerf("load start");
 
     try {
       const initialCriteria = currentFeedCriteriaRef.current;
       const [{ data: aData, error: aErr }, nextProfileContext] = await Promise.all([
         supabase
           .from("alerts")
-          .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+          .select(ALERT_SELECT_FIELDS)
           .eq("user_id", userId)
           .eq("is_active", true)
           .order("created_at", { ascending: false }),
@@ -1164,11 +1241,29 @@ export default function JobRadarFeedPage() {
         q: initialCriteria.q || nextProfileContext.desiredRole,
       };
       const shouldSearchInitial = hasFeedSearchCriteria(effectiveCriteria);
+      const jobsFetchStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+      logFeedPerf("jobs fetch start", {
+        since_load_start_ms: Math.round(jobsFetchStartedAt - loadStartedAt),
+        mode: shouldSearchInitial ? "search" : "range",
+        q: effectiveCriteria.q ? "yes" : "no",
+        countries: effectiveCriteria.countries.length,
+        contract: Boolean(effectiveCriteria.contract),
+        work_mode: Boolean(effectiveCriteria.workMode),
+      });
       const fetchedJobs = shouldSearchInitial
         ? await fetchJobsSearchRef.current(effectiveCriteria.q)
         : await fetchJobsRange(0, PAGE_SIZE - 1);
+      const jobsFetchDuration = (typeof performance !== "undefined" ? performance.now() : 0) - jobsFetchStartedAt;
 
       if (!isCurrentLoad()) return;
+
+      const initialDescriptionChars = fetchedJobs.reduce((sum, job) => sum + (job.description?.length ?? 0), 0);
+      logFeedPerf("jobs fetch done", {
+        duration_ms: Math.round(jobsFetchDuration),
+        jobs: fetchedJobs.length,
+        description_chars: initialDescriptionChars,
+        query_payload: initialDescriptionChars > 0 ? "with_description" : "light",
+      });
 
       if (!initialCriteria.q && effectiveCriteria.q) {
         setQ(effectiveCriteria.q);
@@ -1186,28 +1281,55 @@ export default function JobRadarFeedPage() {
 
       scheduleDeferredFeedTask(() => {
         if (!isCurrentLoad()) return;
+        const cvStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         void fetchCvContext().then((cvContext) => {
           if (!isCurrentLoad()) return;
           setCvSkills(cvContext.skills);
           setCvExp(cvContext.exp);
+          logFeedPerf("cv_save done", {
+            duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - cvStartedAt),
+            skills: cvContext.skills.length,
+            has_exp: Boolean(cvContext.exp),
+          });
         });
       }, 50);
 
       scheduleDeferredFeedTask(() => {
         if (!isCurrentLoad()) return;
-        void loadUserJobState(userId);
+        void hydrateJobDescriptions(fetchedJobs.map((job) => job.id), loadRunId, shouldSearchInitial ? "initial_search" : "initial_range");
+      }, 80);
+
+      scheduleDeferredFeedTask(() => {
+        if (!isCurrentLoad()) return;
+        const userStateStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+        void loadUserJobState(userId).then(() => {
+          if (!isCurrentLoad()) return;
+          logFeedPerf("applications feedback done", {
+            duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - userStateStartedAt),
+          });
+        });
       }, 150);
 
       scheduleDeferredFeedTask(() => {
         if (!isCurrentLoad()) return;
+        const shadowStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         void fetchShadowFeed()
           .then((nextShadowFeed) => {
             if (!isCurrentLoad()) return;
             setShadowFeed(nextShadowFeed);
+            logFeedPerf("jobradar_match_feed done", {
+              duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - shadowStartedAt),
+              top_match: nextShadowFeed.buckets.top_match.length,
+              for_you: nextShadowFeed.buckets.for_you.length,
+              explore: nextShadowFeed.buckets.explore.length,
+            });
           })
           .catch(() => {
             if (!isCurrentLoad()) return;
             setShadowFeed(null);
+            logFeedPerf("jobradar_match_feed failed", {
+              duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - shadowStartedAt),
+            });
           });
       }, 800);
     } catch (e: unknown) {
@@ -1221,7 +1343,9 @@ export default function JobRadarFeedPage() {
     fetchJobsRange,
     fetchProfileContext,
     fetchShadowFeed,
+    hydrateJobDescriptions,
     loadUserJobState,
+    logFeedPerf,
     scheduleDeferredFeedTask,
     userId,
   ]);
@@ -1242,6 +1366,11 @@ export default function JobRadarFeedPage() {
 
       setPageFrom(from + nextJobs.length);
       setHasMore(nextJobs.length === PAGE_SIZE);
+      const loadMoreRunId = loadRunIdRef.current;
+      scheduleDeferredFeedTask(() => {
+        if (loadRunIdRef.current !== loadMoreRunId) return;
+        void hydrateJobDescriptions(nextJobs.map((job) => job.id), loadMoreRunId, "load_more");
+      }, 80);
     } catch (e: unknown) {
       setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
     } finally {
@@ -1268,21 +1397,43 @@ export default function JobRadarFeedPage() {
     if (criteriaKey === lastServerSearchQueryRef.current) return;
 
     let cancelled = false;
+    clearDeferredFeedTasks();
     const timer = window.setTimeout(async () => {
+      const searchRunId = loadRunIdRef.current + 1;
+      loadRunIdRef.current = searchRunId;
       setErrorMsg(null);
       setSearchBusy(Boolean(normalizedQuery || countryFilters.length || contractFilter || workModeFilter));
 
       try {
+        const searchStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
+        logFeedPerf("search jobs fetch start", {
+          q: normalizedQuery ? "yes" : "no",
+          countries: countryFilters.length,
+          contract: Boolean(contractFilter),
+          work_mode: Boolean(workModeFilter),
+        });
         const nextJobs = normalizedQuery || countryFilters.length || contractFilter || workModeFilter
           ? await fetchJobsSearch(rawQuery)
           : await fetchJobsRange(0, PAGE_SIZE - 1);
 
         if (cancelled) return;
 
+        const initialDescriptionChars = nextJobs.reduce((sum, job) => sum + (job.description?.length ?? 0), 0);
+        logFeedPerf("search jobs fetch done", {
+          duration_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - searchStartedAt),
+          jobs: nextJobs.length,
+          description_chars: initialDescriptionChars,
+          query_payload: initialDescriptionChars > 0 ? "with_description" : "light",
+        });
+
         setJobs(nextJobs);
         setPageFrom(nextJobs.length);
         setHasMore(normalizedQuery || countryFilters.length || contractFilter || workModeFilter ? false : nextJobs.length === PAGE_SIZE);
         lastServerSearchQueryRef.current = criteriaKey;
+        scheduleDeferredFeedTask(() => {
+          if (loadRunIdRef.current !== searchRunId) return;
+          void hydrateJobDescriptions(nextJobs.map((job) => job.id), searchRunId, "search");
+        }, 80);
       } catch (e: unknown) {
         if (cancelled) return;
         setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
@@ -1306,8 +1457,12 @@ export default function JobRadarFeedPage() {
     contractFilter,
     workModeFilter,
     hasActiveSearchCriteria,
+    clearDeferredFeedTasks,
     fetchJobsRange,
     fetchJobsSearch,
+    hydrateJobDescriptions,
+    logFeedPerf,
+    scheduleDeferredFeedTask,
   ]);
 
   useEffect(() => {
@@ -1412,7 +1567,14 @@ export default function JobRadarFeedPage() {
 
   function isSameSearchAlert(alert: AlertRow, criteria: ReturnType<typeof buildCurrentAlertCriteria>) {
     const alertCountries = (alert.countries && alert.countries.length ? alert.countries : alert.country ? [alert.country] : []) as string[];
-    return normalizeSearchText(alert.search_query ?? "") === normalizeSearchText(criteria.searchQuery) &&
+    const normalizedSearch = normalizeSearchText(criteria.searchQuery);
+    const alertSearchFallback = normalizeSearchText(buildAlertSearchFallback(alert));
+    const searchMatches = !normalizedSearch ||
+      arraysEqualIgnoreOrder(alert.keywords ?? [], criteria.keywords) ||
+      alertSearchFallback === normalizedSearch ||
+      alertSearchFallback.includes(normalizedSearch);
+
+    return searchMatches &&
       arraysEqualIgnoreOrder(alertCountries, criteria.countries) &&
       arraysEqualIgnoreOrder(alert.employment_types ?? [], criteria.employmentTypes) &&
       arraysEqualIgnoreOrder(alert.work_modes ?? [], criteria.workModes);
@@ -1442,7 +1604,7 @@ export default function JobRadarFeedPage() {
       const criteria = buildCurrentAlertCriteria();
       const { data: activeAlerts, error: activeErr } = await supabase
         .from("alerts")
-        .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+        .select(ALERT_SELECT_FIELDS)
         .eq("user_id", userId)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
@@ -1479,7 +1641,6 @@ export default function JobRadarFeedPage() {
         .insert({
           user_id: userId,
           name: buildSearchAlertName(),
-          search_query: criteria.searchQuery || null,
           keywords: criteria.keywords,
           country: legacyCountry,
           countries: countriesToSave,
@@ -1489,7 +1650,7 @@ export default function JobRadarFeedPage() {
           channels: ["email"],
           is_active: true,
         })
-        .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
+        .select(ALERT_SELECT_FIELDS)
         .single<AlertRow>();
 
       if (insertErr) throw insertErr;
@@ -1512,6 +1673,7 @@ export default function JobRadarFeedPage() {
   }
 
   const matches = useMemo(() => {
+    const scoringStartedAt = feedPerfDebug && typeof performance !== "undefined" ? performance.now() : 0;
     const kwAlerts = uniq(cappedAlertKeywords.map((k) => canonicalizeText(k)).map(norm)).filter(Boolean);
     const kwCv = uniq(cvKeywords.map((k) => String(k ?? "").trim()).filter(Boolean));
     const kwCount = kwAlerts.length + kwCv.length;
@@ -1597,7 +1759,21 @@ export default function JobRadarFeedPage() {
       (x) => x.p >= TOP_MATCH_MIN && (x.dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN
     );
 
-    return { topMatches, exploreMatches: explorerRows, forYouRows, kwCount };
+    const result = { topMatches, exploreMatches: explorerRows, forYouRows, kwCount };
+    if (feedPerfDebug && jobs.length > 0) {
+      const scoringDuration = Math.round((typeof performance !== "undefined" ? performance.now() : 0) - scoringStartedAt);
+      queueMicrotask(() =>
+        logFeedPerf("client scoring done", {
+          duration_ms: scoringDuration,
+          jobs: jobs.length,
+          with_description: jobs.filter((job) => Boolean(job.description)).length,
+          top_match: result.topMatches.length,
+          for_you: result.forYouRows.length,
+          explore: result.exploreMatches.length,
+        })
+      );
+    }
+    return result;
   }, [
     jobs,
     cappedAlertKeywords,
@@ -1614,6 +1790,8 @@ export default function JobRadarFeedPage() {
     TOP_MATCH_MIN,
     TOP_MATCH_DQ_MIN,
     MIN_FOR_YOU,
+    feedPerfDebug,
+    logFeedPerf,
   ]);
 
   const shadowMeta: JobRadarShadowMeta | null = shadowFeed?.meta ?? null;
@@ -1703,6 +1881,19 @@ export default function JobRadarFeedPage() {
     () => (feedAdvisorMode ? getJobRadarAdvisorCopy({ key: "feed", mode: feedAdvisorMode }) : null),
     [feedAdvisorMode]
   );
+
+  useEffect(() => {
+    if (!feedPerfDebug || firstCardsLoggedRef.current || busy || displayedLimited.length === 0) return;
+    const rafId = window.requestAnimationFrame(() => {
+      firstCardsLoggedRef.current = true;
+      logFeedPerf("first cards visible", {
+        displayed: displayedLimited.length,
+        total_displayed: displayed.length,
+        with_description: displayedLimited.filter((row) => Boolean(row.job.description)).length,
+      });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [feedPerfDebug, busy, displayedLimited, displayed.length, logFeedPerf]);
 
   useEffect(() => {
     if (shadowUi.showStrictTab) return;
@@ -2250,7 +2441,10 @@ export default function JobRadarFeedPage() {
                   const isDismissing = dismissingJobId === job.id;
                 const isTopMatch = p >= TOP_MATCH_MIN && (dataQuality?.score ?? 0) >= TOP_MATCH_DQ_MIN;
                 const matchesAlertCountry = jobMatchesAlertCountryScope(job);
-                const relevanceLabel = !matchesAlertCountry && !countryFilters.length
+                const analysisPending = !job.description;
+                const relevanceLabel = analysisPending
+                  ? "Analyse en cours"
+                  : !matchesAlertCountry && !countryFilters.length
                   ? "À explorer"
                   : isTopMatch
                   ? "Très adaptée"
