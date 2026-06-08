@@ -28,6 +28,11 @@ import {
   buildCrossSourceJobIdentity,
   canonicalizeJobUrl,
 } from "../_shared/jobIdentity.ts";
+import {
+  computeJobQuality,
+  type JobQualityFlag,
+  type JobQualityStatus,
+} from "./_shared/jobQuality.ts";
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -1620,6 +1625,12 @@ Deno.serve(async (req) => {
       });
       const now = new Date().toISOString();
       const rows = [];
+      const qualityStatusCounts: Record<JobQualityStatus, number> = {
+        active: 0,
+        needs_review: 0,
+        rejected: 0,
+      };
+      const qualityFlagCounts: Partial<Record<JobQualityFlag, number>> = {};
       for (const item of importCandidates) {
         const title = (item.title ?? "Offre d'emploi").trim();
         const descriptionText = (item.description_text ?? "").trim();
@@ -1627,6 +1638,20 @@ Deno.serve(async (req) => {
         const applyUrl = normalizeOptionalUrl(item.apply_url) ?? sourceUrl;
         const location = item.location ?? jobSource.region ?? null;
         const companyName = item.company_name ?? null;
+        const quality = computeJobQuality({
+          title,
+          company_name: companyName,
+          company_name_source: item.company_name_source,
+          description_text: descriptionText || null,
+          source_url: sourceUrl,
+          expires_at: item.expires_at_iso,
+          is_expired: item.is_expired,
+          country_classification: item.country_classification,
+        });
+        qualityStatusCounts[quality.status] += 1;
+        for (const flag of quality.flags) {
+          qualityFlagCounts[flag] = (qualityFlagCounts[flag] ?? 0) + 1;
+        }
         const identity = await buildCrossSourceJobIdentity({
           title,
           companyName,
@@ -1680,11 +1705,12 @@ Deno.serve(async (req) => {
           scraped_at: now,
           updated_at: now,
           last_seen_at: now,
-          is_active: true,
+          is_active: quality.status === "active",
           is_expired: false,
-          job_status: "active",
+          job_status: quality.status === "active" ? "active" : "stale",
           job_type: detectJobType(title, `${descriptionText} ${item.contract_type ?? ""}`),
           job_json: {
+            _quality: quality,
             source_code,
             provider: "projobivoire_rss",
             trigger: "manual_probe",
@@ -1716,6 +1742,10 @@ Deno.serve(async (req) => {
             parsed_count: data.fetched_count,
             import_candidate_count: importCandidates.length,
             skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+            quality_active_count: qualityStatusCounts.active,
+            quality_needs_review_count: qualityStatusCounts.needs_review,
+            quality_rejected_count: qualityStatusCounts.rejected,
+            quality_flag_counts: qualityFlagCounts,
             reason: "no_importable_candidates",
             diagnostics: data.diagnostics,
           },
@@ -1733,6 +1763,10 @@ Deno.serve(async (req) => {
           parsed: data.fetched_count,
           import_candidate_count: importCandidates.length,
           skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+          quality_active_count: qualityStatusCounts.active,
+          quality_needs_review_count: qualityStatusCounts.needs_review,
+          quality_rejected_count: qualityStatusCounts.rejected,
+          quality_flag_counts: qualityFlagCounts,
           reason: "no_importable_candidates",
           inserted: 0,
           updated: 0,
@@ -1797,6 +1831,10 @@ Deno.serve(async (req) => {
           parsed_count: data.fetched_count,
           import_candidate_count: importCandidates.length,
           skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+          quality_active_count: qualityStatusCounts.active,
+          quality_needs_review_count: qualityStatusCounts.needs_review,
+          quality_rejected_count: qualityStatusCounts.rejected,
+          quality_flag_counts: qualityFlagCounts,
           diagnostics: data.diagnostics,
           upsert_chunk_count: upsertChunkCount,
         },
@@ -1814,6 +1852,10 @@ Deno.serve(async (req) => {
         parsed: data.fetched_count,
         import_candidate_count: importCandidates.length,
         skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+        quality_active_count: qualityStatusCounts.active,
+        quality_needs_review_count: qualityStatusCounts.needs_review,
+        quality_rejected_count: qualityStatusCounts.rejected,
+        quality_flag_counts: qualityFlagCounts,
         rows_to_upsert: rows.length,
         inserted,
         updated,
