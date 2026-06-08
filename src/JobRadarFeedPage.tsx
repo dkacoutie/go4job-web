@@ -807,6 +807,8 @@ export default function JobRadarFeedPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
   const lastServerSearchQueryRef = useRef("");
+  const loadRunIdRef = useRef(0);
+  const deferredFeedTimersRef = useRef<number[]>([]);
   const currentFeedCriteriaRef = useRef({
     q: initialFeedFilters.q,
     countries: initialFeedFilters.countries,
@@ -816,6 +818,28 @@ export default function JobRadarFeedPage() {
   const feedBackendShadowFlag = (import.meta.env.VITE_JOBRADAR_FEED_BACKEND_SHADOW ?? "").trim() === "1";
 
   const [offerUnlockModal, setOfferUnlockModal] = useState<{ title: string } | null>(null);
+
+  const clearDeferredFeedTasks = useCallback(() => {
+    for (const timerId of deferredFeedTimersRef.current) {
+      window.clearTimeout(timerId);
+    }
+    deferredFeedTimersRef.current = [];
+  }, []);
+
+  const scheduleDeferredFeedTask = useCallback((task: () => void, delayMs: number) => {
+    const timerId = window.setTimeout(() => {
+      deferredFeedTimersRef.current = deferredFeedTimersRef.current.filter((id) => id !== timerId);
+      task();
+    }, delayMs);
+    deferredFeedTimersRef.current.push(timerId);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      loadRunIdRef.current += 1;
+      clearDeferredFeedTasks();
+    };
+  }, [clearDeferredFeedTasks]);
 
   function scrollToResults() {
     const el = document.getElementById("jr-results");
@@ -1113,19 +1137,23 @@ export default function JobRadarFeedPage() {
   const load = useCallback(async () => {
     if (!userId) return;
 
+    clearDeferredFeedTasks();
+    const loadRunId = loadRunIdRef.current + 1;
+    loadRunIdRef.current = loadRunId;
+    const isCurrentLoad = () => loadRunIdRef.current === loadRunId;
+
     setBusy(true);
     setErrorMsg(null);
 
     try {
       const initialCriteria = currentFeedCriteriaRef.current;
-      const [{ data: aData, error: aErr }, cvContext, nextProfileContext] = await Promise.all([
+      const [{ data: aData, error: aErr }, nextProfileContext] = await Promise.all([
         supabase
           .from("alerts")
           .select("id, user_id, name, keywords, country, countries, search_query, employment_types, work_modes, frequency, channels, is_active, created_at")
           .eq("user_id", userId)
           .eq("is_active", true)
           .order("created_at", { ascending: false }),
-        fetchCvContext(),
         fetchProfileContext(),
       ]);
 
@@ -1140,14 +1168,14 @@ export default function JobRadarFeedPage() {
         ? await fetchJobsSearchRef.current(effectiveCriteria.q)
         : await fetchJobsRange(0, PAGE_SIZE - 1);
 
+      if (!isCurrentLoad()) return;
+
       if (!initialCriteria.q && effectiveCriteria.q) {
         setQ(effectiveCriteria.q);
         currentFeedCriteriaRef.current = effectiveCriteria;
       }
 
       setAlerts((aData ?? []) as AlertRow[]);
-      setCvSkills(cvContext.skills);
-      setCvExp(cvContext.exp);
       setProfileExp(nextProfileContext.experienceYears);
       setProfileDesiredRole(nextProfileContext.desiredRole);
       setJobs(fetchedJobs);
@@ -1156,21 +1184,45 @@ export default function JobRadarFeedPage() {
       lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(effectiveCriteria) : "";
       setBusy(false);
 
-      void fetchShadowFeed()
-        .then((nextShadowFeed) => setShadowFeed(nextShadowFeed))
-        .catch(() => setShadowFeed(null));
+      scheduleDeferredFeedTask(() => {
+        if (!isCurrentLoad()) return;
+        void fetchCvContext().then((cvContext) => {
+          if (!isCurrentLoad()) return;
+          setCvSkills(cvContext.skills);
+          setCvExp(cvContext.exp);
+        });
+      }, 50);
 
-      void loadUserJobState(userId);
+      scheduleDeferredFeedTask(() => {
+        if (!isCurrentLoad()) return;
+        void loadUserJobState(userId);
+      }, 150);
+
+      scheduleDeferredFeedTask(() => {
+        if (!isCurrentLoad()) return;
+        void fetchShadowFeed()
+          .then((nextShadowFeed) => {
+            if (!isCurrentLoad()) return;
+            setShadowFeed(nextShadowFeed);
+          })
+          .catch(() => {
+            if (!isCurrentLoad()) return;
+            setShadowFeed(null);
+          });
+      }, 800);
     } catch (e: unknown) {
+      if (!isCurrentLoad()) return;
       setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
       setBusy(false);
     }
   }, [
+    clearDeferredFeedTasks,
     fetchCvContext,
     fetchJobsRange,
     fetchProfileContext,
     fetchShadowFeed,
     loadUserJobState,
+    scheduleDeferredFeedTask,
     userId,
   ]);
 
