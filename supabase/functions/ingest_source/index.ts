@@ -13,6 +13,7 @@ import { fetchRssFeedItems } from "./sources/rss_generic.ts";
 import { fetchReliefWebJobs } from "./sources/reliefweb_api.ts";
 import {
   fetchProjobivoireRssDryRun,
+  type ProjobivoireRssImportItem,
   type ProjobivoireRssCompareItem,
 } from "./sources/projobivoire_rss.ts";
 import { fetchMyJobMagPortalItems } from "./sources/myjobmag_portal.ts";
@@ -1019,6 +1020,71 @@ function isGoAfricaOnlineCiImportConfirmed(confirm: unknown, requestedLimit: num
   return confirm === "IMPORT_GOAFRICAONLINE_CI_PORTAL_LIMIT_150";
 }
 
+function parseRequiredProbeInt(
+  body: Record<string, unknown>,
+  key: string,
+  max: number,
+) {
+  if (!hasOwnKey(body, key)) {
+    return { value: null, error: `missing_${key}` };
+  }
+
+  const parsed = Number(body[key]);
+  if (!Number.isFinite(parsed) || Math.trunc(parsed) !== parsed || parsed < 1) {
+    return { value: null, error: `${key}_must_be_positive_integer` };
+  }
+
+  if (parsed > max) {
+    return { value: null, error: `${key}_exceeds_${max}` };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function validateProjobivoireControlledImportProbe(
+  body: Record<string, unknown>,
+) {
+  const errors: string[] = [];
+
+  if (body.source_code !== "projobivoire_rss") {
+    errors.push("source_code_must_be_projobivoire_rss");
+  }
+  if (!hasOwnKey(body, "dry_run") || body.dry_run !== false) {
+    errors.push("dry_run_must_be_false");
+  }
+  if (body.allow_import !== true) {
+    errors.push("allow_import_must_be_true");
+  }
+  if (body.confirm !== "IMPORT_PROJOBIVOIRE_RSS_V1") {
+    errors.push("confirm_must_be_IMPORT_PROJOBIVOIRE_RSS_V1");
+  }
+  if (body.trigger !== "manual_probe") {
+    errors.push("trigger_must_be_manual_probe");
+  }
+  if (body.run_kind !== "controlled_import_probe") {
+    errors.push("run_kind_must_be_controlled_import_probe");
+  }
+
+  const limit = parseRequiredProbeInt(body, "limit", 15);
+  if (limit.error) errors.push(limit.error);
+  const maxPages = parseRequiredProbeInt(body, "max_pages", 2);
+  if (maxPages.error) errors.push(maxPages.error);
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    limit: limit.value,
+    maxPages: maxPages.value,
+  };
+}
+
+function isImportableProjobivoireItem(item: ProjobivoireRssImportItem) {
+  return item.country_classification === "probable_ci" &&
+    item.is_expired !== true &&
+    Boolean((item.title ?? "").trim()) &&
+    Boolean((item.source_url ?? "").trim());
+}
+
 type ProjobivoireDbJobCandidate = {
   id?: string | null;
   title?: string | null;
@@ -1446,38 +1512,312 @@ Deno.serve(async (req) => {
   let currentRunId: string | null = null;
   try {
     if (source_code === "projobivoire_rss") {
-      if (dry_run !== true) {
+      if (dry_run === true) {
+        const compareDb = body?.compare_db === true;
+        const data = await fetchProjobivoireRssDryRun({
+          dryRun: true,
+          maxPages: body?.max_pages ?? body?.maxPages,
+          limit,
+          includeItemsForDbCompare: compareDb,
+        });
+
+        const { items_for_db_compare, ...response } = data;
+        if (!compareDb) {
+          return json(response);
+        }
+
+        const supabaseUrl = mustEnv("SUPABASE_URL");
+        const serviceKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
+        const dbDuplicateDiagnostics = await compareProjobivoireDbDuplicates({
+          supabaseUrl,
+          serviceKey,
+          items: items_for_db_compare ?? [],
+        });
+
         return json({
-          ok: false,
-          error: "dry_run_only_source",
-          message: "projobivoire_rss is dry-run only and cannot import jobs yet",
-        }, 409);
+          ...response,
+          db_duplicate_diagnostics: dbDuplicateDiagnostics,
+        });
       }
 
-      const compareDb = body?.compare_db === true;
-      const data = await fetchProjobivoireRssDryRun({
-        dryRun: true,
-        maxPages: body?.max_pages ?? body?.maxPages,
-        limit,
-        includeItemsForDbCompare: compareDb,
-      });
-
-      const { items_for_db_compare, ...response } = data;
-      if (!compareDb) {
-        return json(response);
+      const controlledProbe = validateProjobivoireControlledImportProbe(
+        asPlainObject(body),
+      );
+      if (!controlledProbe.ok || controlledProbe.limit === null || controlledProbe.maxPages === null) {
+        return json({
+          ok: false,
+          error: "projobivoire_rss_import_requires_controlled_probe",
+          message:
+            "projobivoire_rss real imports are blocked unless the controlled manual probe confirmation and limits are provided.",
+          required: {
+            source_code: "projobivoire_rss",
+            dry_run: false,
+            allow_import: true,
+            confirm: "IMPORT_PROJOBIVOIRE_RSS_V1",
+            limit: "1..15",
+            max_pages: "1..2",
+            trigger: "manual_probe",
+            run_kind: "controlled_import_probe",
+          },
+          validation_errors: controlledProbe.errors,
+        }, 409);
       }
 
       const supabaseUrl = mustEnv("SUPABASE_URL");
       const serviceKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
-      const dbDuplicateDiagnostics = await compareProjobivoireDbDuplicates({
+      const jobSourceUrl = `${supabaseUrl}/rest/v1/job_sources?select=` +
+        `id,code,name,ingest_method,ingest_config,is_active,ingest_status,country,region,priority,activated_at,last_ingested_at,last_success_at,last_checked_at` +
+        `&code=eq.${encodeURIComponent(source_code)}&limit=1`;
+      const jobSourceArr = await sbGet<any[]>(jobSourceUrl, serviceKey);
+      const jobSource = jobSourceArr?.[0] ?? null;
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const runId = await createRun(
         supabaseUrl,
         serviceKey,
-        items: items_for_db_compare ?? [],
+        jobSource.id,
+        "controlled_import_probe",
+      );
+      currentRunId = runId;
+
+      const data = await fetchProjobivoireRssDryRun({
+        dryRun: true,
+        maxPages: controlledProbe.maxPages,
+        limit: controlledProbe.limit,
+        includeItemsForImport: true,
+      });
+
+      if (!data.ok) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: "projobivoire_rss_probe_parse_failed",
+          fetched_count: data.fetched_count,
+          inserted_count: 0,
+          updated_count: 0,
+          meta: {
+            trigger: "manual_probe",
+            run_kind: "controlled_import_probe",
+            diagnostics: data.diagnostics,
+          },
+        });
+        return json({
+          ok: false,
+          error: "projobivoire_rss_probe_parse_failed",
+          dry_run: false,
+          diagnostics: data.diagnostics,
+        }, 502);
+      }
+
+      const importCandidates = (data.items_for_import ?? [])
+        .filter(isImportableProjobivoireItem)
+        .slice(0, controlledProbe.limit);
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
+      const now = new Date().toISOString();
+      const rows = [];
+      for (const item of importCandidates) {
+        const title = (item.title ?? "Offre d'emploi").trim();
+        const descriptionText = (item.description_text ?? "").trim();
+        const sourceUrl = normalizeOptionalUrl(item.source_url);
+        const applyUrl = normalizeOptionalUrl(item.apply_url) ?? sourceUrl;
+        const location = item.location ?? jobSource.region ?? null;
+        const companyName = item.company_name ?? null;
+        const identity = await buildCrossSourceJobIdentity({
+          title,
+          companyName,
+          location,
+          sourceUrl,
+          applyUrl,
+        });
+        const externalId = item.external_id?.trim()
+          ? item.external_id.trim()
+          : await buildExternalId(source_code, {
+            title,
+            company_name: companyName,
+            location,
+            country: jobSource.country ?? null,
+            contract_type: item.contract_type,
+            description_html: item.description_html,
+            description_text: descriptionText,
+            source_url: sourceUrl ?? applyUrl ?? "",
+            apply_url: applyUrl,
+            published_at: item.published_at,
+            expires_at: item.expires_at_iso,
+            is_expired: item.is_expired ?? false,
+          });
+        const tags = item.category ? [item.category] : [];
+
+        rows.push({
+          job_source_id: jobSource.id,
+          external_id: externalId,
+          title,
+          company_name: companyName,
+          location,
+          country: jobSource.country ?? "Cote d'Ivoire",
+          remote_type: null,
+          contract_type: item.contract_type,
+          seniority: null,
+          salary_min: null,
+          salary_max: null,
+          salary_currency: null,
+          salary_period: null,
+          description_html: item.description_html,
+          description_text: descriptionText || null,
+          apply_url: applyUrl,
+          source_url: sourceUrl,
+          canonical_url: identity.canonicalUrl,
+          dedupe_identity_key: identity.dedupeIdentityKey,
+          cross_source_fingerprint: identity.crossSourceFingerprint,
+          tags,
+          posted_at: item.published_at,
+          published_at: item.published_at,
+          expires_at: item.expires_at_iso,
+          scraped_at: now,
+          updated_at: now,
+          last_seen_at: now,
+          is_active: true,
+          is_expired: false,
+          job_status: "active",
+          job_type: detectJobType(title, `${descriptionText} ${item.contract_type ?? ""}`),
+          job_json: {
+            source_code,
+            provider: "projobivoire_rss",
+            trigger: "manual_probe",
+            run_kind: "controlled_import_probe",
+            wp_post_id: item.wp_post_id,
+            guid: item.guid,
+            category: item.category,
+            country_classification: item.country_classification,
+            classification_reasons: item.classification_reasons,
+            raw_expires_at: item.expires_at,
+          },
+        });
+      }
+
+      if (rows.length === 0) {
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "success",
+          ok: true,
+          fetched_count: 0,
+          inserted_count: 0,
+          updated_count: 0,
+          meta: {
+            trigger: "manual_probe",
+            run_kind: "controlled_import_probe",
+            requested_limit: controlledProbe.limit,
+            max_pages: controlledProbe.maxPages,
+            parsed_count: data.fetched_count,
+            import_candidate_count: importCandidates.length,
+            skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+            reason: "no_importable_candidates",
+            diagnostics: data.diagnostics,
+          },
+        });
+
+        return json({
+          ok: true,
+          source_code,
+          dry_run: false,
+          status: "projobivoire_rss_controlled_import_probe_no_importable_candidates",
+          trigger: "manual_probe",
+          run_kind: "controlled_import_probe",
+          limit: controlledProbe.limit,
+          max_pages: controlledProbe.maxPages,
+          parsed: data.fetched_count,
+          import_candidate_count: importCandidates.length,
+          skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+          reason: "no_importable_candidates",
+          inserted: 0,
+          updated: 0,
+          upserted: 0,
+          rows_to_upsert: 0,
+          diagnostics: data.diagnostics,
+        });
+      }
+
+      const upsertBatchSize = Math.min(
+        rows.length || 1,
+        toPositiveInt(jobSource.ingest_config?.upsert_batch_size) ?? 15,
+      );
+      let inserted = 0;
+      let updated = 0;
+      let upsertChunkCount = 0;
+      try {
+        const upsertResult = await upsertJobsWithStats(supabase, rows, {
+          batchSize: upsertBatchSize,
+        });
+        inserted = upsertResult.inserted;
+        updated = upsertResult.updated;
+        upsertChunkCount = upsertResult.upsertChunkCount;
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+          meta: {
+            trigger: "manual_probe",
+            run_kind: "controlled_import_probe",
+            requested_limit: controlledProbe.limit,
+            max_pages: controlledProbe.maxPages,
+          },
+        });
+        return json({
+          ok: false,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: new Date().toISOString(),
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+        meta: {
+          trigger: "manual_probe",
+          run_kind: "controlled_import_probe",
+          requested_limit: controlledProbe.limit,
+          max_pages: controlledProbe.maxPages,
+          parsed_count: data.fetched_count,
+          import_candidate_count: importCandidates.length,
+          skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+          diagnostics: data.diagnostics,
+          upsert_chunk_count: upsertChunkCount,
+        },
       });
 
       return json({
-        ...response,
-        db_duplicate_diagnostics: dbDuplicateDiagnostics,
+        ok: true,
+        source_code,
+        dry_run: false,
+        status: "projobivoire_rss_controlled_import_probe_upserted",
+        trigger: "manual_probe",
+        run_kind: "controlled_import_probe",
+        limit: controlledProbe.limit,
+        max_pages: controlledProbe.maxPages,
+        parsed: data.fetched_count,
+        import_candidate_count: importCandidates.length,
+        skipped_import_count: Math.max(0, data.fetched_count - importCandidates.length),
+        rows_to_upsert: rows.length,
+        inserted,
+        updated,
+        upserted: rows.length,
+        diagnostics: data.diagnostics,
       });
     }
 

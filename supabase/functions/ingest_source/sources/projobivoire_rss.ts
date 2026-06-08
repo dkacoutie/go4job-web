@@ -3,6 +3,7 @@ export type ProjobivoireRssDryRunOptions = {
   maxPages?: number;
   limit?: number;
   includeItemsForDbCompare?: boolean;
+  includeItemsForImport?: boolean;
 };
 
 type CountryClassification = "probable_ci" | "probable_non_ci" | "ambiguous";
@@ -28,6 +29,27 @@ type ProjobivoireRssItem = ProjobivoireRssCompareItem & {
   guid: string | null;
   description: string | null;
   content_encoded: string | null;
+};
+
+export type ProjobivoireRssImportItem = {
+  external_id: string | null;
+  source_url: string | null;
+  apply_url: string | null;
+  title: string | null;
+  company_name: string | null;
+  location: string | null;
+  published_at: string | null;
+  expires_at: string | null;
+  expires_at_iso: string | null;
+  contract_type: string | null;
+  category: string | null;
+  country_classification: CountryClassification;
+  classification_reasons: string[];
+  is_expired: boolean | null;
+  wp_post_id: string | null;
+  guid: string | null;
+  description_text: string | null;
+  description_html: string | null;
 };
 
 export type ProjobivoireRssDryRunResult = {
@@ -60,6 +82,7 @@ export type ProjobivoireRssDryRunResult = {
     internal_duplicate_count: number;
   };
   items_for_db_compare?: ProjobivoireRssCompareItem[];
+  items_for_import?: ProjobivoireRssImportItem[];
   sample_items: Array<{
     external_id_candidate: string | null;
     canonical_url_candidate: string | null;
@@ -334,6 +357,10 @@ function isExpired(closing: string | null, now = new Date()) {
   return closingDate.getTime() < now.getTime();
 }
 
+function closingDateIso(closing: string | null) {
+  return parseFrenchClosingDate(closing)?.toISOString() ?? null;
+}
+
 function parsePubDate(value: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -446,6 +473,7 @@ function buildResult(
   pagesFetched: number,
   parseErrors: string[],
   includeItemsForDbCompare: boolean,
+  includeItemsForImport: boolean,
 ): ProjobivoireRssDryRunResult {
   const pubDates = items
     .map((item) => item.published_at)
@@ -527,6 +555,29 @@ function buildResult(
     }));
   }
 
+  if (includeItemsForImport) {
+    result.items_for_import = items.map((item) => ({
+      external_id: item.external_id_candidate,
+      source_url: item.canonical_url_candidate,
+      apply_url: item.canonical_url_candidate,
+      title: item.title,
+      company_name: item.company,
+      location: item.location,
+      published_at: item.published_at,
+      expires_at: item.expires_at,
+      expires_at_iso: closingDateIso(item.expires_at),
+      contract_type: item.job_type,
+      category: item.category,
+      country_classification: item.country_classification,
+      classification_reasons: item.classification_reasons,
+      is_expired: item.is_expired,
+      wp_post_id: item.wp_post_id,
+      guid: item.guid,
+      description_text: item.description ?? stripHtml(item.content_encoded),
+      description_html: item.content_encoded,
+    }));
+  }
+
   return result;
 }
 
@@ -573,5 +624,6 @@ export async function fetchProjobivoireRssDryRun(
     pagesFetched,
     parseErrors,
     opts.includeItemsForDbCompare === true,
+    opts.includeItemsForImport === true,
   );
 }
