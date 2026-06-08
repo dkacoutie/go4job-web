@@ -88,8 +88,8 @@ export function useJobRadarOnboarding() {
           )
           .eq("user_id", userId)
           .maybeSingle(),
-        supabase.from("alerts").select("*", { count: "exact", head: true }).eq("user_id", userId),
-        supabase.from("applications").select("*", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("user_id", userId),
+        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", userId),
       ]);
 
     let profile = (profileData as JobRadarProfileRecord | null) ?? null;

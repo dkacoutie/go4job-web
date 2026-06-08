@@ -17,20 +17,20 @@ import { ToastProvider } from "./components/ToastCenter";
 import { PartnerReferralProvider } from "./lib/usePartnerReferral";
 import { PassProvider } from "./lib/usePass";
 
-import AuthPage from "./AuthPage";
-import HomePage from "./HomePage";
-import AlertsPage from "./AlertsPage";
-import ThanksPage from "./ThanksPage";
-import PrivacyPage from "./PrivacyPage";
-import TermsPage from "./TermsPage";
-import ContactPage from "./ContactPage";
-import LegalPage from "./LegalPage";
-import RefundPolicyPage from "./RefundPolicyPage";
-import LandingPage from "./LandingPage";
 import LandingAnalyticsTracker from "./components/LandingAnalyticsTracker";
 import MetaPixelTracker from "./components/MetaPixelTracker";
-import ResetPasswordPage from "./ResetPasswordPage";
 
+const AuthPage = lazy(() => import("./AuthPage"));
+const HomePage = lazy(() => import("./HomePage"));
+const AlertsPage = lazy(() => import("./AlertsPage"));
+const ThanksPage = lazy(() => import("./ThanksPage"));
+const PrivacyPage = lazy(() => import("./PrivacyPage"));
+const TermsPage = lazy(() => import("./TermsPage"));
+const ContactPage = lazy(() => import("./ContactPage"));
+const LegalPage = lazy(() => import("./LegalPage"));
+const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
+const LandingPage = lazy(() => import("./LandingPage"));
+const ResetPasswordPage = lazy(() => import("./ResetPasswordPage"));
 const ProfilePage = lazy(() => import("./ProfilePage"));
 const ApplicationsPage = lazy(() => import("./ApplicationsPage"));
 const JobRadarFeedPage = lazy(() => import("./JobRadarFeedPage"));
@@ -119,7 +119,11 @@ function AuthGate() {
     return <AuthRedirect to={redirectTo} />;
   }
 
-  return <AuthPage />;
+  return (
+    <LazyRoute>
+      <AuthPage />
+    </LazyRoute>
+  );
 }
 
 function PublicLayout() {
@@ -158,13 +162,62 @@ export default function App() {
             <Routes>
               <Route element={<PublicLayout />}>
                 <Route path="/auth" element={<AuthGate />} />
-                <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route path="/thanks" element={<ThanksPage />} />
-                <Route path="/privacy" element={<PrivacyPage />} />
-                <Route path="/terms" element={<TermsPage />} />
-                <Route path="/legal" element={<LegalPage />} />
-                <Route path="/refund-policy" element={<RefundPolicyPage />} />
-                <Route path="/contact" element={<ContactPage />} />
+                <Route
+                  path="/reset-password"
+                  element={
+                    <LazyRoute>
+                      <ResetPasswordPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/thanks"
+                  element={
+                    <LazyRoute>
+                      <ThanksPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/privacy"
+                  element={
+                    <LazyRoute>
+                      <PrivacyPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/terms"
+                  element={
+                    <LazyRoute>
+                      <TermsPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/legal"
+                  element={
+                    <LazyRoute>
+                      <LegalPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/refund-policy"
+                  element={
+                    <LazyRoute>
+                      <RefundPolicyPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/contact"
+                  element={
+                    <LazyRoute>
+                      <ContactPage />
+                    </LazyRoute>
+                  }
+                />
                 <Route
                   path="/devenir-partenaire"
                   element={
@@ -181,7 +234,14 @@ export default function App() {
                     </LazyRoute>
                   }
                 />
-                <Route path="/landing" element={<LandingPage />} />
+                <Route
+                  path="/landing"
+                  element={
+                    <LazyRoute>
+                      <LandingPage />
+                    </LazyRoute>
+                  }
+                />
               </Route>
 
               <Route
@@ -197,7 +257,9 @@ export default function App() {
                   path="/"
                   element={
                     <JobRadarOnboardingGate when="home">
-                      <HomePage />
+                      <LazyRoute>
+                        <HomePage />
+                      </LazyRoute>
                     </JobRadarOnboardingGate>
                   }
                 />
@@ -227,7 +289,14 @@ export default function App() {
                     </JobRadarOnboardingGate>
                   }
                 />
-                <Route path="/alerts" element={<AlertsPage />} />
+                <Route
+                  path="/alerts"
+                  element={
+                    <LazyRoute>
+                      <AlertsPage />
+                    </LazyRoute>
+                  }
+                />
                 <Route
                   path="/admin/health"
                   element={
@@ -294,7 +363,14 @@ export default function App() {
                 />
                 <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />
                 <Route path="/jobradar/profile" element={<Navigate to="/profile" replace />} />
-                <Route path="/jobradar/alerts" element={<AlertsPage />} />
+                <Route
+                  path="/jobradar/alerts"
+                  element={
+                    <LazyRoute>
+                      <AlertsPage />
+                    </LazyRoute>
+                  }
+                />
                 <Route
                   path="/jobradar/applications"
                   element={
