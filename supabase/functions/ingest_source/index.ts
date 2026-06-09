@@ -1051,6 +1051,13 @@ function validateProjobivoireControlledImportProbe(
 ) {
   const errors: string[] = [];
 
+  const isManualProbe =
+    body.trigger === "manual_probe" &&
+    body.run_kind === "controlled_import_probe";
+  const isControlledCronProbe =
+    body.trigger === "controlled_cron_probe" &&
+    body.run_kind === "controlled_cron_probe";
+
   if (body.source_code !== "projobivoire_rss") {
     errors.push("source_code_must_be_projobivoire_rss");
   }
@@ -1060,14 +1067,14 @@ function validateProjobivoireControlledImportProbe(
   if (body.allow_import !== true) {
     errors.push("allow_import_must_be_true");
   }
-  if (body.confirm !== "IMPORT_PROJOBIVOIRE_RSS_V1") {
+  if (!isManualProbe && !isControlledCronProbe) {
+    errors.push("trigger_run_kind_must_be_manual_probe_or_controlled_cron_probe");
+  }
+  if (isManualProbe && body.confirm !== "IMPORT_PROJOBIVOIRE_RSS_V1") {
     errors.push("confirm_must_be_IMPORT_PROJOBIVOIRE_RSS_V1");
   }
-  if (body.trigger !== "manual_probe") {
-    errors.push("trigger_must_be_manual_probe");
-  }
-  if (body.run_kind !== "controlled_import_probe") {
-    errors.push("run_kind_must_be_controlled_import_probe");
+  if (isControlledCronProbe && hasOwnKey(body, "confirm")) {
+    errors.push("confirm_must_be_omitted_for_controlled_cron_probe");
   }
 
   const limit = parseRequiredProbeInt(body, "limit", 15);
@@ -1080,6 +1087,8 @@ function validateProjobivoireControlledImportProbe(
     errors,
     limit: limit.value,
     maxPages: maxPages.value,
+    trigger: isControlledCronProbe ? "controlled_cron_probe" : "manual_probe",
+    runKind: isControlledCronProbe ? "controlled_cron_probe" : "controlled_import_probe",
   };
 }
 
@@ -1561,8 +1570,8 @@ Deno.serve(async (req) => {
             confirm: "IMPORT_PROJOBIVOIRE_RSS_V1",
             limit: "1..15",
             max_pages: "1..2",
-            trigger: "manual_probe",
-            run_kind: "controlled_import_probe",
+            trigger: controlledProbe.trigger,
+            run_kind: controlledProbe.runKind,
           },
           validation_errors: controlledProbe.errors,
         }, 409);
@@ -1583,7 +1592,7 @@ Deno.serve(async (req) => {
         supabaseUrl,
         serviceKey,
         jobSource.id,
-        "controlled_import_probe",
+        controlledProbe.runKind,
       );
       currentRunId = runId;
 
@@ -1604,8 +1613,8 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
           meta: {
-            trigger: "manual_probe",
-            run_kind: "controlled_import_probe",
+            trigger: controlledProbe.trigger,
+            run_kind: controlledProbe.runKind,
             diagnostics: data.diagnostics,
           },
         });
@@ -1713,8 +1722,8 @@ Deno.serve(async (req) => {
             _quality: quality,
             source_code,
             provider: "projobivoire_rss",
-            trigger: "manual_probe",
-            run_kind: "controlled_import_probe",
+            trigger: controlledProbe.trigger,
+            run_kind: controlledProbe.runKind,
             wp_post_id: item.wp_post_id,
             guid: item.guid,
             category: item.category,
@@ -1735,8 +1744,8 @@ Deno.serve(async (req) => {
           inserted_count: 0,
           updated_count: 0,
           meta: {
-            trigger: "manual_probe",
-            run_kind: "controlled_import_probe",
+            trigger: controlledProbe.trigger,
+            run_kind: controlledProbe.runKind,
             requested_limit: controlledProbe.limit,
             max_pages: controlledProbe.maxPages,
             parsed_count: data.fetched_count,
@@ -1755,9 +1764,11 @@ Deno.serve(async (req) => {
           ok: true,
           source_code,
           dry_run: false,
-          status: "projobivoire_rss_controlled_import_probe_no_importable_candidates",
-          trigger: "manual_probe",
-          run_kind: "controlled_import_probe",
+          status: controlledProbe.runKind === "controlled_cron_probe"
+            ? "projobivoire_rss_controlled_cron_probe_no_importable_candidates"
+            : "projobivoire_rss_controlled_import_probe_no_importable_candidates",
+          trigger: controlledProbe.trigger,
+          run_kind: controlledProbe.runKind,
           limit: controlledProbe.limit,
           max_pages: controlledProbe.maxPages,
           parsed: data.fetched_count,
@@ -1803,8 +1814,8 @@ Deno.serve(async (req) => {
           inserted_count: err.inserted,
           updated_count: err.updated,
           meta: {
-            trigger: "manual_probe",
-            run_kind: "controlled_import_probe",
+            trigger: controlledProbe.trigger,
+            run_kind: controlledProbe.runKind,
             requested_limit: controlledProbe.limit,
             max_pages: controlledProbe.maxPages,
           },
@@ -1824,8 +1835,8 @@ Deno.serve(async (req) => {
         inserted_count: inserted,
         updated_count: updated,
         meta: {
-          trigger: "manual_probe",
-          run_kind: "controlled_import_probe",
+          trigger: controlledProbe.trigger,
+          run_kind: controlledProbe.runKind,
           requested_limit: controlledProbe.limit,
           max_pages: controlledProbe.maxPages,
           parsed_count: data.fetched_count,
@@ -1844,9 +1855,11 @@ Deno.serve(async (req) => {
         ok: true,
         source_code,
         dry_run: false,
-        status: "projobivoire_rss_controlled_import_probe_upserted",
-        trigger: "manual_probe",
-        run_kind: "controlled_import_probe",
+        status: controlledProbe.runKind === "controlled_cron_probe"
+          ? "projobivoire_rss_controlled_cron_probe_upserted"
+          : "projobivoire_rss_controlled_import_probe_upserted",
+        trigger: controlledProbe.trigger,
+        run_kind: controlledProbe.runKind,
         limit: controlledProbe.limit,
         max_pages: controlledProbe.maxPages,
         parsed: data.fetched_count,
