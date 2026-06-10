@@ -21,21 +21,22 @@ export const PREMIUM_DISPLAY_PRICES: Record<string, PremiumDisplayPrice> = {
 };
 
 export const EUROPE_PAYSTACK_NOTICE =
-  "Paiement sécurisé par Paystack. Le montant final est traité en XOF. Des frais de conversion peuvent être appliqués par votre banque.";
-export const XOF_PAYSTACK_NOTICE = "Paiement sécurisé par Paystack.";
+  "Paiement sécurisé via Paystack. Le montant final est affiché avant confirmation du paiement.";
+export const XOF_PAYSTACK_NOTICE =
+  "Paiement sécurisé via Paystack. Le montant final est affiché avant confirmation du paiement.";
 
 export function formatCheckoutXof(amountXof: number) {
   return formatAmount(amountXof, "XOF").replace(/\s?F\s?CFA$/i, " FCFA");
 }
 
-export function getPremiumDisplayPrice(planCode: string, checkoutXof: number, market: "eur" | "xof") {
+export function getPremiumDisplayPrice(planCode: string, amountXof: number, market: "eur" | "xof") {
   const eurPrice = PREMIUM_DISPLAY_PRICES[planCode];
-  const xofLabel = formatCheckoutXof(checkoutXof);
+  const xofLabel = formatCheckoutXof(amountXof);
   const primaryLabel = market === "eur" && eurPrice ? eurPrice.eurLabel : xofLabel;
 
   return {
     primaryLabel,
-    ctaLabel: `Continuer — ${primaryLabel}`,
+    ctaLabel: primaryLabel,
     xofLabel,
     eurLabel: eurPrice?.eurLabel ?? null,
     paystackNotice: market === "eur" ? EUROPE_PAYSTACK_NOTICE : XOF_PAYSTACK_NOTICE,

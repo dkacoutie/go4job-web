@@ -1,6 +1,8 @@
 export type PlanMarketing = {
   title: string;
   durationLabel: string;
+  shortLine: string;
+  headline: string;
   description: string;
   badge: string;
   badgeTone: "available" | "featured" | "paused" | "soon";
@@ -15,25 +17,24 @@ export type PaymentMethodBadge = {
 
 export const FEATURED_PLAN_CODE = "pass_30d";
 export const PRICING_SECTION_EYEBROW = "Plans JobRadar";
-export const PRICING_SECTION_TITLE = "Choisis le pass qui correspond \u00e0 ton rythme";
+export const PRICING_SECTION_TITLE = "Choisissez le Pass qui correspond à votre rythme";
 export const PRICING_SECTION_SUBTITLE =
-  "Active ton acc\u00e8s complet \u00e0 JobRadar avec une tarification claire et un paiement s\u00e9curis\u00e9.";
+  "Activez votre accès complet à JobRadar avec une tarification claire et un paiement sécurisé.";
 export const PRICING_ACCESS_MESSAGE =
-  "Acc\u00e8s complet \u00e0 JobRadar pendant toute la dur\u00e9e choisie.";
-export const PRICING_PRICE_NOTE = "Paiement unique, sans renouvellement automatique";
-export const PRICING_MODEL_TITLE = "Une tarification claire, pens\u00e9e pour durer";
+  "Accès complet à JobRadar pendant toute la durée choisie.";
+export const PRICING_PRICE_NOTE = "Sans renouvellement automatique";
+export const PRICING_MODEL_TITLE = "Une tarification claire, pensée pour durer";
 export const PRICING_MODEL_TEXT =
-  "Choisis la dur\u00e9e qui correspond \u00e0 ton rythme : l'acc\u00e8s est complet d\u00e8s l'activation, avec paiement s\u00e9curis\u00e9 et sans renouvellement automatique.";
+  "Choisissez la durée qui correspond à votre rythme : l'accès est complet après confirmation du paiement, avec paiement sécurisé et sans renouvellement automatique.";
 export const PRICING_BILLING_MESSAGE =
-  "Prix affichés selon ta région. Le paiement final reste traité en XOF via Paystack.";
+  "Prix affichés selon votre région. Le montant final est affiché avant confirmation du paiement.";
 export const PRICING_INDICATIVE_MESSAGE =
   "Pour les utilisateurs européens, les prix EUR sont des prix d'affichage marketing.";
-export const PRICING_CONVERSION_MESSAGE =
-  "Le montant envoyé au checkout Paystack reste le prix XOF du pass choisi.";
+export const PRICING_CONVERSION_MESSAGE = "Carte bancaire et Mobile Money acceptés via Paystack.";
 
 export const PRICING_REASSURANCE_POINTS = [
-  "Paiement s\u00e9curis\u00e9 par carte ou Mobile Money",
-  "Ton pass est activ\u00e9 apr\u00e8s paiement",
+  "Paiement sécurisé par carte ou Mobile Money",
+  "Votre Pass est activé après confirmation du paiement",
   "Paiement unique, sans renouvellement automatique",
 ];
 
@@ -48,31 +49,38 @@ export const ACCEPTED_PAYMENT_METHODS: PaymentMethodBadge[] = [
 
 export const PLAN_MARKETING: Record<string, PlanMarketing> = {
   pass_7d: {
-    title: "Pass D\u00e9couverte",
+    title: "Pass Découverte",
     durationLabel: "7 jours",
-    description: "Id\u00e9al pour d\u00e9couvrir JobRadar et lancer une recherche cibl\u00e9e sur une semaine.",
+    shortLine: "Pour vous faire votre propre avis",
+    headline: "7 jours pour explorer JobRadar sans engagement.",
+    description:
+      "Accès complet aux offres et alertes. Idéal pour découvrir le service avant de vous décider.",
     badge: "Disponible",
     badgeTone: "available",
-    launchNote: "Une formule souple pour tester la plateforme avec un acc\u00e8s complet pendant 7 jours.",
-    ctaLabel: "Activer mon pass",
+    launchNote: PRICING_PRICE_NOTE,
+    ctaLabel: "Essayer 7 jours",
   },
   pass_30d: {
     title: "Pass Mensuel",
     durationLabel: "30 jours",
-    description: "Le bon \u00e9quilibre pour suivre les offres et candidater avec r\u00e9gularit\u00e9.",
-    badge: "Recommand\u00e9",
+    shortLine: "Pour une recherche active et organisée",
+    headline: "30 jours pour suivre vos opportunités plus facilement.",
+    description: "Recevez des alertes ciblées selon votre profil et votre zone de recherche.",
+    badge: "Le plus choisi",
     badgeTone: "featured",
-    launchNote: "Le format le plus \u00e9quilibr\u00e9 pour garder un vrai rythme sur un mois complet.",
-    ctaLabel: "Activer mon pass",
+    launchNote: PRICING_PRICE_NOTE,
+    ctaLabel: "Activer 30 jours",
   },
   pass_90d: {
     title: "Pass Avantage",
     durationLabel: "90 jours",
-    description: "La solution la plus avantageuse pour installer une recherche durable.",
+    shortLine: "Pour suivre votre recherche sur la durée",
+    headline: "90 jours au meilleur rapport durée/prix.",
+    description: "Suivez les opportunités pendant plusieurs semaines, sans devoir renouveler trop souvent.",
     badge: "Disponible",
     badgeTone: "available",
-    launchNote: "Id\u00e9al pour rester constant, affiner ton ciblage et multiplier les opportunit\u00e9s.",
-    ctaLabel: "Activer mon pass",
+    launchNote: PRICING_PRICE_NOTE,
+    ctaLabel: "Activer 90 jours",
   },
 };
 
@@ -85,11 +93,13 @@ export function getPlanMarketing(
     PLAN_MARKETING[planCode] ?? {
       title: fallbackName,
       durationLabel: `${durationDays} jours`,
+      shortLine: "Pour avancer dans votre recherche",
+      headline: PRICING_ACCESS_MESSAGE,
       description: PRICING_ACCESS_MESSAGE,
       badge: "Disponible",
       badgeTone: "available",
-      launchNote: PRICING_ACCESS_MESSAGE,
-      ctaLabel: "Activer mon pass",
+      launchNote: PRICING_PRICE_NOTE,
+      ctaLabel: "Activer ce Pass",
     }
   );
 }

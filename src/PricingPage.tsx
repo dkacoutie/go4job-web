@@ -11,17 +11,11 @@ import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { usePass } from "./lib/usePass";
 import {
   FEATURED_PLAN_CODE,
-  PRICING_ACCESS_MESSAGE,
-  PRICING_MODEL_TEXT,
-  PRICING_MODEL_TITLE,
   PRICING_PRICE_NOTE,
-  PRICING_REASSURANCE_POINTS,
-  PRICING_SECTION_EYEBROW,
-  PRICING_SECTION_SUBTITLE,
-  PRICING_SECTION_TITLE,
+  formatAmount,
   getPlanMarketing,
 } from "./lib/pricingHelpers";
-import { getPremiumDisplayPrice } from "./lib/premiumPricing";
+import { formatCheckoutXof, getPremiumDisplayPrice } from "./lib/premiumPricing";
 import "./PricingPage.css";
 
 type BillingSettings = {
@@ -57,6 +51,52 @@ type CurrentPass = {
   days_remaining: number;
 };
 
+type PaymentRow = {
+  id: string;
+  status: string;
+  amount_minor: number;
+  currency: string;
+  paid_at: string | null;
+  created_at: string;
+  plan?: { name?: string | null; code?: string | null } | null;
+};
+
+const PRODUCT_PROOF_ITEMS = [
+  {
+    value: "Plus de 100 000",
+    label: "offres actives",
+  },
+  {
+    value: "3 grandes zones",
+    label: "Europe, Afrique de l'Ouest, États-Unis",
+  },
+  {
+    value: "Alertes ciblées",
+    label: "selon votre profil et votre zone de recherche",
+  },
+];
+
+const FAQ_ITEMS = [
+  {
+    question: "Quand mon accès est-il activé ?",
+    answer: "Après confirmation du paiement. Vous recevrez aussi un e-mail de confirmation.",
+  },
+  {
+    question: "Y a-t-il un renouvellement automatique ?",
+    answer:
+      "Non. Chaque Pass est à durée fixe. Vous choisissez de renouveler quand vous le souhaitez.",
+  },
+  {
+    question: "Puis-je choisir un autre Pass ensuite ?",
+    answer:
+      "Oui. À la fin de votre période en cours, vous pouvez choisir le Pass qui correspond à votre besoin.",
+  },
+  {
+    question: "Quels moyens de paiement sont acceptés ?",
+    answer: "Carte bancaire et Mobile Money, avec paiement sécurisé via Paystack.",
+  },
+];
+
 function formatDate(value: string) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
@@ -68,12 +108,44 @@ function formatPassStatus(status?: string | null) {
     case "active":
       return { label: "Actif", tone: "active" };
     case "expired":
-      return { label: "Expire", tone: "expired" };
+      return { label: "Expiré", tone: "expired" };
     case "cancelled":
-      return { label: "Annule", tone: "expired" };
+      return { label: "Annulé", tone: "expired" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
+}
+
+function formatPaymentStatus(status?: string | null) {
+  switch (status) {
+    case "paid":
+    case "paid_test":
+    case "active":
+    case "succeeded":
+      return { label: "Actif", tone: "success" };
+    case "expired":
+      return { label: "Expiré", tone: "expired" };
+    case "pending":
+    case "initialized":
+    case "processing":
+      return { label: "En attente", tone: "pending" };
+    case "failed":
+    case "cancelled":
+    case "canceled":
+      return { label: "Échoué", tone: "danger" };
+    default:
+      return { label: "En attente", tone: "pending" };
+  }
+}
+
+function formatPaymentAmount(amountMinor: number, currency: string) {
+  return currency === "XOF" ? formatCheckoutXof(amountMinor) : formatAmount(amountMinor, currency);
+}
+
+function getCurrencyNote(market: "eur" | "xof") {
+  return market === "eur"
+    ? "Les prix sont affichés en euros. Le montant final est affiché avant confirmation du paiement."
+    : "Les prix sont affichés en francs CFA. Le montant final est affiché avant confirmation du paiement.";
 }
 
 function PricingPostCheckoutActions() {
@@ -127,6 +199,7 @@ export default function PricingPage() {
   const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
   const [isTestPass, setIsTestPass] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const lastVerifiedRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
@@ -162,6 +235,7 @@ export default function PricingPage() {
       setCurrentPass(null);
       setHasRecentTestPayment(false);
       setIsTestPass(false);
+      setPayments([]);
       setAccountLoading(false);
       return;
     }
@@ -172,7 +246,7 @@ export default function PricingPage() {
       const nowIso = new Date().toISOString();
       const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
-      const [passRes, subRes, recentTestRes] = await Promise.all([
+      const [passRes, subRes, recentTestRes, paymentsRes] = await Promise.all([
         supabase
           .from("current_user_pass")
           .select("id, plan_code, plan_name, status, ends_at, days_remaining")
@@ -193,13 +267,21 @@ export default function PricingPage() {
           .gte("updated_at", recentCutoff)
           .order("updated_at", { ascending: false })
           .maybeSingle(),
+        supabase
+          .from("billing_payments")
+          .select("id, status, amount_minor, currency, paid_at, created_at, plan:billing_plans(name, code)")
+          .eq("user_id", session.user.id)
+          .order("created_at", { ascending: false })
+          .limit(6),
       ]);
 
       if (passRes.error) setErrorMsg((prev) => prev ?? passRes.error?.message ?? null);
       if (subRes.error) setErrorMsg((prev) => prev ?? subRes.error?.message ?? null);
       if (recentTestRes.error) setErrorMsg((prev) => prev ?? recentTestRes.error?.message ?? null);
+      if (paymentsRes.error) setErrorMsg((prev) => prev ?? paymentsRes.error?.message ?? null);
 
       setCurrentPass((passRes.data as CurrentPass) ?? null);
+      setPayments((paymentsRes.data as PaymentRow[]) ?? []);
 
       const subData = subRes.data;
       const testFlag =
@@ -218,16 +300,20 @@ export default function PricingPage() {
   }, [session?.user]);
 
   useEffect(() => {
-    setErrorMsg(null);
-    void loadPricingData();
+    queueMicrotask(() => {
+      setErrorMsg(null);
+      void loadPricingData();
+    });
   }, [loadPricingData]);
 
   useEffect(() => {
-    void loadAccountData();
+    queueMicrotask(() => {
+      void loadAccountData();
+    });
   }, [loadAccountData]);
 
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user?.id) return;
 
     const params = new URLSearchParams(window.location.search);
     const refFromUrl = params.get("reference") || params.get("trxref");
@@ -244,7 +330,7 @@ export default function PricingPage() {
 
     const runVerify = async () => {
       setIsVerifying(true);
-      setInfoMsg("V\u00e9rification du paiement en cours...");
+      setInfoMsg("Vérification du paiement en cours...");
       setErrorMsg(null);
       setShowPostCheckout(false);
 
@@ -259,15 +345,15 @@ export default function PricingPage() {
       } else if (data?.ok) {
         setInfoMsg(
           data?.status === "paid_test"
-            ? "Paiement test confirm\u00e9. Ton pass est actif (test)."
-            : "Paiement confirm\u00e9. Ton pass est actif."
+            ? "Paiement test confirmé. Votre Pass est actif (test)."
+            : "Paiement confirmé. Votre Pass est actif."
         );
         setShowPostCheckout(true);
         clearPartnerReferral();
         await loadAccountData();
         await refreshPass();
       } else {
-        setErrorMsg("Paiement non confirm\u00e9. Aucun d\u00e9bit effectu\u00e9.");
+        setErrorMsg("Paiement non confirmé. Aucun débit effectué.");
       }
 
       setIsVerifying(false);
@@ -287,21 +373,24 @@ export default function PricingPage() {
   const isBusy = isCheckingOut || isVerifying;
   const isAccountPending = Boolean(session?.user) && accountLoading;
   const displayMarket = paymentMarket.resolution.market;
+  const accessSummary = isAccountPending
+    ? "Accès actuel · Vérification en cours…"
+    : hasActivePass && currentPass
+      ? `Votre accès JobRadar est actif jusqu'au ${formatDate(currentPass.ends_at)}`
+      : "Accès actuel · Aucun Pass actif";
 
   const handleSelectPaymentMarket = async (market: "eur" | "xof") => {
     try {
       await paymentMarket.setPreference(market);
       setInfoMsg(
         market === "eur"
-          ? "Ton choix EUR est enregistré pour l'affichage. Le paiement en ligne reste facturé en FCFA (XOF)."
-          : "Ton choix XOF est enregistré."
+          ? "Votre choix EUR est enregistré pour l'affichage."
+          : "Votre choix XOF est enregistré."
       );
       setErrorMsg(null);
     } catch (error) {
       console.error("[JobRadar] payment preference save failed", error);
-      setErrorMsg(
-        "Impossible d'enregistrer ta préférence pour l'instant. Tu peux continuer : le paiement reste en FCFA (XOF)."
-      );
+      setErrorMsg("Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.");
     }
   };
 
@@ -313,13 +402,13 @@ export default function PricingPage() {
     if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
-      setErrorMsg("Paystack n'est pas configur\u00e9 sur le front.");
+      setErrorMsg("Paystack n'est pas configuré sur le front.");
       return;
     }
 
     if (currentPass && currentPass.status === "active") {
       setInfoMsg(
-        `Ton acc\u00e8s JobRadar est d\u00e9j\u00e0 actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
+        `Votre accès JobRadar est déjà actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
           currentPass.ends_at
         )}.`
       );
@@ -328,14 +417,14 @@ export default function PricingPage() {
     }
 
     if (hasRecentTestPayment) {
-      setInfoMsg("Un paiement test r\u00e9cent existe d\u00e9j\u00e0. Attends quelques minutes avant de recommencer.");
+      setInfoMsg("Un paiement test récent existe déjà. Attendez quelques minutes avant de recommencer.");
       setShowPostCheckout(false);
       return;
     }
 
     const pendingRef = sessionStorage.getItem("paystack_ref");
     if (pendingRef) {
-      setInfoMsg("Un paiement est d\u00e9j\u00e0 en cours. Termine-le avant d'en d\u00e9marrer un autre.");
+      setInfoMsg("Un paiement est déjà en cours. Terminez-le avant d'en démarrer un autre.");
       setShowPostCheckout(false);
       return;
     }
@@ -392,55 +481,86 @@ export default function PricingPage() {
     <div className="pricing-shell">
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
-          <div className="pricing-hero__brand">GO4JOB - JOBRADAR</div>
-          <div className="pricing-hero__eyebrow">{PRICING_SECTION_EYEBROW}</div>
-          <h1>{PRICING_SECTION_TITLE}</h1>
-          <p>{PRICING_SECTION_SUBTITLE}</p>
-          <div className="pricing-hero__signals" aria-label="Points de reassurance">
-            {PRICING_REASSURANCE_POINTS.map((item) => (
-              <span key={item} className="pricing-hero__signal">
-                {item}
-              </span>
-            ))}
-          </div>
+          <div className="pricing-hero__brand">GO4JOB · JOBRADAR</div>
+          <h1>Mon espace JobRadar</h1>
+          <p>Choisissez votre Pass, suivez votre accès et retrouvez vos paiements en un seul endroit.</p>
         </div>
       </header>
 
       <main className="pricing-main">
+        <section className="pricing-access-bar" aria-label="Accès actuel">
+          <div className="pricing-access-bar__status">
+            <span
+              className={`pricing-access-bar__dot ${
+                hasActivePass && currentPass ? "pricing-access-bar__dot--active" : ""
+              }`}
+              aria-hidden="true"
+            />
+            <span>{accessSummary}</span>
+            {passStatusDisplay && <span className={`pass-pill pass-pill--${passStatus?.tone}`}>{passStatusDisplay}</span>}
+          </div>
+          <a className="pricing-access-bar__link" href="#payment-history">
+            Voir l'historique ↓
+          </a>
+        </section>
+
         {settings && !paymentsEnabled && <div className="pricing-banner">{maintenanceMessage}</div>}
 
         {isPaystackTest && (
           <div className="pricing-info">
-            <strong>Mode test actif.</strong> Aucun d\u00e9bit r\u00e9el n'est effectu\u00e9.
+            <strong>Mode test actif.</strong> Aucun débit réel n'est effectué.
           </div>
         )}
-        {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configur\u00e9.</div>}
+        {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configuré.</div>}
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
-
-        <PaymentMarketPanel
-          resolution={paymentMarket.resolution}
-          loading={paymentMarket.loading}
-          savingPreference={paymentMarket.savingPreference}
-          error={paymentMarket.error}
-          canPersistPreference={paymentMarket.canPersistPreference}
-          onSelect={handleSelectPaymentMarket}
-        />
 
         {showPostCheckout && <PricingPostCheckoutActions />}
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
-            {"Ton acc\u00e8s JobRadar est d\u00e9j\u00e0 actif"}
+            {"Votre accès JobRadar est déjà actif"}
             {isTestPass ? " (test)" : ""} jusqu'au{" "}
             <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
-        {loading ? (
-          <div className="pricing-loading">Chargement...</div>
-        ) : (
-          <>
+        <section className="pricing-proof" aria-label="Preuve produit JobRadar">
+          <div className="pricing-section-heading">
+            <h2>JobRadar cherche pour vous. Vous choisissez. Vous postulez.</h2>
+            <p className="pricing-proof__compact">
+              Plus de 100 000 offres actives — Europe, Afrique de l'Ouest et États-Unis
+            </p>
+            <p>Alertes ciblées selon votre profil et votre zone de recherche.</p>
+          </div>
+          <div className="pricing-proof__cards">
+            {PRODUCT_PROOF_ITEMS.map((item) => (
+              <div className="pricing-proof__card" key={item.value}>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="pricing-plans" aria-label="Pass JobRadar">
+          <div className="pricing-section-heading">
+            <h2>Votre accès à toutes les opportunités</h2>
+            <p>Tarifs clairs, sans renouvellement automatique. Vous décidez.</p>
+          </div>
+
+          <PaymentMarketPanel
+            resolution={paymentMarket.resolution}
+            loading={paymentMarket.loading}
+            savingPreference={paymentMarket.savingPreference}
+            error={paymentMarket.error}
+            canPersistPreference={paymentMarket.canPersistPreference}
+            onSelect={handleSelectPaymentMarket}
+          />
+
+          {loading ? (
+            <div className="pricing-loading">Chargement...</div>
+          ) : (
             <section className="pricing-grid">
               {plans.map((plan) => {
                 const prices = plan.billing_plan_prices ?? [];
@@ -467,7 +587,7 @@ export default function PricingPage() {
                   statusLabel = "Indisponible temporairement";
                   statusTone = "paused";
                 } else if (!planActive || !priceActive) {
-                  statusLabel = "Bient\u00f4t disponible";
+                  statusLabel = "Bientôt disponible";
                   statusTone = "soon";
                 }
 
@@ -487,21 +607,21 @@ export default function PricingPage() {
 
                     <div className="pricing-card__meta">{marketing.durationLabel}</div>
                     <div className="pricing-card__title">{marketing.title}</div>
+                    <div className="pricing-card__short">{marketing.shortLine}</div>
+                    <div className="pricing-card__headline">{marketing.headline}</div>
                     <div className="pricing-card__benefit">{marketing.description}</div>
-                    <div className="pricing-card__access">{PRICING_ACCESS_MESSAGE}</div>
 
                     <div className="pricing-card__priceWrap">
                       <div className="pricing-card__price">{displayPrice?.primaryLabel ?? "--"}</div>
-                      <div className="pricing-card__priceNote">{PRICING_PRICE_NOTE}</div>
                     </div>
 
                     <div className="pricing-card__details">
                       <div className="pricing-card__detail">
-                        <span>{"Dur\u00e9e"}</span>
+                        <span>Durée</span>
                         <strong>{plan.duration_days} jours</strong>
                       </div>
                       <div className="pricing-card__detail">
-                        <span>{"Acc\u00e8s"}</span>
+                        <span>Accès</span>
                         <strong>Complet</strong>
                       </div>
                     </div>
@@ -516,120 +636,126 @@ export default function PricingPage() {
                         ? "Vérification..."
                         : busyCode === plan.code || isBusy
                           ? "Traitement en cours..."
-                          : displayPrice?.ctaLabel ?? marketing.ctaLabel}
+                          : marketing.ctaLabel}
                     </button>
 
-                    <div className="pricing-card__footnote">{displayPrice?.paystackNotice ?? marketing.launchNote}</div>
+                    <div className="pricing-card__footnote">{PRICING_PRICE_NOTE}</div>
                   </div>
                 );
               })}
             </section>
-
-            <section className="pricing-payments" aria-label={"Moyens de paiement accept\u00e9s"}>
-              <div className="pricing-payments__head">
-                <div className="pricing-payments__title">{"Moyens de paiement accept\u00e9s"}</div>
-                <div className="pricing-payments__sub">
-                  Paiement s\u00e9curis\u00e9 par carte bancaire et Mobile Money via notre passerelle.
-                </div>
-              </div>
-              <div className="pricing-payments__logos">
-                <div className="pricing-payments__logoCard">
-                  <img
-                    className="pricing-payments__logo pricing-payments__logo--cards"
-                    src={cardsLogoSrc}
-                    alt="Visa et Mastercard"
-                    width="188"
-                    height="36"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
-                <div className="pricing-payments__logoCard">
-                  <img
-                    className="pricing-payments__logo pricing-payments__logo--mobile"
-                    src={mobileMoneyLogoSrc}
-                    alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
-                    width="250"
-                    height="52"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
-              </div>
-            </section>
-          </>
-        )}
-
-        <section className="pricing-model" aria-label="Tarification JobRadar">
-          <div className="pricing-model__title">{PRICING_MODEL_TITLE}</div>
-          <p className="pricing-model__text">{PRICING_MODEL_TEXT}</p>
+          )}
         </section>
 
-        <section className="pricing-help" aria-label="Besoin d'aide avant achat">
-          <div className="pricing-help__content">
-            <p className="pricing-help__title">Une question avant d’activer ton accès ?</p>
-            <p className="pricing-help__text">
-              On peut te répondre sur l'abonnement, le paiement ou l'accès avant ton achat.
-            </p>
+        <section className="pricing-trust-strip" aria-label="Confiance paiement">
+          <span>Paiement sécurisé</span>
+          <span>Confirmation par e-mail</span>
+          <span>Accès activé après confirmation du paiement</span>
+        </section>
+
+        <section className="pricing-currency-note" aria-label="Note devise et paiement">
+          {getCurrencyNote(displayMarket)}
+        </section>
+
+        <section className="pricing-payments" aria-label="Moyens de paiement acceptés">
+          <div className="pricing-payments__head">
+            <div className="pricing-payments__title">Comment payer ?</div>
+            <div className="pricing-payments__sub">Carte bancaire et Mobile Money acceptés.</div>
+            <div className="pricing-payments__signal">Paiement sécurisé via Paystack.</div>
           </div>
-          <button
-            type="button"
-            className="pricing-help__cta"
-            onClick={() => navigate("/contact?from=pricing")}
-          >
-            Nous contacter
-          </button>
+          <div className="pricing-payments__logos">
+            <div className="pricing-payments__logoCard">
+              <img
+                className="pricing-payments__logo pricing-payments__logo--cards"
+                src={cardsLogoSrc}
+                alt="Visa et Mastercard"
+                width="188"
+                height="36"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <div className="pricing-payments__logoCard">
+              <img
+                className="pricing-payments__logo pricing-payments__logo--mobile"
+                src={mobileMoneyLogoSrc}
+                alt="Orange Money, MTN Mobile Money, Moov Money et Wave"
+                width="250"
+                height="52"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
         </section>
 
-        <section className="pricing-pass">
+        <section className="pricing-faq" aria-label="Questions fréquentes">
+          <div className="pricing-section-heading">
+            <h2>Questions fréquentes</h2>
+          </div>
+          <div className="pricing-faq__grid">
+            {FAQ_ITEMS.map((item) => (
+              <article className="pricing-faq__item" key={item.question}>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="pricing-history" id="payment-history">
           <div className="pricing-pass__header">
             <div>
-              <h2>{"Mon acc\u00e8s actuel"}</h2>
-              <p className="pricing-pass__sub">
-                {"Retrouve l'\u00e9tat de ton acc\u00e8s complet et la prochaine \u00e9ch\u00e9ance utile."}
-              </p>
+              <h2>Mes paiements</h2>
+              <p className="pricing-pass__sub">Dernières activations et état de votre accès</p>
             </div>
-            {passStatus && (
-              <span className={`pass-pill pass-pill--${passStatus.tone}`}>{passStatusDisplay}</span>
-            )}
           </div>
 
-          {!session?.user && (
+          {accountLoading ? (
+            <div className="pricing-loading">Chargement...</div>
+          ) : payments.length === 0 ? (
             <div className="pass-empty">
-              <p>Connecte-toi pour activer un pass JobRadar en quelques instants.</p>
-              <span>Ton parcours de paiement restera identique après connexion.</span>
-              <button
-                type="button"
-                className="pass-cta"
-                onClick={() => navigate("/auth", { state: { from: "/pricing" } })}
-              >
-                Se connecter
-              </button>
+              <p>Aucun paiement pour le moment.</p>
             </div>
-          )}
-
-          {session?.user && !currentPass && (
-            <div className="pass-empty">
-              <p>{accountLoading ? "Chargement de ton accès..." : "Aucun pass actif"}</p>
-              <span>
-                {accountLoading
-                  ? "On vérifie ton statut d'accès en arrière-plan."
-                  : "Choisis le pass qui te convient pour activer ton accès complet à JobRadar."}
-              </span>
-            </div>
-          )}
-
-          {session?.user && currentPass && (
-            <div className="pass-card">
-              <div className="pass-card__title">{currentPass.plan_name}</div>
-              <div className="pass-card__detail">
-                <span>Expire le</span>
-                <strong>{formatDate(currentPass.ends_at)}</strong>
+          ) : (
+            <div className="pricing-history__table" role="table" aria-label="Historique des paiements">
+              <div className="pricing-history__head" role="row">
+                <span>Date</span>
+                <span>Pass</span>
+                <span>Montant</span>
+                <span>Statut</span>
               </div>
-              <div className="pass-card__detail">
-                <span>Jours restants</span>
-                <strong>{Math.max(0, currentPass.days_remaining)}</strong>
-              </div>
+              {payments.map((payment) => {
+                const paymentStatus = formatPaymentStatus(payment.status);
+                const paymentDate = payment.paid_at || payment.created_at;
+                const planName =
+                  (payment.plan?.code
+                    ? getPlanMarketing(payment.plan.code, payment.plan.name ?? "Pass JobRadar", 0).title
+                    : payment.plan?.name) || "Pass JobRadar";
+
+                return (
+                  <div className="pricing-history__row" key={payment.id} role="row">
+                    <div className="pricing-history__cell">
+                      <span className="pricing-history__label">Date</span>
+                      <span>{formatDate(paymentDate)}</span>
+                    </div>
+                    <div className="pricing-history__cell">
+                      <span className="pricing-history__label">Pass</span>
+                      <span>{planName}</span>
+                    </div>
+                    <div className="pricing-history__cell">
+                      <span className="pricing-history__label">Montant</span>
+                      <span>{formatPaymentAmount(payment.amount_minor, payment.currency)}</span>
+                    </div>
+                    <div className="pricing-history__cell">
+                      <span className="pricing-history__label">Statut</span>
+                      <span className={`pricing-payment-status pricing-payment-status--${paymentStatus.tone}`}>
+                        {paymentStatus.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>

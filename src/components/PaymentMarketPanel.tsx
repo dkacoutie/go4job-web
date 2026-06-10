@@ -1,7 +1,7 @@
 import { type PaymentMarket, type PaymentMarketResolution } from "../lib/paymentMarket";
 
 const PAYMENT_PREFERENCE_ERROR_MESSAGE =
-  "Impossible d'enregistrer ta préférence pour l'instant. Tu peux continuer : le paiement reste en FCFA (XOF).";
+  "Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.";
 
 type PaymentMarketPanelProps = {
   resolution: PaymentMarketResolution;
@@ -15,13 +15,13 @@ type PaymentMarketPanelProps = {
 function sourceLabel(source: PaymentMarketResolution["source"]) {
   switch (source) {
     case "payment_preference":
-      return "selon ton choix enregistré";
+      return "choix enregistré";
     case "last_successful_payment":
-      return "selon ton dernier paiement confirmé";
+      return "dernier paiement confirmé";
     case "country_code":
-      return "selon ton pays de profil";
+      return "pays de profil";
     case "geoip_locale":
-      return "selon ta localisation et la langue du navigateur";
+      return "localisation";
     case "xof_default":
     default:
       return "par défaut";
@@ -37,25 +37,18 @@ export default function PaymentMarketPanel({
   onSelect,
 }: PaymentMarketPanelProps) {
   const isBusy = loading || savingPreference;
-  const titleLabel =
-    resolution.market === "eur" ? "Affichage préféré : EUR" : "Affichage préféré : XOF";
 
   return (
-    <section className="payment-market-panel" aria-label="Devise préférée">
+    <section className="payment-market-panel" aria-label="Devise d'affichage">
       <div className="payment-market-panel__head">
         <div>
-          <div className="payment-market-panel__eyebrow">Devise préférée</div>
-          <div className="payment-market-panel__title">{titleLabel}</div>
+          <div className="payment-market-panel__eyebrow">Afficher les prix en</div>
+          <div className="payment-market-panel__title">{resolution.market === "eur" ? "EUR" : "XOF"}</div>
         </div>
         <div className="payment-market-panel__source">{sourceLabel(resolution.source)}</div>
       </div>
 
-      <p className="payment-market-panel__body">
-        Prix affichés en EUR pour les utilisateurs européens. Le paiement final est traité en{" "}
-        <strong>XOF</strong> via Paystack.
-      </p>
-
-      <div className="payment-market-panel__choices" role="group" aria-label="Choisir une devise d'affichage">
+      <div className="payment-market-panel__choices" role="group" aria-label="Afficher les prix en">
         <button
           type="button"
           className={`payment-market-panel__choice ${resolution.market === "eur" ? "is-active" : ""}`}
@@ -76,13 +69,13 @@ export default function PaymentMarketPanel({
 
       <p className="payment-market-panel__note">
         {resolution.market === "eur"
-          ? "Ton choix EUR est enregistré pour l'affichage."
-          : "Ton affichage reste aligné sur le paiement en FCFA (XOF)."}
+          ? "Les prix sont affichés en euros. Le montant final est affiché avant confirmation du paiement."
+          : "Les prix sont affichés en francs CFA. Le montant final est affiché avant confirmation du paiement."}
       </p>
 
       {!canPersistPreference && (
         <p className="payment-market-panel__note">
-          Ta sélection est gardée pour cette session. Connecte-toi pour l'enregistrer sur ton profil.
+          Votre sélection est gardée pour cette session. Connectez-vous pour l'enregistrer sur votre profil.
         </p>
       )}
 
