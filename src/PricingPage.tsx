@@ -483,10 +483,10 @@ export default function PricingPage() {
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
           <div className="pricing-hero__brand">JOBRADAR</div>
-          <h1>Votre prochaine opportunité vous attend déjà.</h1>
+          <h1>Chercher un emploi ne devrait pas être un emploi à plein temps.</h1>
           <p>
-            Plus de 100 000 offres actives. Alertes ciblées selon votre profil. Choisissez votre
-            Pass et commencez.
+            Pendant que vous cherchez, des offres vous correspondent déjà. Choisissez votre Pass et
+            commencez.
           </p>
         </div>
       </header>
