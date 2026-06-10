@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import PaymentMarketPanel from "./components/PaymentMarketPanel";
 import { clearPartnerReferral, readPartnerReferral } from "./lib/partnerReferral";
 import { usePaymentMarket } from "./lib/paymentMarket";
 import { supabase } from "./lib/supabaseClient";
@@ -61,20 +60,28 @@ type PaymentRow = {
   plan?: { name?: string | null; code?: string | null } | null;
 };
 
-const PRODUCT_PROOF_ITEMS = [
-  {
-    value: "Plus de 100 000",
-    label: "offres actives",
+const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> = {
+  pass_7d: {
+    benefit: "7 jours pour explorer JobRadar sans engagement.",
+    bullets: ["Accès complet aux offres", "Alertes ciblées activées", "Sans engagement"],
   },
-  {
-    value: "3 grandes zones",
-    label: "Europe, Afrique de l'Ouest, États-Unis",
+  pass_30d: {
+    benefit: "30 jours pour suivre vos opportunités plus facilement.",
+    bullets: [
+      "Alertes ciblées selon votre profil",
+      "Zone de recherche personnalisée",
+      "30 jours de suivi continu",
+    ],
   },
-  {
-    value: "Alertes ciblées",
-    label: "selon votre profil et votre zone de recherche",
+  pass_90d: {
+    benefit: "90 jours au meilleur rapport durée/prix.",
+    bullets: [
+      "Tout ce qui est inclus dans Mensuel",
+      "90 jours sans renouveler",
+      "Meilleur rapport durée/prix",
+    ],
   },
-];
+};
 
 const FAQ_ITEMS = [
   {
@@ -140,12 +147,6 @@ function formatPaymentStatus(status?: string | null) {
 
 function formatPaymentAmount(amountMinor: number, currency: string) {
   return currency === "XOF" ? formatCheckoutXof(amountMinor) : formatAmount(amountMinor, currency);
-}
-
-function getCurrencyNote(market: "eur" | "xof") {
-  return market === "eur"
-    ? "Les prix sont affichés en euros. Le montant final est affiché avant confirmation du paiement."
-    : "Les prix sont affichés en francs CFA. Le montant final est affiché avant confirmation du paiement.";
 }
 
 function PricingPostCheckoutActions() {
@@ -374,10 +375,10 @@ export default function PricingPage() {
   const isAccountPending = Boolean(session?.user) && accountLoading;
   const displayMarket = paymentMarket.resolution.market;
   const accessSummary = isAccountPending
-    ? "Accès actuel · Vérification en cours…"
+    ? "Vérification en cours…"
     : hasActivePass && currentPass
-      ? `Votre accès JobRadar est actif jusqu'au ${formatDate(currentPass.ends_at)}`
-      : "Accès actuel · Aucun Pass actif";
+      ? `Actif jusqu'au ${formatDate(currentPass.ends_at)}`
+      : "Aucun Pass actif";
 
   const handleSelectPaymentMarket = async (market: "eur" | "xof") => {
     try {
@@ -408,7 +409,7 @@ export default function PricingPage() {
 
     if (currentPass && currentPass.status === "active") {
       setInfoMsg(
-        `Votre accès JobRadar est déjà actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
+        `Votre Pass est déjà actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
           currentPass.ends_at
         )}.`
       );
@@ -481,9 +482,12 @@ export default function PricingPage() {
     <div className="pricing-shell">
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
-          <div className="pricing-hero__brand">GO4JOB · JOBRADAR</div>
-          <h1>Mon espace JobRadar</h1>
-          <p>Choisissez votre Pass, suivez votre accès et retrouvez vos paiements en un seul endroit.</p>
+          <div className="pricing-hero__brand">JOBRADAR</div>
+          <h1>Votre prochaine opportunité vous attend déjà.</h1>
+          <p>
+            Plus de 100 000 offres actives. Alertes ciblées selon votre profil. Choisissez votre
+            Pass et commencez.
+          </p>
         </div>
       </header>
 
@@ -519,44 +523,55 @@ export default function PricingPage() {
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
-            {"Votre accès JobRadar est déjà actif"}
+            {"Votre Pass est déjà actif"}
             {isTestPass ? " (test)" : ""} jusqu'au{" "}
             <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
-        <section className="pricing-proof" aria-label="Preuve produit JobRadar">
-          <div className="pricing-section-heading">
-            <h2>JobRadar cherche pour vous. Vous choisissez. Vous postulez.</h2>
-            <p className="pricing-proof__compact">
-              Plus de 100 000 offres actives — Europe, Afrique de l'Ouest et États-Unis
-            </p>
-            <p>Alertes ciblées selon votre profil et votre zone de recherche.</p>
-          </div>
-          <div className="pricing-proof__cards">
-            {PRODUCT_PROOF_ITEMS.map((item) => (
-              <div className="pricing-proof__card" key={item.value}>
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
         <section className="pricing-plans" aria-label="Pass JobRadar">
-          <div className="pricing-section-heading">
-            <h2>Votre accès à toutes les opportunités</h2>
-            <p>Tarifs clairs, sans renouvellement automatique. Vous décidez.</p>
+          <div className="pricing-plan-intro">
+            Choisissez le Pass qui correspond à votre rythme
           </div>
 
-          <PaymentMarketPanel
-            resolution={paymentMarket.resolution}
-            loading={paymentMarket.loading}
-            savingPreference={paymentMarket.savingPreference}
-            error={paymentMarket.error}
-            canPersistPreference={paymentMarket.canPersistPreference}
-            onSelect={handleSelectPaymentMarket}
-          />
+          <section className="pricing-currency-panel" aria-label="Devise d'affichage">
+            <div className="pricing-currency-panel__copy">
+              <div className="pricing-currency-panel__label">Afficher les prix en</div>
+              <p>Montant final affiché avant confirmation.</p>
+            </div>
+            <div className="pricing-currency-panel__choices" role="group" aria-label="Afficher les prix en">
+              <button
+                type="button"
+                className={`pricing-currency-panel__choice ${
+                  paymentMarket.resolution.market === "eur" ? "is-active" : ""
+                }`}
+                onClick={() => void handleSelectPaymentMarket("eur")}
+                disabled={paymentMarket.loading || paymentMarket.savingPreference}
+              >
+                EUR
+              </button>
+              <button
+                type="button"
+                className={`pricing-currency-panel__choice ${
+                  paymentMarket.resolution.market === "xof" ? "is-active" : ""
+                }`}
+                onClick={() => void handleSelectPaymentMarket("xof")}
+                disabled={paymentMarket.loading || paymentMarket.savingPreference}
+              >
+                XOF
+              </button>
+            </div>
+            {!paymentMarket.canPersistPreference && (
+              <p className="pricing-currency-panel__session">
+                Votre sélection est gardée pour cette session. Connectez-vous pour l'enregistrer.
+              </p>
+            )}
+            {paymentMarket.error && (
+              <div className="pricing-error">
+                Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.
+              </div>
+            )}
+          </section>
 
           {loading ? (
             <div className="pricing-loading">Chargement...</div>
@@ -566,6 +581,10 @@ export default function PricingPage() {
                 const prices = plan.billing_plan_prices ?? [];
                 const price = prices.find((entry) => entry.currency === "XOF") ?? null;
                 const marketing = getPlanMarketing(plan.code, plan.name, plan.duration_days);
+                const planDetails = PLAN_CARD_DETAILS[plan.code] ?? {
+                  benefit: marketing.headline,
+                  bullets: [marketing.description, "Sans engagement", PRICING_PRICE_NOTE],
+                };
                 const displayPrice = price
                   ? getPremiumDisplayPrice(plan.code, price.amount_minor, displayMarket)
                   : null;
@@ -600,31 +619,27 @@ export default function PricingPage() {
                     data-disabled={!canBuy}
                   >
                     <div className="pricing-card__top">
-                      <div className={`pricing-card__status pricing-card__status--${statusTone}`}>
-                        {statusLabel}
-                      </div>
+                      {isFeatured || statusTone !== "available" ? (
+                        <div className={`pricing-card__status pricing-card__status--${statusTone}`}>
+                          {statusLabel}
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="pricing-card__meta">{marketing.durationLabel}</div>
                     <div className="pricing-card__title">{marketing.title}</div>
                     <div className="pricing-card__short">{marketing.shortLine}</div>
-                    <div className="pricing-card__headline">{marketing.headline}</div>
-                    <div className="pricing-card__benefit">{marketing.description}</div>
 
                     <div className="pricing-card__priceWrap">
                       <div className="pricing-card__price">{displayPrice?.primaryLabel ?? "--"}</div>
                     </div>
 
-                    <div className="pricing-card__details">
-                      <div className="pricing-card__detail">
-                        <span>Durée</span>
-                        <strong>{plan.duration_days} jours</strong>
-                      </div>
-                      <div className="pricing-card__detail">
-                        <span>Accès</span>
-                        <strong>Complet</strong>
-                      </div>
-                    </div>
+                    <div className="pricing-card__benefit">{planDetails.benefit}</div>
+                    <ul className="pricing-card__bullets">
+                      {planDetails.bullets.map((bullet) => (
+                        <li key={bullet}>{bullet}</li>
+                      ))}
+                    </ul>
 
                     <button
                       type="button"
@@ -650,18 +665,15 @@ export default function PricingPage() {
         <section className="pricing-trust-strip" aria-label="Confiance paiement">
           <span>Paiement sécurisé</span>
           <span>Confirmation par e-mail</span>
-          <span>Accès activé après confirmation du paiement</span>
-        </section>
-
-        <section className="pricing-currency-note" aria-label="Note devise et paiement">
-          {getCurrencyNote(displayMarket)}
+          <span>Accès activé après confirmation</span>
         </section>
 
         <section className="pricing-payments" aria-label="Moyens de paiement acceptés">
           <div className="pricing-payments__head">
             <div className="pricing-payments__title">Comment payer ?</div>
-            <div className="pricing-payments__sub">Carte bancaire et Mobile Money acceptés.</div>
-            <div className="pricing-payments__signal">Paiement sécurisé via Paystack.</div>
+            <div className="pricing-payments__sub">
+              Carte bancaire et Mobile Money acceptés. Paiement sécurisé via Paystack.
+            </div>
           </div>
           <div className="pricing-payments__logos">
             <div className="pricing-payments__logoCard">
