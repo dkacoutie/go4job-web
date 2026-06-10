@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { formatAmount } from "./lib/pricingHelpers";
 import { useSession } from "./lib/useSession";
-import PricingPlansBlock from "./components/PricingPlansBlock";
 import "./SubscriptionPage.css";
 
 type CurrentPass = {
@@ -40,9 +39,9 @@ function formatPassStatus(status?: string | null) {
     case "active":
       return { label: "Actif", tone: "active" };
     case "expired":
-      return { label: "Expire", tone: "expired" };
+      return { label: "Expiré", tone: "expired" };
     case "cancelled":
-      return { label: "Annule", tone: "expired" };
+      return { label: "Annulé", tone: "expired" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
@@ -51,15 +50,15 @@ function formatPassStatus(status?: string | null) {
 function formatPaymentStatus(status?: string | null) {
   switch (status) {
     case "paid":
-      return { label: "Paye", tone: "success" };
+      return { label: "Payé", tone: "success" };
     case "paid_test":
-      return { label: "Paye (test)", tone: "success" };
+      return { label: "Payé (test)", tone: "success" };
     case "pending":
       return { label: "En attente", tone: "pending" };
     case "failed":
-      return { label: "Echoue", tone: "danger" };
+      return { label: "Échoué", tone: "danger" };
     case "cancelled":
-      return { label: "Annule", tone: "danger" };
+      return { label: "Annulé", tone: "danger" };
     default:
       return { label: status ?? "Inconnu", tone: "neutral" };
   }
@@ -68,6 +67,7 @@ function formatPaymentStatus(status?: string | null) {
 export default function SubscriptionPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
+  const userId = session?.user?.id;
 
   const [currentPass, setCurrentPass] = useState<CurrentPass | null>(null);
   const [isTestPass, setIsTestPass] = useState(false);
@@ -81,8 +81,8 @@ export default function SubscriptionPage() {
     }
   }, [loading, session, navigate]);
 
-  const loadData = async () => {
-    if (!session?.user) {
+  const loadData = useCallback(async () => {
+    if (!userId) {
       setCurrentPass(null);
       setIsTestPass(false);
       setPayments([]);
@@ -105,7 +105,7 @@ export default function SubscriptionPage() {
     const { data: subData } = await supabase
       .from("billing_subscriptions")
       .select("id, ends_at, source_payment:billing_payments(status, provider_payload)")
-      .eq("user_id", session.user.id)
+      .eq("user_id", userId)
       .eq("status", "active")
       .gt("ends_at", nowIso)
       .maybeSingle();
@@ -130,40 +130,34 @@ export default function SubscriptionPage() {
     setPayments((paymentsData as PaymentRow[]) ?? []);
 
     setPageLoading(false);
-  };
+  }, [userId]);
 
   useEffect(() => {
     if (!loading) {
-      loadData();
+      queueMicrotask(() => {
+        void loadData();
+      });
     }
-  }, [loading, session?.user?.id]);
+  }, [loading, loadData]);
 
   const passStatus = currentPass ? formatPassStatus(currentPass.status) : null;
   const hasActivePass = Boolean(currentPass && currentPass.status === "active");
   const passStatusDisplay =
     isTestPass && passStatus?.label === "Actif" ? "Actif (test)" : passStatus?.label;
 
-  const primaryCta = useMemo(
-    () =>
-      hasActivePass
-        ? { label: "Voir mes offres", to: "/jobradar/feed" }
-        : { label: "Choisir un pass", to: "/pricing" },
-    [hasActivePass]
-  );
-
   return (
     <div className="subscription-shell">
       <header className="subscription-hero">
         <div className="subscription-hero__inner">
           <div className="subscription-hero__kicker">JOBRADAR</div>
-          <h1>Mon acces JobRadar</h1>
-          <p>Retrouve ton acces actif, les dates utiles et tes paiements recents au meme endroit.</p>
+          <h1>Mon accès JobRadar</h1>
+          <p>Retrouvez votre accès actif, les dates utiles et vos paiements au même endroit.</p>
           <button
             type="button"
             className="btn btnPrimary subscription-hero__cta"
-            onClick={() => navigate(primaryCta.to)}
+            onClick={() => navigate(hasActivePass ? "/jobradar/feed" : "/pricing")}
           >
-            {primaryCta.label}
+            {hasActivePass ? "Voir mes offres" : "Choisir ou renouveler un Pass"}
           </button>
         </div>
       </header>
@@ -174,9 +168,9 @@ export default function SubscriptionPage() {
         <section className="subscription-card">
           <div className="subscription-card__head">
             <div>
-              <h2>Mon acces actuel</h2>
+              <h2>Mon accès actuel</h2>
               <p className="subscription-card__sub">
-                Etat de ton acces complet et prochaine echeance importante.
+                État de votre accès complet et prochaine échéance importante.
               </p>
             </div>
             {passStatus && (
@@ -192,10 +186,7 @@ export default function SubscriptionPage() {
             <div className="subscription-empty">
               <div className="subscription-empty__title">Aucun pass actif</div>
               <div className="subscription-empty__text">
-                Choisis le pass qui te convient pour activer ton acces complet a JobRadar.
-              </div>
-              <div className="subscription-plans">
-                <PricingPlansBlock />
+                Vous pouvez choisir ou renouveler votre Pass depuis la page JobRadar dédiée.
               </div>
             </div>
           ) : (
@@ -226,9 +217,27 @@ export default function SubscriptionPage() {
         <section className="subscription-card">
           <div className="subscription-card__head">
             <div>
-              <h2>Mes paiements recents</h2>
+              <h2>Gérer mon Pass JobRadar</h2>
               <p className="subscription-card__sub">
-                Historique simplifie des derniers paiements et activations.
+                Choisissez, renouvelez ou consultez les Pass disponibles depuis la nouvelle page JobRadar.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btnPrimary subscription-hero__cta"
+            onClick={() => navigate("/pricing")}
+          >
+            Choisir ou renouveler un Pass
+          </button>
+        </section>
+
+        <section className="subscription-card">
+          <div className="subscription-card__head">
+            <div>
+              <h2>Mes paiements</h2>
+              <p className="subscription-card__sub">
+                Historique simplifié des derniers paiements et activations.
               </p>
             </div>
           </div>
@@ -237,9 +246,9 @@ export default function SubscriptionPage() {
             <div className="subscription-loading">Chargement...</div>
           ) : payments.length === 0 ? (
             <div className="subscription-empty">
-              <div className="subscription-empty__title">Aucun paiement enregistre</div>
+              <div className="subscription-empty__title">Aucun paiement enregistré</div>
               <div className="subscription-empty__text">
-                Tes futurs paiements apparaitront ici des qu'un pass sera active.
+                Vos futurs paiements apparaîtront ici dès qu'un Pass sera activé.
               </div>
             </div>
           ) : (
@@ -249,7 +258,7 @@ export default function SubscriptionPage() {
                 <span>Pass</span>
                 <span>Montant</span>
                 <span>Statut</span>
-                <span>Reference</span>
+                <span>Référence</span>
               </div>
 
               {payments.map((payment) => {
@@ -284,7 +293,7 @@ export default function SubscriptionPage() {
                       </span>
                     </div>
                     <div className="subscription-payments__cell">
-                      <span className="subscription-payments__label">Reference</span>
+                      <span className="subscription-payments__label">Référence</span>
                       <span className="subscription-payments__value subscription-payments__ref">
                         {paymentRef}
                       </span>

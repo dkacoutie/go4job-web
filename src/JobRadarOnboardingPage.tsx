@@ -1,7 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
-import PricingPlansBlock from "./components/PricingPlansBlock";
 import OnboardingStepper from "./components/OnboardingStepper";
 import { useToast } from "./components/ToastCenter";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
@@ -20,7 +19,6 @@ import {
   EMPLOYMENT_TYPE_OPTIONS,
   EXPERIENCE_LEVEL_OPTIONS,
   JOBRADAR_FLOW_STEPS,
-  JOBRADAR_ONBOARDING_ROUTE,
   ONBOARDING_COUNTRY_OPTIONS,
   SECTOR_OPTIONS,
   WORK_MODE_OPTIONS,
@@ -573,7 +571,7 @@ export default function JobRadarOnboardingPage() {
     [desiredRole, countryCodes, experienceLevel, employmentTypes, workModes, keywords, sectors]
   );
 
-  const suggestedSectors = suggestionBundle?.sectors ?? [];
+  const suggestedSectors = useMemo(() => suggestionBundle?.sectors ?? [], [suggestionBundle]);
   const additionalSectors = useMemo(
     () => SECTOR_OPTIONS.filter((sector) => !suggestedSectors.includes(sector)),
     [suggestedSectors]
@@ -583,16 +581,18 @@ export default function JobRadarOnboardingPage() {
   const geographyLabel = buildCountrySelectionLabel(countryCodes);
 
   useEffect(() => {
-    const profile = onboarding.onboarding.profile ?? {};
-    const preferences = onboarding.onboarding.preferences ?? {};
-    setDesiredRole(profile.desiredRole ?? "");
-    setCountryCodes(profile.countryCodes ?? []);
-    setExperienceLevel(profile.experienceLevel ?? "");
-    setEmploymentTypes((profile.employmentTypes ?? []) as EmploymentType[]);
-    setKeywords(preferences.keywords ?? []);
-    setWorkModes((preferences.workModes ?? []) as WorkMode[]);
-    setSectors(preferences.sectors ?? []);
-    setAlertDrafts(preferences.alertDrafts ?? []);
+    queueMicrotask(() => {
+      const profile = onboarding.onboarding.profile ?? {};
+      const preferences = onboarding.onboarding.preferences ?? {};
+      setDesiredRole(profile.desiredRole ?? "");
+      setCountryCodes(profile.countryCodes ?? []);
+      setExperienceLevel(profile.experienceLevel ?? "");
+      setEmploymentTypes((profile.employmentTypes ?? []) as EmploymentType[]);
+      setKeywords(preferences.keywords ?? []);
+      setWorkModes((preferences.workModes ?? []) as WorkMode[]);
+      setSectors(preferences.sectors ?? []);
+      setAlertDrafts(preferences.alertDrafts ?? []);
+    });
   }, [onboarding.onboarding]);
 
   useEffect(() => {
@@ -699,7 +699,7 @@ export default function JobRadarOnboardingPage() {
     return () => {
       active = false;
     };
-  }, [currentStep, desiredRole, deferredKeywords, workModes, countryCodes, experienceLevel, previewReloadKey]);
+  }, [currentStep, desiredRole, deferredKeywords, workModes, countryCodes, experienceLevel, employmentTypes, previewReloadKey]);
 
   const previewContent = useMemo(() => {
     if (previewMode === "match") {
@@ -1220,13 +1220,18 @@ export default function JobRadarOnboardingPage() {
           <span>Profil, CV et critères permettent une sélection plus précise.</span>
         </div>
       </div>
-      <PricingPlansBlock
-        title="Débloquer toutes les offres"
-        subtitle="Active ton pass pour accéder à toutes les offres, aux alertes et à une sélection plus précise."
-        postCheckoutPrimaryTo={`${JOBRADAR_ONBOARDING_ROUTE}?step=complete-profile`}
-        postCheckoutSecondaryTo="/me/subscription"
-        postCheckoutPrimaryLabel="Continuer mon parcours"
-      />
+      <div className="jrOnbValuePanel">
+        <h2>Choisissez votre Pass depuis la page JobRadar.</h2>
+        <p>
+          Le choix, le renouvellement et l'achat d'un Pass se font maintenant sur la page unique des Pass
+          JobRadar.
+        </p>
+        <div className="jrOnbActions">
+          <button className="btn btnPrimary" type="button" onClick={() => navigate("/pricing")}>
+            Choisir mon Pass JobRadar
+          </button>
+        </div>
+      </div>
     </Panel>
   );
 
