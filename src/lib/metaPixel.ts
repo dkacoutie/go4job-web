@@ -36,6 +36,10 @@ function getMetaPixelId() {
   return (import.meta.env.VITE_META_PIXEL_ID ?? DEFAULT_META_PIXEL_ID).trim();
 }
 
+function hasMetaPixelId() {
+  return Boolean(getMetaPixelId());
+}
+
 function getMetaWindow() {
   return window as MetaPixelWindow;
 }
@@ -84,6 +88,8 @@ function flushPendingMetaEvents() {
 }
 
 function queueMetaEvent(method: MetaPixelTrackMethod, eventName: string, eventParams?: MetaPixelParams) {
+  if (!hasMetaPixelId()) return;
+
   const win = getMetaWindow();
 
   if (win.__jrMetaPixelInitialized && typeof win.fbq === "function") {
@@ -128,7 +134,7 @@ export function initMetaPixel(pixelId = getMetaPixelId()) {
 }
 
 export function trackMetaPageView(pathname: string, search: string) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !hasMetaPixelId()) return;
 
   const pageKey = `${pathname}${search}`;
   const win = getMetaWindow();

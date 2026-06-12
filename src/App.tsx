@@ -30,6 +30,8 @@ const ContactPage = lazy(() => import("./ContactPage"));
 const LegalPage = lazy(() => import("./LegalPage"));
 const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
 const LandingPage = lazy(() => import("./LandingPage"));
+const CvAtsLandingPage = lazy(() => import("./CvAtsLandingPage"));
+const CvAtsThankYouPage = lazy(() => import("./CvAtsThankYouPage"));
 const ResetPasswordPage = lazy(() => import("./ResetPasswordPage"));
 const ProfilePage = lazy(() => import("./ProfilePage"));
 const ApplicationsPage = lazy(() => import("./ApplicationsPage"));
@@ -243,6 +245,23 @@ export default function App() {
                   }
                 />
               </Route>
+
+              <Route
+                path="/cv-ats"
+                element={
+                  <LazyRoute>
+                    <CvAtsLandingPage />
+                  </LazyRoute>
+                }
+              />
+              <Route
+                path="/cv-ats/merci"
+                element={
+                  <LazyRoute>
+                    <CvAtsThankYouPage />
+                  </LazyRoute>
+                }
+              />
 
               <Route
                 element={
