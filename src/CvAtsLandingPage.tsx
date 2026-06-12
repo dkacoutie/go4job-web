@@ -2,7 +2,7 @@
 import { useNavigate } from "react-router-dom";
 
 import capCarriereLogo from "./assets/capcarriere-logo.png";
-import { supabase } from "./lib/supabaseClient";
+import { supabase, supabaseConfigError } from "./lib/supabaseClient";
 import { trackMetaCustomEvent, trackMetaEvent, trackMetaPageView } from "./lib/metaPixel";
 import "./CvAtsLandingPage.css";
 
@@ -29,6 +29,9 @@ const INITIAL_FORM: LeadFormState = {
 
 const GUIDE_CONTENT_NAME = "capcarriere_cv_ats_guide";
 const JOBRADAR_FEED_PATH = "/jobradar/feed";
+const CVATS_BUILD_MARKER = "cv-ats-111d3c0-plus";
+const SUPABASE_FRONTEND_CONFIG_MESSAGE =
+  "Configuration momentanément indisponible. Réessayez dans quelques minutes ou contactez contact@go4jobapp.com.";
 
 const HERO_BULLETS: Array<{ icon: IconName; text: string }> = [
   {
@@ -277,6 +280,10 @@ export default function CvAtsLandingPage() {
     setSubmitting(true);
 
     try {
+      if (supabaseConfigError) {
+        throw new Error(SUPABASE_FRONTEND_CONFIG_MESSAGE);
+      }
+
       const { data, error } = await supabase.functions.invoke<LeadResponse>("submit-cv-ats-lead", {
         body: {
           first_name: trimmedFirstName,
@@ -328,7 +335,7 @@ export default function CvAtsLandingPage() {
   };
 
   return (
-    <div className="cvats-page">
+    <div className="cvats-page" data-capcarriere-cvats-build={CVATS_BUILD_MARKER}>
       <header className="cvats-header">
         <LogoMark />
         <nav className="cvats-header__nav" aria-label="Navigation CapCarrière">
@@ -397,10 +404,15 @@ export default function CvAtsLandingPage() {
                 />
                 {errors.email && <span className="cvats-field-error">{errors.email}</span>}
               </label>
-              <button className="cvats-primaryBtn" type="submit" disabled={submitting}>
+              <button className="cvats-primaryBtn" type="submit" disabled={submitting || supabaseConfigError}>
                 {submitting ? "Envoi en cours..." : "Recevoir mon guide gratuit →"}
               </button>
               <p className="cvats-microcopy">Votre adresse sert uniquement à l'envoi du guide.</p>
+              {supabaseConfigError && (
+                <div className="cvats-errorBox" role="status">
+                  {SUPABASE_FRONTEND_CONFIG_MESSAGE}
+                </div>
+              )}
               {serverError && (
                 <div className="cvats-errorBox" role="status">
                   {serverError}

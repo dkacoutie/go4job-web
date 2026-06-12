@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import capCarriereLogo from "./assets/capcarriere-logo.png";
-import { supabase } from "./lib/supabaseClient";
+import { supabase, supabaseConfigError } from "./lib/supabaseClient";
 import { trackMetaCustomEvent } from "./lib/metaPixel";
 import "./CvAtsLandingPage.css";
 
@@ -27,6 +27,9 @@ const OPTIONS: Array<{ value: QualificationStatus; label: string }> = [
 ];
 
 const JOBRADAR_FEED_PATH = "/jobradar/feed";
+const CVATS_BUILD_MARKER = "cv-ats-111d3c0-plus";
+const SUPABASE_FRONTEND_CONFIG_MESSAGE =
+  "Configuration momentanément indisponible. Vous pouvez continuer vers JobRadar.";
 
 function getLeadId() {
   try {
@@ -69,6 +72,12 @@ export default function CvAtsThankYouPage() {
       return;
     }
 
+    if (supabaseConfigError) {
+      setStatus("error");
+      setMessage(SUPABASE_FRONTEND_CONFIG_MESSAGE);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke<QualificationResponse>(
@@ -101,7 +110,7 @@ export default function CvAtsThankYouPage() {
   };
 
   return (
-    <div className="cvats-page cvats-thanks">
+    <div className="cvats-page cvats-thanks" data-capcarriere-cvats-build={CVATS_BUILD_MARKER}>
       <header className="cvats-header">
         <LogoMark />
       </header>
@@ -138,9 +147,14 @@ export default function CvAtsThankYouPage() {
                 </label>
               ))}
             </div>
-            <button className="cvats-primaryBtn" type="submit" disabled={submitting || !leadId || status === "success"}>
+            <button
+              className="cvats-primaryBtn"
+              type="submit"
+              disabled={submitting || !leadId || status === "success" || supabaseConfigError}
+            >
               {submitting ? "Validation..." : "Valider ma réponse"}
             </button>
+            {supabaseConfigError && <div className="cvats-softNote">{SUPABASE_FRONTEND_CONFIG_MESSAGE}</div>}
             {!leadId && (
               <div className="cvats-softNote">
                 La qualification est indisponible dans cette session, mais votre guide reste en route.
