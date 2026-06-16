@@ -29,22 +29,28 @@ const INITIAL_FORM: LeadFormState = {
 
 const GUIDE_CONTENT_NAME = "capcarriere_cv_ats_guide";
 const JOBRADAR_FEED_PATH = "/jobradar/feed";
-const CVATS_BUILD_MARKER = "cv-ats-111d3c0-plus";
+const CVATS_BUILD_MARKER = "cv-ats-v2-1-whatsapp";
+const WHATSAPP_PHONE = "2250151676767";
+const WHATSAPP_MESSAGE =
+  "Bonjour, je souhaite recevoir le guide gratuit « Votre CV mérite d'être lu ». Source : Facebook CV ATS.";
+const WHATSAPP_URL = `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`;
+const SUPABASE_REST_URL = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 const SUPABASE_FRONTEND_CONFIG_MESSAGE =
   "Configuration momentanément indisponible. Réessayez dans quelques minutes ou contactez contact@go4jobapp.com.";
 
 const HERO_BULLETS: Array<{ icon: IconName; text: string }> = [
   {
     icon: "eye",
-    text: "Ce qui rend votre CV difficile à lire — et comment y remédier",
+    text: "Comprendre pourquoi votre CV peut rester invisible",
   },
   {
     icon: "list",
-    text: "Une structure claire, applicable sans tout réécrire",
+    text: "Corriger les points essentiels avant la prochaine candidature",
   },
   {
     icon: "target",
-    text: "Un format lisible par les recruteurs et les outils de tri automatique",
+    text: "Rendre votre valeur plus claire dès les premières secondes",
   },
 ];
 
@@ -73,20 +79,20 @@ const VALUE_CARDS: Array<{ icon: IconName; title: string; text: string }> = [
 
 const GUIDE_CARDS = [
   {
-    title: "Comment un CV est lu",
-    text: "Comprenez comment un recruteur et un logiciel de tri parcourent votre document.",
+    title: "Les erreurs qui font passer un CV inaperçu",
+    text: "Repérez les détails qui empêchent un recruteur de comprendre rapidement votre valeur.",
   },
   {
-    title: "Erreurs de structure",
-    text: "Identifiez les erreurs les plus fréquentes qui nuisent à la lisibilité.",
+    title: "Comment rendre votre parcours plus clair en quelques minutes",
+    text: "Réorganisez l'essentiel sans devoir tout réécrire.",
   },
   {
-    title: "Présenter vos expériences",
-    text: "Mettez en valeur ce qui compte vraiment pour un recruteur.",
+    title: "Ce que le recruteur doit comprendre dès les premières secondes",
+    text: "Mettez en avant les informations qui donnent envie de lire la suite.",
   },
   {
-    title: "Adapter à une offre",
-    text: "Apprenez à ajuster votre CV à une offre précise, sans tout réécrire.",
+    title: "Une checklist simple avant votre prochaine candidature",
+    text: "Vérifiez les points clés avant d'envoyer votre CV.",
   },
 ];
 
@@ -99,29 +105,24 @@ const PROBLEM_ITEMS = [
 
 const FAQ_ITEMS = [
   {
-    question: "Le guide est-il vraiment gratuit ?",
+    question: "Est-ce vraiment gratuit ?",
     answer:
-      "Oui, totalement. Vous entrez votre prénom et votre adresse email, et vous recevez le guide immédiatement. Aucune carte bancaire n'est demandée.",
+      "Oui. Le guide est gratuit et aucune carte bancaire n'est demandée.",
   },
   {
-    question: "À qui s'adresse ce guide ?",
+    question: "Comment vais-je recevoir le guide ?",
     answer:
-      "À toute personne qui cherche un emploi, prépare une candidature ou souhaite améliorer la présentation de son parcours — que vous soyez en recherche active, jeune diplômé, en reconversion ou simplement en veille.",
+      "Vous pouvez ouvrir une conversation WhatsApp avec le message prérempli, ou choisir l'email avec le formulaire prénom + adresse email.",
   },
   {
-    question: "Est-ce que ce guide garantit un emploi ?",
+    question: "Mes coordonnées sont-elles protégées ?",
     answer:
-      "Non. Ce guide vous aide à améliorer la lisibilité et la structure de votre CV. Il ne garantit pas de résultats et ne remplace pas votre effort personnel ni les autres étapes d'une candidature réussie.",
+      "Oui. Elles servent uniquement à vous envoyer le guide et à comprendre l'origine de votre demande.",
   },
   {
-    question: "Vais-je recevoir d'autres emails ?",
+    question: "Est-ce adapté à mon secteur ?",
     answer:
-      "Vous pourrez recevoir ponctuellement des conseils liés à votre recherche d'emploi. Vous pouvez vous désinscrire à tout moment en un clic depuis n'importe quel email.",
-  },
-  {
-    question: "C'est quoi JobRadar ?",
-    answer:
-      "JobRadar est un outil de veille emploi qui fait partie de l'écosystème Go4Job. Il vous aide à suivre les offres qui correspondent à votre profil en Côte d'Ivoire et en France.",
+      "Oui. Les conseils portent sur la clarté, la structure et la lisibilité du CV, quel que soit votre domaine.",
   },
 ];
 
@@ -152,6 +153,62 @@ function collectAttribution() {
     meta_fbp: getCookie("_fbp"),
     meta_fbc: getCookie("_fbc"),
   };
+}
+
+function buildWhatsappEventPayload(buttonLocation: string) {
+  const collectedAttribution = collectAttribution();
+
+  return {
+    event_type: "whatsapp_cta_click",
+    source: "cv_ats_landing",
+    utm_source: collectedAttribution.utm_source,
+    utm_medium: collectedAttribution.utm_medium,
+    utm_campaign: collectedAttribution.utm_campaign,
+    utm_content: collectedAttribution.utm_content,
+    metadata: {
+      button_location: buttonLocation,
+      guide: GUIDE_CONTENT_NAME,
+      page_path: window.location.pathname,
+      page_url: window.location.href,
+      clicked_at: new Date().toISOString(),
+      utm_term: collectedAttribution.utm_term,
+      referrer: collectedAttribution.referrer,
+      user_agent: collectedAttribution.user_agent,
+      meta_fbp: collectedAttribution.meta_fbp,
+      meta_fbc: collectedAttribution.meta_fbc,
+    },
+  };
+}
+
+function logWhatsappTrackingFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn("CV ATS WhatsApp event tracking failed", message);
+}
+
+function trackWhatsappEvent(buttonLocation: string) {
+  if (supabaseConfigError || !SUPABASE_REST_URL || !SUPABASE_ANON_KEY) return;
+
+  try {
+    void fetch(`${SUPABASE_REST_URL}/rest/v1/cv_ats_events`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(buildWhatsappEventPayload(buttonLocation)),
+      keepalive: true,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          logWhatsappTrackingFailure(`${response.status} ${response.statusText}`);
+        }
+      })
+      .catch(logWhatsappTrackingFailure);
+  } catch (error) {
+    logWhatsappTrackingFailure(error);
+  }
 }
 
 function mapLeadError(message: string) {
@@ -217,31 +274,6 @@ function ChevronIcon() {
     <svg className="faq-chevron" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       <path d="M6 4l4 4-4 4" />
     </svg>
-  );
-}
-
-function GuideMockup() {
-  return (
-    <div className="cvats-pdfMockup" aria-hidden="true">
-      <div className="cvats-pdfMockup__card">
-        <span className="cvats-pdfMockup__badge">Guide CapCarrière</span>
-        <strong className="cvats-pdfMockup__title">Votre CV mérite d'être lu</strong>
-        <hr />
-        <div className="cvats-pdfMockup__block cvats-pdfMockup__block--before">
-          <span>Avant</span>
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="cvats-pdfMockup__block cvats-pdfMockup__block--after">
-          <span>Après</span>
-          <i />
-          <i />
-          <i />
-        </div>
-        <small>capcarriere.go4job.com</small>
-      </div>
-    </div>
   );
 }
 
@@ -334,25 +366,40 @@ export default function CvAtsLandingPage() {
     trackMetaCustomEvent("CVATSFinalCtaClick", { content_name: GUIDE_CONTENT_NAME });
   };
 
+  const trackWhatsappClick = (buttonLocation: string) => {
+    try {
+      trackMetaCustomEvent("whatsapp_cta_click", {
+        content_name: GUIDE_CONTENT_NAME,
+        button_location: buttonLocation,
+      });
+    } catch (error) {
+      logWhatsappTrackingFailure(error);
+    }
+
+    trackWhatsappEvent(buttonLocation);
+  };
+
   return (
     <div className="cvats-page" data-capcarriere-cvats-build={CVATS_BUILD_MARKER}>
       <header className="cvats-header">
         <LogoMark />
         <nav className="cvats-header__nav" aria-label="Navigation CapCarrière">
-          <a href="#cvats-guide-form">Recevoir le guide</a>
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" onClick={() => trackWhatsappClick("header")}>
+            Recevoir le guide
+          </a>
         </nav>
       </header>
 
       <main>
         <section className="cvats-hero" aria-labelledby="cvats-title">
           <div className="cvats-hero__copy">
-            <div className="cvats-eyebrow">Guide PDF gratuit · Reçu immédiatement par email</div>
-            <h1 id="cvats-title">
-              Votre CV mérite <em>d'être lu</em>
-            </h1>
+            <div className="cvats-eyebrow">Guide gratuit · WhatsApp ou Email</div>
+            <h1 id="cvats-title">CV envoyé. Silence radio. Voici pourquoi — et comment changer ça.</h1>
+            <p className="cvats-guideName">Guide gratuit : « Votre CV mérite d'être lu »</p>
             <p className="cvats-hero__subtitle">
-              Un guide gratuit pour repérer en quelques minutes ce qui freine la lecture de votre CV — et corriger
-              l'essentiel avant votre prochaine candidature.
+              Le problème ne vient pas toujours de votre profil. Souvent, c'est votre CV qui ne montre pas clairement
+              sa valeur. Ce guide gratuit vous aide à repérer ce qui bloque et à corriger l'essentiel avant votre
+              prochaine candidature.
             </p>
             <ul className="cvats-checklist" aria-label="Ce que le guide vous aide à faire">
               {HERO_BULLETS.map((item) => (
@@ -363,63 +410,92 @@ export default function CvAtsLandingPage() {
               ))}
             </ul>
             <div className="cvats-hero__actions">
-              <a className="cvats-primaryBtn" href="#cvats-guide-form">
-                Recevoir mon guide gratuit →
+              <a
+                className="cvats-primaryBtn cvats-whatsappBtn"
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => trackWhatsappClick("hero")}
+              >
+                Recevoir le guide sur WhatsApp
               </a>
-              <span>PDF envoyé immédiatement · Gratuit · Désinscription en un clic</span>
+              <button className="cvats-emailLink" type="button" onClick={focusForm}>
+                Je préfère le recevoir par email
+              </button>
+              <span>Gratuit. Aucun spam. Vos coordonnées servent uniquement à vous envoyer le guide.</span>
             </div>
           </div>
 
-          <div className="cvats-hero__conversion">
-            <GuideMockup />
-
-            <form id="cvats-guide-form" ref={formRef} className="cvats-form" onSubmit={handleSubmit} noValidate>
-              <div className="cvats-form__badge">Envoi immédiat · Sans carte bancaire</div>
-              <h2>Recevez votre guide en moins de 2 minutes</h2>
-              <label>
-                Prénom
-                <input
-                  className={errors.first_name ? "is-error" : ""}
-                  type="text"
-                  name="first_name"
-                  autoComplete="given-name"
-                  placeholder="Votre prénom"
-                  value={form.first_name}
-                  onChange={(event) => setForm((prev) => ({ ...prev, first_name: event.target.value }))}
-                  aria-invalid={Boolean(errors.first_name)}
-                />
-                {errors.first_name && <span className="cvats-field-error">{errors.first_name}</span>}
-              </label>
-              <label>
-                Email
-                <input
-                  className={errors.email ? "is-error" : ""}
-                  type="email"
-                  name="email"
-                  autoComplete="email"
-                  placeholder="votre@email.com"
-                  value={form.email}
-                  onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                  aria-invalid={Boolean(errors.email)}
-                />
-                {errors.email && <span className="cvats-field-error">{errors.email}</span>}
-              </label>
-              <button className="cvats-primaryBtn" type="submit" disabled={submitting || supabaseConfigError}>
-                {submitting ? "Envoi en cours..." : "Recevoir mon guide gratuit →"}
-              </button>
-              <p className="cvats-microcopy">Votre adresse sert uniquement à l'envoi du guide.</p>
-              {supabaseConfigError && (
-                <div className="cvats-errorBox" role="status">
-                  {SUPABASE_FRONTEND_CONFIG_MESSAGE}
-                </div>
-              )}
-              {serverError && (
-                <div className="cvats-errorBox" role="status">
-                  {serverError}
-                </div>
-              )}
-            </form>
+          <div className="cvats-hero__visual">
+            <picture>
+              <source srcSet="/cv-ats-hero-positive.jpg" media="(max-width: 768px)" />
+              <img
+                src="/cv-ats-hero-positive.jpg"
+                alt="Candidate souriante préparant sa candidature avec CapCarrière"
+                width="720"
+                height="900"
+                loading="eager"
+                fetchPriority="high"
+              />
+            </picture>
           </div>
+        </section>
+
+        <section className="cvats-emailSection" aria-labelledby="cvats-email-title">
+          <div className="cvats-emailSection__copy">
+            <span className="cvats-section__eyebrow">Option email</span>
+            <h2 id="cvats-email-title">Recevoir le guide par email</h2>
+            <p>Indiquez votre prénom et votre adresse email si vous préférez recevoir le guide dans votre boîte mail.</p>
+          </div>
+
+          <form id="cvats-guide-form" ref={formRef} className="cvats-form" onSubmit={handleSubmit} noValidate>
+            <div className="cvats-form__badge">Email · Sans carte bancaire</div>
+            <h2>Guide gratuit : « Votre CV mérite d'être lu »</h2>
+            <label>
+              Prénom
+              <input
+                className={errors.first_name ? "is-error" : ""}
+                type="text"
+                name="first_name"
+                autoComplete="given-name"
+                placeholder="Votre prénom"
+                value={form.first_name}
+                onChange={(event) => setForm((prev) => ({ ...prev, first_name: event.target.value }))}
+                aria-invalid={Boolean(errors.first_name)}
+              />
+              {errors.first_name && <span className="cvats-field-error">{errors.first_name}</span>}
+            </label>
+            <label>
+              Email
+              <input
+                className={errors.email ? "is-error" : ""}
+                type="email"
+                name="email"
+                autoComplete="email"
+                placeholder="votre@email.com"
+                value={form.email}
+                onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+                aria-invalid={Boolean(errors.email)}
+              />
+              {errors.email && <span className="cvats-field-error">{errors.email}</span>}
+            </label>
+            <button className="cvats-primaryBtn" type="submit" disabled={submitting || supabaseConfigError}>
+              {submitting ? "Envoi en cours..." : "Recevoir le guide par email"}
+            </button>
+            <p className="cvats-microcopy">
+              Gratuit. Aucun spam. Vos coordonnées servent uniquement à vous envoyer le guide.
+            </p>
+            {supabaseConfigError && (
+              <div className="cvats-errorBox" role="status">
+                {SUPABASE_FRONTEND_CONFIG_MESSAGE}
+              </div>
+            )}
+            {serverError && (
+              <div className="cvats-errorBox" role="status">
+                {serverError}
+              </div>
+            )}
+          </form>
         </section>
 
         <section className="cvats-section cvats-value" aria-labelledby="cvats-value-title">
@@ -470,7 +546,7 @@ export default function CvAtsLandingPage() {
         <section className="cvats-section cvats-guideContent" aria-labelledby="cvats-guide-content-title">
           <div className="cvats-section__header">
             <span className="cvats-section__eyebrow">Dans le guide</span>
-            <h2 id="cvats-guide-content-title">Ce que vous trouverez à l'intérieur</h2>
+            <h2 id="cvats-guide-content-title">Ce que vous allez trouver dans le guide</h2>
           </div>
           <div className="cvats-guide-grid">
             {GUIDE_CARDS.map((card) => (
@@ -480,6 +556,15 @@ export default function CvAtsLandingPage() {
               </article>
             ))}
           </div>
+        </section>
+
+        <section className="cvats-section cvats-different" aria-labelledby="cvats-different-title">
+          <span className="cvats-section__eyebrow">Pourquoi ce guide est différent</span>
+          <h2 id="cvats-different-title">Pensé pour l'Afrique francophone</h2>
+          <p>
+            Il est pensé pour les candidats en Côte d'Ivoire et en Afrique francophone, avec des conseils simples,
+            concrets et applicables sans jargon.
+          </p>
         </section>
 
         <section className="cvats-section cvats-ecosystem" aria-labelledby="cvats-ecosystem-title">
@@ -502,12 +587,21 @@ export default function CvAtsLandingPage() {
         <section className="cvats-finalCta" aria-labelledby="cvats-final-title">
           <div>
             <h2 id="cvats-final-title">Avant votre prochaine candidature, vérifiez votre CV.</h2>
-            <p>Le guide est gratuit. Vous le recevez par email en quelques minutes.</p>
+            <p>Le guide est gratuit. Choisissez WhatsApp ou l'email.</p>
           </div>
-          <button type="button" className="cvats-finalCta__button" onClick={focusForm}>
-            Recevoir mon guide gratuit →
+          <a
+            className="cvats-finalCta__button"
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => trackWhatsappClick("final_cta")}
+          >
+            Recevoir le guide sur WhatsApp
+          </a>
+          <button type="button" className="cvats-finalCta__email" onClick={focusForm}>
+            Je préfère le recevoir par email
           </button>
-          <span>Gratuit · Sans carte bancaire · Votre adresse ne sera pas revendue</span>
+          <span>Gratuit. Aucun spam. Vos coordonnées servent uniquement à vous envoyer le guide.</span>
         </section>
 
         <section className="cvats-section cvats-faq" aria-label="Questions fréquentes">
