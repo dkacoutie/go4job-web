@@ -32,7 +32,7 @@ const JOBRADAR_FEED_PATH = "/jobradar/feed";
 const CVATS_BUILD_MARKER = "cv-ats-v2-1-whatsapp";
 const WHATSAPP_PHONE = "2250151676767";
 const WHATSAPP_MESSAGE =
-  "Bonjour, je souhaite recevoir le guide gratuit « Votre CV mérite d'être lu ». Source : Facebook CV ATS.";
+  "Bonjour, je souhaite recevoir le guide gratuit « Votre CV mérite d’être lu ». J’ai vu votre publication sur Facebook.";
 const WHATSAPP_URL = `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(WHATSAPP_MESSAGE)}`;
 const SUPABASE_REST_URL = (import.meta.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
