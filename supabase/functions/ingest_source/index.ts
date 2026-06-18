@@ -1046,7 +1046,7 @@ function parseRequiredProbeInt(
   return { value: parsed, error: null };
 }
 
-function validateProjobivoireControlledImportProbe(
+function validateProjobivoireImportRequest(
   body: Record<string, unknown>,
 ) {
   const errors: string[] = [];
@@ -1057,6 +1057,9 @@ function validateProjobivoireControlledImportProbe(
   const isControlledCronProbe =
     body.trigger === "controlled_cron_probe" &&
     body.run_kind === "controlled_cron_probe";
+  const isProductionCron =
+    body.trigger === "cron" &&
+    body.run_kind === "ingest";
 
   if (body.source_code !== "projobivoire_rss") {
     errors.push("source_code_must_be_projobivoire_rss");
@@ -1067,8 +1070,10 @@ function validateProjobivoireControlledImportProbe(
   if (body.allow_import !== true) {
     errors.push("allow_import_must_be_true");
   }
-  if (!isManualProbe && !isControlledCronProbe) {
-    errors.push("trigger_run_kind_must_be_manual_probe_or_controlled_cron_probe");
+  if (!isManualProbe && !isControlledCronProbe && !isProductionCron) {
+    errors.push(
+      "trigger_run_kind_must_be_manual_probe_controlled_cron_probe_or_cron_ingest",
+    );
   }
   if (isManualProbe && body.confirm !== "IMPORT_PROJOBIVOIRE_RSS_V1") {
     errors.push("confirm_must_be_IMPORT_PROJOBIVOIRE_RSS_V1");
@@ -1077,9 +1082,17 @@ function validateProjobivoireControlledImportProbe(
     errors.push("confirm_must_be_omitted_for_controlled_cron_probe");
   }
 
-  const limit = parseRequiredProbeInt(body, "limit", 15);
+  const limit = parseRequiredProbeInt(
+    body,
+    "limit",
+    isProductionCron ? 50 : 15,
+  );
   if (limit.error) errors.push(limit.error);
-  const maxPages = parseRequiredProbeInt(body, "max_pages", 2);
+  const maxPages = parseRequiredProbeInt(
+    body,
+    "max_pages",
+    isProductionCron ? 5 : 2,
+  );
   if (maxPages.error) errors.push(maxPages.error);
 
   return {
@@ -1087,8 +1100,16 @@ function validateProjobivoireControlledImportProbe(
     errors,
     limit: limit.value,
     maxPages: maxPages.value,
-    trigger: isControlledCronProbe ? "controlled_cron_probe" : "manual_probe",
-    runKind: isControlledCronProbe ? "controlled_cron_probe" : "controlled_import_probe",
+    trigger: isProductionCron
+      ? "cron"
+      : isControlledCronProbe
+      ? "controlled_cron_probe"
+      : "manual_probe",
+    runKind: isProductionCron
+      ? "ingest"
+      : isControlledCronProbe
+      ? "controlled_cron_probe"
+      : "controlled_import_probe",
   };
 }
 
@@ -1554,7 +1575,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const controlledProbe = validateProjobivoireControlledImportProbe(
+      const controlledProbe = validateProjobivoireImportRequest(
         asPlainObject(body),
       );
       if (!controlledProbe.ok || controlledProbe.limit === null || controlledProbe.maxPages === null) {
@@ -1562,14 +1583,18 @@ Deno.serve(async (req) => {
           ok: false,
           error: "projobivoire_rss_import_requires_controlled_probe",
           message:
-            "projobivoire_rss real imports are blocked unless the controlled manual probe confirmation and limits are provided.",
+            "projobivoire_rss real imports require a controlled probe or bounded production cron mode.",
           required: {
             source_code: "projobivoire_rss",
             dry_run: false,
             allow_import: true,
-            confirm: "IMPORT_PROJOBIVOIRE_RSS_V1",
-            limit: "1..15",
-            max_pages: "1..2",
+            confirm: controlledProbe.runKind === "ingest"
+              ? "not_required"
+              : controlledProbe.runKind === "controlled_cron_probe"
+              ? "omitted"
+              : "IMPORT_PROJOBIVOIRE_RSS_V1",
+            limit: controlledProbe.runKind === "ingest" ? "1..50" : "1..15",
+            max_pages: controlledProbe.runKind === "ingest" ? "1..5" : "1..2",
             trigger: controlledProbe.trigger,
             run_kind: controlledProbe.runKind,
           },
@@ -1764,7 +1789,9 @@ Deno.serve(async (req) => {
           ok: true,
           source_code,
           dry_run: false,
-          status: controlledProbe.runKind === "controlled_cron_probe"
+          status: controlledProbe.runKind === "ingest"
+            ? "projobivoire_rss_ingest_no_importable_candidates"
+            : controlledProbe.runKind === "controlled_cron_probe"
             ? "projobivoire_rss_controlled_cron_probe_no_importable_candidates"
             : "projobivoire_rss_controlled_import_probe_no_importable_candidates",
           trigger: controlledProbe.trigger,
@@ -1855,7 +1882,9 @@ Deno.serve(async (req) => {
         ok: true,
         source_code,
         dry_run: false,
-        status: controlledProbe.runKind === "controlled_cron_probe"
+        status: controlledProbe.runKind === "ingest"
+          ? "projobivoire_rss_ingest_upserted"
+          : controlledProbe.runKind === "controlled_cron_probe"
           ? "projobivoire_rss_controlled_cron_probe_upserted"
           : "projobivoire_rss_controlled_import_probe_upserted",
         trigger: controlledProbe.trigger,
