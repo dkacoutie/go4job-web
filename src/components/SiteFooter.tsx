@@ -54,11 +54,11 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
     <footer className="site-footer" aria-label="Pied de page">
       <div className="app-container">
         <div className="site-footer__grid">
-          <section className="site-footer__brand" aria-label="Go4Job">
-            <div className="site-footer__logoText">Go4Job</div>
+          <section className="site-footer__brand" aria-label="JobRadar">
+            <div className="site-footer__logoText">JobRadar</div>
             <p className="site-footer__desc">
               JobRadar surveille les offres et met en avant celles qui correspondent à ton profil,
-              sans que tu aies à chercher chaque jour.
+              sans que tu aies à chercher chaque jour. Un produit Go4Job.
             </p>
 
             <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">
@@ -129,7 +129,7 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                 <ul className="site-footer__list">
                   <li>
                     <Link className="site-footer__link" to="/jobradar/feed">
-                      Mes Offres (JobRadar)
+                      Mes offres
                     </Link>
                   </li>
                   <li>
@@ -160,7 +160,7 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                   </li>
                   <li>
                     <Link className="site-footer__link" to="/jobradar/feed">
-                      JobRadar
+                      Offres recommandées
                     </Link>
                   </li>
                   <li>
@@ -211,7 +211,9 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
         </div>
 
         <div className="site-footer__bottom" aria-label="Informations légales">
-          <div className="site-footer__copy">© {year} Go4Job. Tous droits réservés.</div>
+          <div className="site-footer__copy">
+            © {year} Go4Job. JobRadar est un produit Go4Job.
+          </div>
 
           <div className="site-footer__copy">
             Contact: <strong>contact@go4jobapp.com</strong>
