@@ -17,7 +17,7 @@ const SUBJECTS: SubjectOption[] = [
 
 const WHATSAPP_LINK =
   "https://wa.me/2250151676767?text=" +
-  encodeURIComponent("Bonjour, j’ai une question sur Go4Job / JobRadar : ");
+  encodeURIComponent("Bonjour, j’ai une question sur JobRadar : ");
 
 type FormState = {
   name: string;

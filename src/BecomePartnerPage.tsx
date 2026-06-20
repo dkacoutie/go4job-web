@@ -362,8 +362,7 @@ export default function BecomePartnerPage() {
               <span>partenaires JobRadar</span>
             </h1>
             <p className="subtitle">
-              Le lien /devenir-partenaire sert à rejoindre le programme. Une fois votre accès activé, votre espace
-              partenaire vous permet de récupérer votre lien personnel à partager ainsi que votre code partenaire.
+              Recommandez JobRadar à votre audience et gagnez une commission lorsqu’un client recommandé achète son premier pass. Après activation, vous recevez votre lien personnel et votre code partenaire.
             </p>
             <div className="partnerApply__heroActions">
               {!partner ? (
@@ -421,16 +420,14 @@ export default function BecomePartnerPage() {
                 <div>
                   <h2>Devenir partenaire</h2>
                   <div className="partnerApply__formLead">
-                    Le formulaire est l'étape principale. Le reste sert juste de repère rapide.
+                    Présentez simplement votre profil, votre structure ou votre audience. Votre espace partenaire sera créé après activation.
                   </div>
                 </div>
-                <span className="badge badge--blue">Lien d'entrée officiel</span>
+                <span className="badge badge--blue">Programme officiel</span>
               </div>
 
               <p className="partnerApply__intro">
-                Cette page vous permet uniquement de rejoindre le programme. Votre lien personnel de recommandation et
-                votre code partenaire seront ensuite disponibles dans votre espace partenaire. Si vous êtes connecté,
-                vos informations connues sont pré-remplies. Sinon, les exemples affichés servent uniquement de repère.
+                Cette page permet de rejoindre le programme partenaires JobRadar. Une fois l’accès activé, votre espace partenaire vous donne votre lien personnel, votre code de recommandation et le suivi de votre activité.
               </p>
 
               {(!session || infoMsg || errorMsg) && (
