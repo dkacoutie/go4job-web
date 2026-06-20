@@ -122,7 +122,7 @@ export const JOBRADAR_FLOW_STEPS: JobRadarFlowStep[] = [
     key: "cv",
     label: "Import CV",
     eyebrow: "Étape 6",
-    description: "Ajoute ton CV pour enrichir automatiquement ton matching.",
+    description: "Ajoute ton CV pour améliorer automatiquement les offres recommandées.",
     phase: "after_purchase",
   },
   {

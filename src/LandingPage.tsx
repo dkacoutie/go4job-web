@@ -19,8 +19,8 @@ export default function LandingPage() {
           <div className="landing-badge">Plus de 11 000 offres disponibles</div>
           <h1>Repère plus vite les offres qui te correspondent</h1>
           <p>
-            JobRadar t’aide à chercher plus clairement, gagner du temps et trouver des opportunités
-            adaptées à ton profil en Afrique, en Europe et à distance.
+            JobRadar surveille les offres pour toi et met en avant celles qui correspondent à ton profil —
+            sans que tu aies à chercher chaque jour.
           </p>
 
           <div className="landing-hero__cta">
@@ -106,7 +106,7 @@ export default function LandingPage() {
 
       <section className="landing-cta-final">
         <div>
-          <h2>Prêt à chercher plus clairement ?</h2>
+          <h2>JobRadar surveille. Toi, tu choisis où postuler.</h2>
           <p>
             Crée ton compte pour voir tes premières offres et comprendre plus vite quelles opportunités
             valent ton attention.

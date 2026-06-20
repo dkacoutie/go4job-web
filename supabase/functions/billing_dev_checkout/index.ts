@@ -105,6 +105,10 @@ function normalizeBaseUrl(value: string) {
   return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 }
 
+function displayPlanName(name: string) {
+  return name === "Pass Mensuel" ? "Pass Actif" : name;
+}
+
 function buildReceiptEmail(payload: ReceiptEmailPayload) {
   const appBaseUrl = normalizeBaseUrl(
     clean(Deno.env.get("APP_BASE_URL")) || "https://jobradar.go4jobapp.com"
@@ -124,6 +128,7 @@ function buildReceiptEmail(payload: ReceiptEmailPayload) {
   const endsAt = formatDate(payload.endsAt);
   const paymentRef = payload.paymentRef || "—";
   const accountEmail = payload.accountEmail || "—";
+  const planName = displayPlanName(payload.planName);
   const durationLine = payload.durationDays
     ? `<div style="margin-bottom:6px;"><strong>Durée :</strong> ${payload.durationDays} jours</div>`
     : "";
@@ -141,8 +146,11 @@ function buildReceiptEmail(payload: ReceiptEmailPayload) {
       <p style="margin:0 0 16px;font-size:14.5px;line-height:1.7;color:#4b5563;">
         Cet email fait office de confirmation de paiement.
       </p>
+      <p style="margin:0 0 16px;font-size:14.5px;line-height:1.7;color:#4b5563;">
+        Ton paiement est unique. Aucun renouvellement automatique n'est activé.
+      </p>
       <div style="background:#f6f8fd;border-radius:12px;padding:16px;border:1px solid #eef2f8;">
-        <div style="margin-bottom:6px;"><strong>Pass actif :</strong> ${escapeHtml(payload.planName)}</div>
+        <div style="margin-bottom:6px;"><strong>Pass actif :</strong> ${escapeHtml(planName)}</div>
         <div style="margin-bottom:6px;"><strong>Montant :</strong> ${amountLabel} ${escapeHtml(currency)}</div>
         <div style="margin-bottom:6px;"><strong>Date de paiement :</strong> ${escapeHtml(paidAt)}</div>
         <div style="margin-bottom:6px;"><strong>Date d'activation :</strong> ${escapeHtml(activatedAt)}</div>
@@ -162,14 +170,14 @@ function buildReceiptEmail(payload: ReceiptEmailPayload) {
       </div>
       <div style="margin-bottom:18px;">
         <a href="${secondaryUrl}" style="color:#0b5ed7;text-decoration:none;font-size:14px;">
-          Voir mon abonnement
+          Voir les pass JobRadar
         </a>
       </div>
       <div style="font-size:13px;color:#5b6877;line-height:1.6;border-top:1px solid #eef2f8;padding-top:16px;">
         <div><strong>Référence de paiement :</strong> ${escapeHtml(paymentRef)}</div>
         <div><strong>Compte :</strong> ${escapeHtml(accountEmail)}</div>
         <div style="margin-top:10px;">Besoin d'aide ? Contacte-nous à ${escapeHtml(supportEmail)}.</div>
-        <div style="margin-top:12px;">L'équipe Go4Job</div>
+        <div style="margin-top:12px;">L'équipe JobRadar · par Go4Job</div>
       </div>
     </div>
   </div>
@@ -182,9 +190,10 @@ function buildReceiptEmail(payload: ReceiptEmailPayload) {
     "",
     "Nous confirmons la réception de ton paiement pour JobRadar. Ton pass est maintenant actif.",
     "Cet email fait office de confirmation de paiement.",
+    "Ton paiement est unique. Aucun renouvellement automatique n'est activé.",
     "",
     "Récapitulatif",
-    `Pass actif : ${payload.planName}`,
+    `Pass actif : ${planName}`,
     `Montant : ${amountLabel} ${currency}`,
     `Date de paiement : ${paidAt}`,
     `Date d'activation : ${activatedAt}`,
@@ -196,13 +205,13 @@ function buildReceiptEmail(payload: ReceiptEmailPayload) {
     "Tu peux maintenant accéder à toutes les fonctionnalités de JobRadar pendant la durée choisie.",
     "",
     `Voir mes offres : ${primaryUrl}`,
-    `Voir mon abonnement : ${secondaryUrl}`,
+    `Voir les pass JobRadar : ${secondaryUrl}`,
     "",
     `Référence de paiement : ${paymentRef}`,
     `Compte : ${accountEmail}`,
     `Besoin d'aide ? Contacte-nous à ${supportEmail}.`,
     "",
-    "L'équipe Go4Job",
+    "L'équipe JobRadar · par Go4Job",
   ];
 
   const text = textLines.join("\n");

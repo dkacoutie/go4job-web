@@ -14,8 +14,10 @@ import {
   PRICING_ACCESS_MESSAGE,
   PRICING_BILLING_MESSAGE,
   PRICING_CONVERSION_MESSAGE,
+  PRICING_CURRENCY_MESSAGE,
   PRICING_INDICATIVE_MESSAGE,
   PRICING_PRICE_NOTE,
+  PRICING_REASSURANCE_MESSAGE,
   PRICING_SECTION_SUBTITLE,
   PRICING_SECTION_TITLE,
   getPlanMarketing,
@@ -56,6 +58,10 @@ type PricingPlansBlockProps = {
   postCheckoutSecondaryTo?: string;
   postCheckoutPrimaryLabel?: string;
 };
+
+const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
+const GENERIC_PAYMENT_ERROR =
+  "Le paiement n’a pas pu être finalisé. Aucun montant n’a été débité. Réessaie ou contacte le support.";
 
 export default function PricingPlansBlock({
   title = PRICING_SECTION_TITLE,
@@ -99,7 +105,7 @@ export default function PricingPlansBlock({
       .from("billing_settings")
       .select("payments_enabled, maintenance_message")
       .maybeSingle();
-    if (sErr) setErrorMsg(sErr.message);
+    if (sErr) setErrorMsg(GENERIC_SERVER_ERROR);
     setSettings((sData as BillingSettings) ?? null);
 
     const { data: pData, error: pErr } = await supabase
@@ -108,7 +114,7 @@ export default function PricingPlansBlock({
         "id, code, name, duration_days, is_active, sort_order, billing_plan_prices(id, currency, amount_minor, country_group, payment_method_type, is_active)"
       )
       .order("sort_order", { ascending: true });
-    if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
+    if (pErr) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
     setPlans((pData as BillingPlan[]) ?? []);
 
     setLoading(false);
@@ -172,20 +178,18 @@ export default function PricingPlansBlock({
       });
 
       if (error) {
-        const ctxMsg =
-          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
-        setErrorMsg(ctxMsg || error.message);
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       } else if (data?.ok) {
         setInfoMsg(
           data?.status === "paid_test"
-            ? "Paiement test confirm\u00e9. Ton pass est actif (test)."
-            : "Paiement confirm\u00e9. Ton pass est actif."
+            ? "Ton pass est actif (test). Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes."
+            : "Ton pass est actif. Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes. Aucun renouvellement automatique."
         );
         setShowPostCheckout(true);
         clearPartnerReferral();
         await refreshPass();
       } else {
-        setErrorMsg("Paiement non confirm\u00e9. Aucun d\u00e9bit effectu\u00e9.");
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       }
 
       setIsVerifying(false);
@@ -203,7 +207,7 @@ export default function PricingPlansBlock({
     postCheckoutPrimaryTo ??
     (onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile"));
   const checkoutPrimaryLabelResolved =
-    postCheckoutPrimaryLabel ?? (onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon parcours");
+    postCheckoutPrimaryLabel ?? "Voir les offres pour moi";
   const displayMarket = paymentMarket.resolution.market;
 
   const handleSelectPaymentMarket = async (market: "eur" | "xof") => {
@@ -231,7 +235,7 @@ export default function PricingPlansBlock({
     if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
-      setErrorMsg("Paystack n'est pas configur\u00e9.");
+      setErrorMsg("Le paiement est temporairement indisponible. Réessaie dans quelques instants.");
       return;
     }
 
@@ -283,17 +287,15 @@ export default function PricingPlansBlock({
       });
 
       if (error) {
-        const ctxMsg =
-          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
-        setErrorMsg(ctxMsg || error.message);
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       } else if (data?.ok && data?.authorization_url) {
         if (data?.reference) {
           sessionStorage.setItem("paystack_ref", data.reference as string);
         }
-        setInfoMsg("Redirection vers Paystack...");
+        setInfoMsg("Ouverture du paiement sécurisé…");
         window.location.assign(data.authorization_url as string);
       } else {
-        setErrorMsg("Impossible d'initialiser le paiement Paystack.");
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       }
     } finally {
       setBusyCode(null);
@@ -318,7 +320,9 @@ export default function PricingPlansBlock({
           <strong>Mode test actif.</strong> Aucun d\u00e9bit r\u00e9el n'est effectu\u00e9.
         </div>
       )}
-      {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configur\u00e9.</div>}
+      {!paystackEnabled && (
+        <div className="pricing-error">Le paiement est temporairement indisponible. Réessaie dans quelques instants.</div>
+      )}
       {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
       {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
@@ -345,7 +349,7 @@ export default function PricingPlansBlock({
             className="pricing-success-actions__secondary"
             onClick={() => navigate(postCheckoutSecondaryTo)}
           >
-            {"Voir mon acc\u00e8s"}
+            Gérer mon accès JobRadar
           </button>
         </div>
       )}
@@ -435,7 +439,8 @@ export default function PricingPlansBlock({
                       : displayPrice?.ctaLabel ?? marketing.ctaLabel}
                   </button>
 
-                  <div className="pricing-card__footnote">{displayPrice?.paystackNotice ?? marketing.launchNote}</div>
+                  <div className="pricing-card__footnote">{PRICING_REASSURANCE_MESSAGE}</div>
+                  <div className="pricing-card__footnote">{PRICING_CURRENCY_MESSAGE}</div>
                 </div>
               );
             })}

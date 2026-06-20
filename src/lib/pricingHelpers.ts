@@ -17,24 +17,28 @@ export type PaymentMethodBadge = {
 
 export const FEATURED_PLAN_CODE = "pass_30d";
 export const PRICING_SECTION_EYEBROW = "Plans JobRadar";
-export const PRICING_SECTION_TITLE = "Choisissez le Pass qui correspond à votre rythme";
+export const PRICING_SECTION_TITLE = "Choisis le pass qui correspond à ton rythme";
 export const PRICING_SECTION_SUBTITLE =
-  "Activez votre accès complet à JobRadar avec une tarification claire et un paiement sécurisé.";
+  "Tu paies une fois et tu accèdes à JobRadar pendant la durée choisie, sans renouvellement automatique.";
 export const PRICING_ACCESS_MESSAGE =
   "Accès complet à JobRadar pendant toute la durée choisie.";
 export const PRICING_PRICE_NOTE = "Sans renouvellement automatique";
+export const PRICING_REASSURANCE_MESSAGE =
+  "Paiement unique · Carte ou Mobile Money · Aucun renouvellement automatique";
+export const PRICING_CURRENCY_MESSAGE =
+  "Le paiement est traité en francs CFA (FCFA). Montant exact affiché avant confirmation.";
 export const PRICING_MODEL_TITLE = "Une tarification claire, pensée pour durer";
 export const PRICING_MODEL_TEXT =
-  "Choisissez la durée qui correspond à votre rythme : l'accès est complet après confirmation du paiement, avec paiement sécurisé et sans renouvellement automatique.";
+  "Choisis la durée qui correspond à ton rythme : ton accès est activé après confirmation du paiement, sans renouvellement automatique.";
 export const PRICING_BILLING_MESSAGE =
-  "Prix affichés selon votre région. Le montant final est affiché avant confirmation du paiement.";
+  PRICING_CURRENCY_MESSAGE;
 export const PRICING_INDICATIVE_MESSAGE =
-  "Pour les utilisateurs européens, les prix EUR sont des prix d'affichage marketing.";
-export const PRICING_CONVERSION_MESSAGE = "Carte bancaire et Mobile Money acceptés via Paystack.";
+  "L’équivalent en euros est indicatif. Le paiement est effectué en francs CFA.";
+export const PRICING_CONVERSION_MESSAGE = PRICING_REASSURANCE_MESSAGE;
 
 export const PRICING_REASSURANCE_POINTS = [
   "Paiement sécurisé par carte ou Mobile Money",
-  "Votre Pass est activé après confirmation du paiement",
+  "Ton pass est activé après confirmation du paiement",
   "Paiement unique, sans renouvellement automatique",
 ];
 
@@ -51,21 +55,21 @@ export const PLAN_MARKETING: Record<string, PlanMarketing> = {
   pass_7d: {
     title: "Pass Découverte",
     durationLabel: "7 jours",
-    shortLine: "Pour vous faire votre propre avis",
+    shortLine: "Pour te faire ton propre avis",
     headline: "7 jours pour explorer JobRadar sans engagement.",
     description:
-      "Accès complet aux offres et alertes. Idéal pour découvrir le service avant de vous décider.",
+      "Accès complet aux offres et alertes. Idéal pour découvrir le service avant de te décider.",
     badge: "Disponible",
     badgeTone: "available",
     launchNote: PRICING_PRICE_NOTE,
-    ctaLabel: "Essayer 7 jours",
+    ctaLabel: "Activer 7 jours",
   },
   pass_30d: {
-    title: "Pass Mensuel",
+    title: "Pass Actif",
     durationLabel: "30 jours",
     shortLine: "Pour une recherche active et organisée",
-    headline: "30 jours pour suivre vos opportunités plus facilement.",
-    description: "Recevez des alertes ciblées selon votre profil et votre zone de recherche.",
+    headline: "30 jours pour suivre tes opportunités plus facilement.",
+    description: "Reçois des alertes ciblées selon ton profil et ta zone de recherche.",
     badge: "Le plus choisi",
     badgeTone: "featured",
     launchNote: PRICING_PRICE_NOTE,
@@ -74,9 +78,9 @@ export const PLAN_MARKETING: Record<string, PlanMarketing> = {
   pass_90d: {
     title: "Pass Avantage",
     durationLabel: "90 jours",
-    shortLine: "Pour suivre votre recherche sur la durée",
+    shortLine: "Pour suivre ta recherche sur la durée",
     headline: "90 jours au meilleur rapport durée/prix.",
-    description: "Suivez les opportunités pendant plusieurs semaines, sans devoir renouveler trop souvent.",
+    description: "Suis les opportunités pendant plusieurs semaines, sans devoir renouveler trop souvent.",
     badge: "Disponible",
     badgeTone: "available",
     launchNote: PRICING_PRICE_NOTE,
@@ -93,7 +97,7 @@ export function getPlanMarketing(
     PLAN_MARKETING[planCode] ?? {
       title: fallbackName,
       durationLabel: `${durationDays} jours`,
-      shortLine: "Pour avancer dans votre recherche",
+      shortLine: "Pour avancer dans ta recherche",
       headline: PRICING_ACCESS_MESSAGE,
       description: PRICING_ACCESS_MESSAGE,
       badge: "Disponible",

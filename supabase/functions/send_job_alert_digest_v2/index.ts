@@ -169,7 +169,6 @@ function buildHtml(params: {
             ${escapeHtml(job.title || "Offre JobRadar")}
           </a>
           ${meta ? `<div style="margin-top:4px;color:#64748b;font-size:13px;">${escapeHtml(meta)}</div>` : ""}
-          <div style="margin-top:6px;color:#0f172a;font-size:12px;">Score JobRadar: ${job.score}</div>
         </td>
       </tr>
     `;
@@ -219,7 +218,6 @@ function buildText(params: {
 }) {
   const lines = params.jobs.slice(0, 5).flatMap((job) => [
     `- ${job.title || "Offre JobRadar"}${job.company_name ? ` - ${job.company_name}` : ""}`,
-    `  Score JobRadar: ${job.score}`,
     `  ${jobUrl(params.appUrl, job.id)}`,
   ]);
 

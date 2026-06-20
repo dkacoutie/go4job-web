@@ -10,7 +10,9 @@ import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { usePass } from "./lib/usePass";
 import {
   FEATURED_PLAN_CODE,
+  PRICING_CURRENCY_MESSAGE,
   PRICING_PRICE_NOTE,
+  PRICING_REASSURANCE_MESSAGE,
   formatAmount,
   getPlanMarketing,
 } from "./lib/pricingHelpers";
@@ -60,15 +62,19 @@ type PaymentRow = {
   plan?: { name?: string | null; code?: string | null } | null;
 };
 
+const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
+const GENERIC_PAYMENT_ERROR =
+  "Le paiement n’a pas pu être finalisé. Aucun montant n’a été débité. Réessaie ou contacte le support.";
+
 const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> = {
   pass_7d: {
     benefit: "7 jours pour explorer JobRadar sans engagement.",
     bullets: ["Accès complet aux offres", "Alertes ciblées activées", "Sans engagement"],
   },
   pass_30d: {
-    benefit: "30 jours pour suivre vos opportunités plus facilement.",
+    benefit: "30 jours pour suivre tes opportunités plus facilement.",
     bullets: [
-      "Alertes ciblées selon votre profil",
+      "Alertes ciblées selon ton profil",
       "Zone de recherche personnalisée",
       "30 jours de suivi continu",
     ],
@@ -76,7 +82,7 @@ const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> 
   pass_90d: {
     benefit: "90 jours au meilleur rapport durée/prix.",
     bullets: [
-      "Tout ce qui est inclus dans Mensuel",
+      "Tout ce qui est inclus dans le Pass Actif",
       "90 jours sans renouveler",
       "Meilleur rapport durée/prix",
     ],
@@ -86,21 +92,21 @@ const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> 
 const FAQ_ITEMS = [
   {
     question: "Quand mon accès est-il activé ?",
-    answer: "Après confirmation du paiement. Vous recevrez aussi un e-mail de confirmation.",
+    answer: "Après confirmation du paiement. Tu recevras aussi un e-mail de confirmation.",
   },
   {
     question: "Y a-t-il un renouvellement automatique ?",
     answer:
-      "Non. Chaque Pass est à durée fixe. Vous choisissez de renouveler quand vous le souhaitez.",
+      "Non. Chaque pass est à durée fixe. Tu choisis de le renouveler quand tu le souhaites.",
   },
   {
     question: "Puis-je choisir un autre Pass ensuite ?",
     answer:
-      "Oui. À la fin de votre période en cours, vous pouvez choisir le Pass qui correspond à votre besoin.",
+      "Oui. À la fin de ta période en cours, tu peux choisir le pass qui correspond à ton besoin.",
   },
   {
     question: "Quels moyens de paiement sont acceptés ?",
-    answer: "Carte bancaire et Mobile Money, avec paiement sécurisé via Paystack.",
+    answer: "Carte bancaire et Mobile Money, selon les moyens disponibles au moment du paiement.",
   },
 ];
 
@@ -153,7 +159,7 @@ function PricingPostCheckoutActions() {
   const navigate = useNavigate();
   const onboarding = useJobRadarOnboarding();
   const primaryTo = onboarding.isOnboarded ? "/jobradar/feed" : buildJobRadarOnboardingHref("complete-profile");
-  const primaryLabel = onboarding.isOnboarded ? "Voir mes offres" : "Continuer mon onboarding";
+  const primaryLabel = "Voir les offres pour moi";
 
   return (
     <div className="pricing-success-actions" aria-label="Suite après achat">
@@ -169,7 +175,7 @@ function PricingPostCheckoutActions() {
         className="pricing-success-actions__secondary"
         onClick={() => navigate("/me/subscription")}
       >
-        {"Voir mon accès"}
+        Gérer mon accès JobRadar
       </button>
     </div>
   );
@@ -221,8 +227,8 @@ export default function PricingPage() {
       const { data: sData, error: sErr } = settingsRes;
       const { data: pData, error: pErr } = plansRes;
 
-      if (sErr) setErrorMsg(sErr.message);
-      if (pErr) setErrorMsg((prev) => prev ?? pErr.message);
+      if (sErr) setErrorMsg(GENERIC_SERVER_ERROR);
+      if (pErr) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
 
       setSettings((sData as BillingSettings) ?? null);
       setPlans((pData as BillingPlan[]) ?? []);
@@ -276,10 +282,10 @@ export default function PricingPage() {
           .limit(6),
       ]);
 
-      if (passRes.error) setErrorMsg((prev) => prev ?? passRes.error?.message ?? null);
-      if (subRes.error) setErrorMsg((prev) => prev ?? subRes.error?.message ?? null);
-      if (recentTestRes.error) setErrorMsg((prev) => prev ?? recentTestRes.error?.message ?? null);
-      if (paymentsRes.error) setErrorMsg((prev) => prev ?? paymentsRes.error?.message ?? null);
+      if (passRes.error) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
+      if (subRes.error) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
+      if (recentTestRes.error) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
+      if (paymentsRes.error) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
 
       setCurrentPass((passRes.data as CurrentPass) ?? null);
       setPayments((paymentsRes.data as PaymentRow[]) ?? []);
@@ -340,21 +346,19 @@ export default function PricingPage() {
       });
 
       if (error) {
-        const ctxMsg =
-          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
-        setErrorMsg(ctxMsg || error.message);
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       } else if (data?.ok) {
         setInfoMsg(
           data?.status === "paid_test"
-            ? "Paiement test confirmé. Votre Pass est actif (test)."
-            : "Paiement confirmé. Votre Pass est actif."
+            ? "Ton pass est actif (test). Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes."
+            : "Ton pass est actif. Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes. Aucun renouvellement automatique."
         );
         setShowPostCheckout(true);
         clearPartnerReferral();
         await loadAccountData();
         await refreshPass();
       } else {
-        setErrorMsg("Paiement non confirmé. Aucun débit effectué.");
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       }
 
       setIsVerifying(false);
@@ -385,13 +389,13 @@ export default function PricingPage() {
       await paymentMarket.setPreference(market);
       setInfoMsg(
         market === "eur"
-          ? "Votre choix EUR est enregistré pour l'affichage."
-          : "Votre choix XOF est enregistré."
+          ? "Ton choix EUR est enregistré. Le paiement reste traité en francs CFA (FCFA)."
+          : "Ton choix XOF est enregistré."
       );
       setErrorMsg(null);
     } catch (error) {
       console.error("[JobRadar] payment preference save failed", error);
-      setErrorMsg("Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.");
+      setErrorMsg("Une erreur temporaire est survenue. Tu peux continuer et réessayer plus tard.");
     }
   };
 
@@ -403,13 +407,13 @@ export default function PricingPage() {
     if (isSubmittingRef.current || isBusy || busyCode) return;
     if (!price) return;
     if (!paystackEnabled) {
-      setErrorMsg("Paystack n'est pas configuré sur le front.");
+      setErrorMsg("Le paiement est temporairement indisponible. Réessaie dans quelques instants.");
       return;
     }
 
     if (currentPass && currentPass.status === "active") {
       setInfoMsg(
-        `Votre Pass est déjà actif${isTestPass ? " (test)" : ""} jusqu'au ${formatDate(
+        `Ton pass est déjà actif${isTestPass ? " (test)" : ""} jusqu’au ${formatDate(
           currentPass.ends_at
         )}.`
       );
@@ -418,14 +422,14 @@ export default function PricingPage() {
     }
 
     if (hasRecentTestPayment) {
-      setInfoMsg("Un paiement test récent existe déjà. Attendez quelques minutes avant de recommencer.");
+      setInfoMsg("Un paiement test récent existe déjà. Attends quelques minutes avant de recommencer.");
       setShowPostCheckout(false);
       return;
     }
 
     const pendingRef = sessionStorage.getItem("paystack_ref");
     if (pendingRef) {
-      setInfoMsg("Un paiement est déjà en cours. Terminez-le avant d'en démarrer un autre.");
+      setInfoMsg("Un paiement est déjà en cours. Termine-le avant d’en démarrer un autre.");
       setShowPostCheckout(false);
       return;
     }
@@ -459,17 +463,15 @@ export default function PricingPage() {
       });
 
       if (error) {
-        const ctxMsg =
-          (error as { context?: { body?: { message?: string } } })?.context?.body?.message;
-        setErrorMsg(ctxMsg || error.message);
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       } else if (data?.ok && data?.authorization_url) {
         if (data?.reference) {
           sessionStorage.setItem("paystack_ref", data.reference as string);
         }
-        setInfoMsg("Redirection vers Paystack...");
+        setInfoMsg("Ouverture du paiement sécurisé…");
         window.location.assign(data.authorization_url as string);
       } else {
-        setErrorMsg("Impossible d'initialiser le paiement Paystack.");
+        setErrorMsg(GENERIC_PAYMENT_ERROR);
       }
     } finally {
       setBusyCode(null);
@@ -483,10 +485,10 @@ export default function PricingPage() {
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
           <div className="pricing-hero__brand">JOBRADAR</div>
-          <h1>Chercher un emploi ne devrait pas être un emploi à plein temps.</h1>
+          <h1>Arrête de chercher partout. Laisse JobRadar surveiller les offres pour toi.</h1>
           <p>
-            Pendant que vous cherchez, des offres vous correspondent déjà. Choisissez votre Pass et
-            commencez.
+            Choisis la durée qui correspond à ton rythme de recherche. Tu paies une fois, tu accèdes
+            à JobRadar, sans renouvellement automatique.
           </p>
         </div>
       </header>
@@ -515,7 +517,9 @@ export default function PricingPage() {
             <strong>Mode test actif.</strong> Aucun débit réel n'est effectué.
           </div>
         )}
-        {!paystackEnabled && <div className="pricing-error">Paiement Paystack non configuré.</div>}
+        {!paystackEnabled && (
+          <div className="pricing-error">Le paiement est temporairement indisponible. Réessaie dans quelques instants.</div>
+        )}
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
@@ -523,21 +527,21 @@ export default function PricingPage() {
 
         {hasActivePass && currentPass && (
           <div className="pricing-info">
-            {"Votre Pass est déjà actif"}
-            {isTestPass ? " (test)" : ""} jusqu'au{" "}
+            {"Ton pass est déjà actif"}
+            {isTestPass ? " (test)" : ""} jusqu’au{" "}
             <strong>{formatDate(currentPass.ends_at)}</strong>.
           </div>
         )}
 
         <section className="pricing-plans" aria-label="Pass JobRadar">
           <div className="pricing-plan-intro">
-            Choisissez le Pass qui correspond à votre rythme
+            Choisis le pass qui correspond à ton rythme
           </div>
 
           <section className="pricing-currency-panel" aria-label="Devise d'affichage">
             <div className="pricing-currency-panel__copy">
               <div className="pricing-currency-panel__label">Afficher les prix en</div>
-              <p>Montant final affiché avant confirmation.</p>
+              <p>{PRICING_CURRENCY_MESSAGE}</p>
             </div>
             <div className="pricing-currency-panel__choices" role="group" aria-label="Afficher les prix en">
               <button
@@ -563,12 +567,12 @@ export default function PricingPage() {
             </div>
             {!paymentMarket.canPersistPreference && (
               <p className="pricing-currency-panel__session">
-                Votre sélection est gardée pour cette session. Connectez-vous pour l'enregistrer.
+                Ton choix est gardé pour cette session. Connecte-toi pour l’enregistrer.
               </p>
             )}
             {paymentMarket.error && (
               <div className="pricing-error">
-                Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.
+                Une erreur temporaire est survenue. Tu peux continuer et réessayer plus tard.
               </div>
             )}
           </section>
@@ -651,10 +655,11 @@ export default function PricingPage() {
                         ? "Vérification..."
                         : busyCode === plan.code || isBusy
                           ? "Traitement en cours..."
-                          : marketing.ctaLabel}
+                          : displayPrice?.ctaLabel ?? marketing.ctaLabel}
                     </button>
 
-                    <div className="pricing-card__footnote">{PRICING_PRICE_NOTE}</div>
+                    <div className="pricing-card__footnote">{PRICING_REASSURANCE_MESSAGE}</div>
+                    <div className="pricing-card__footnote">{PRICING_CURRENCY_MESSAGE}</div>
                   </div>
                 );
               })}
@@ -663,16 +668,16 @@ export default function PricingPage() {
         </section>
 
         <section className="pricing-trust-strip" aria-label="Confiance paiement">
-          <span>Paiement sécurisé</span>
-          <span>Confirmation par e-mail</span>
-          <span>Accès activé après confirmation</span>
+          <span>Paiement unique</span>
+          <span>Carte ou Mobile Money</span>
+          <span>Aucun renouvellement automatique</span>
         </section>
 
         <section className="pricing-payments" aria-label="Moyens de paiement acceptés">
           <div className="pricing-payments__head">
             <div className="pricing-payments__title">Comment payer ?</div>
             <div className="pricing-payments__sub">
-              Carte bancaire et Mobile Money acceptés. Paiement sécurisé via Paystack.
+              Carte bancaire et Mobile Money acceptés. Paiement sécurisé.
             </div>
           </div>
           <div className="pricing-payments__logos">
@@ -719,7 +724,7 @@ export default function PricingPage() {
           <div className="pricing-pass__header">
             <div>
               <h2>Mes paiements</h2>
-              <p className="pricing-pass__sub">Dernières activations et état de votre accès</p>
+              <p className="pricing-pass__sub">Dernières activations et état de ton accès</p>
             </div>
           </div>
 

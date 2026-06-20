@@ -89,6 +89,7 @@ export default function ProfilePage() {
   const { pushToast } = useToast();
   const userId = session?.user?.id;
   const onboardingFlow = searchParams.get("flow") === "onboarding";
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   const [pageLoading, setPageLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -146,7 +147,7 @@ export default function ProfilePage() {
       if (!mounted) return;
 
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(GENERIC_SERVER_ERROR);
         setPageLoading(false);
         return;
       }
@@ -378,7 +379,7 @@ export default function ProfilePage() {
     setSaving(false);
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(GENERIC_SERVER_ERROR);
       pushToast({
         kind: "error",
         title: "Impossible d’enregistrer le profil",
@@ -390,7 +391,7 @@ export default function ProfilePage() {
     pushToast({
       kind: "success",
       title: "Profil mis à jour",
-      message: "Tes prochains matchs seront mieux adaptés à ton profil.",
+      message: "Tes prochaines offres recommandées seront mieux adaptées à ton profil.",
     });
 
     const expMissing = !experienceYears.trim() && !cvFilePath;
@@ -399,7 +400,7 @@ export default function ProfilePage() {
       setNextStep({
         title: onboardingFlow ? "Encore un petit effort sur le profil" : "Profil enregistré (incomplet)",
         message: onboardingFlow
-          ? "Complète les points restants pour débloquer la suite du parcours premium."
+          ? "Complète les points restants pour continuer ton démarrage JobRadar."
           : "Ajoute tes compétences, ta localisation et ton expérience pour améliorer la pertinence des offres.",
         primary: { label: "Continuer la configuration", onClick: () => focusFirstMissing() },
         secondary: onboardingFlow
@@ -415,7 +416,7 @@ export default function ProfilePage() {
         title: onboardingFlow ? "Étape suivante : ton CV" : "Prochaine étape recommandée",
         message: onboardingFlow
           ? "Ton profil est prêt. Passe au CV pour obtenir des offres mieux ciblées avant d’activer tes alertes."
-          : "Ajoute ton CV pour améliorer encore la précision de tes matchs.",
+          : "Ajoute ton CV pour améliorer encore la précision des offres recommandées.",
         primary: onboardingFlow
           ? { label: "Continuer vers le CV", to: "/me/cv?flow=onboarding" }
           : { label: "Ajouter mon CV", onClick: () => cvInputRef.current?.click() },
@@ -617,7 +618,7 @@ export default function ProfilePage() {
                     </button>
                   </div>
                 </div>
-                <div className="fieldHelp">Ces compétences alimentent les matchs JobRadar.</div>
+                <div className="fieldHelp">Ces compétences aident JobRadar à recommander des offres plus adaptées.</div>
               </label>
 
               <label className="field">
@@ -655,7 +656,7 @@ export default function ProfilePage() {
                   <div className="profile-cvEmpty">
                     <div className="profile-cvEmpty__title">Aucun CV ajouté</div>
                     <div className="profile-cvEmpty__text">
-                      Ajoute ton CV pour améliorer la pertinence des matchs et accélérer tes candidatures.
+                      Ajoute ton CV pour améliorer la pertinence des offres recommandées et préparer tes candidatures.
                     </div>
                   </div>
                 ) : (

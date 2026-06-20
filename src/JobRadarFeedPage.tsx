@@ -749,6 +749,7 @@ export default function JobRadarFeedPage() {
   const feedMountedAtRef = useRef(typeof performance !== "undefined" ? performance.now() : 0);
   const firstCardsLoggedRef = useRef(false);
   const startingPremiumLabel = getStartingPremiumLabel(paymentMarket.resolution.market);
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   const FEED_PREVIEW_LIMIT = 4;
   const FEED_GATE_MESSAGE =
@@ -760,7 +761,7 @@ export default function JobRadarFeedPage() {
     "Offre complète + lien pour postuler",
     "Autres offres adaptées à ton profil",
     "Sauvegarde de tes annonces favorites",
-    `Accès premium à partir de ${startingPremiumLabel}`,
+    `Accès complet à partir de ${startingPremiumLabel}`,
   ] as const;
   const OFFER_GATE_REASSURANCE = "Carte ou Mobile Money · Accès immédiat après paiement";
   const STANDARD_GATE_MESSAGE = "Un pass actif est requis pour accéder à cette fonctionnalité.";
@@ -1202,7 +1203,7 @@ export default function JobRadarFeedPage() {
           .filter((id): id is string => typeof id === "string" && id.length > 0);
         setDismissedJobIds(new Set(dismissedIds));
       } catch (e: unknown) {
-        setErrorMsg((prev) => prev ?? getErrorMessage(e) ?? "Erreur inconnue");
+        setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
       }
     },
     []
@@ -1334,7 +1335,7 @@ export default function JobRadarFeedPage() {
       }, 800);
     } catch (e: unknown) {
       if (!isCurrentLoad()) return;
-      setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+      setErrorMsg(GENERIC_SERVER_ERROR);
       setBusy(false);
     }
   }, [
@@ -1372,7 +1373,7 @@ export default function JobRadarFeedPage() {
         void hydrateJobDescriptions(nextJobs.map((job) => job.id), loadMoreRunId, "load_more");
       }, 80);
     } catch (e: unknown) {
-      setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+      setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setLoadingMore(false);
     }
@@ -1436,7 +1437,7 @@ export default function JobRadarFeedPage() {
         }, 80);
       } catch (e: unknown) {
         if (cancelled) return;
-        setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+        setErrorMsg(GENERIC_SERVER_ERROR);
       } finally {
         if (!cancelled) setSearchBusy(false);
       }
@@ -1504,7 +1505,7 @@ export default function JobRadarFeedPage() {
       });
       setSavedHint(true);
     } catch (e: unknown) {
-      const msg = getErrorMessage(e) ?? "Erreur inconnue";
+      const msg = GENERIC_SERVER_ERROR;
       setErrorMsg(msg);
       pushToast({ kind: "error", title: "Impossible de sauvegarder l’offre", message: msg });
     } finally {
@@ -1529,7 +1530,7 @@ export default function JobRadarFeedPage() {
     setDismissingJobId(null);
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(GENERIC_SERVER_ERROR);
       return;
     }
 
@@ -1663,7 +1664,7 @@ export default function JobRadarFeedPage() {
       setAlertNotice({ kind: "success", title: "Alerte créée", message });
       pushToast({ kind: "success", title: "Alerte créée", message });
     } catch (e: unknown) {
-      const message = getErrorMessage(e) ?? "Erreur inconnue";
+      const message = GENERIC_SERVER_ERROR;
       setErrorMsg(message);
       setAlertNotice({ kind: "error", title: "Création impossible", message });
       pushToast({ kind: "error", title: "Création impossible", message });
@@ -1968,7 +1969,7 @@ export default function JobRadarFeedPage() {
     [TOP_MATCH_MIN, TOP_MATCH_DQ_MIN]
   );
   const gateCard = (
-    <div className="jr-gateCard" role="group" aria-label="Accès premium JobRadar">
+    <div className="jr-gateCard" role="group" aria-label="Accès complet JobRadar">
       <div className="jr-gateTitle">Débloque plus d’offres adaptées à ton profil</div>
       <div className="jr-gateText">{FEED_GATE_MESSAGE}</div>
       <div className="jr-gateReassurance" aria-label="Réassurance paiement">
@@ -2270,10 +2271,10 @@ export default function JobRadarFeedPage() {
             />
             {showTopMatchHelp && (
               <div className="jr-topMatchPanel" role="note" aria-live="polite">
-                <div className="jr-topMatchPanelTitle">Offres les plus adaptées = niveau strict</div>
+                <div className="jr-topMatchPanelTitle">Comment cette sélection est-elle construite ?</div>
                 <div className="jr-topMatchPanelText">
-                  Seuils actuels : score ≥ {TOP_MATCH_MIN} et dataQuality ≥ {TOP_MATCH_DQ_MIN}. Tu peux élargir pour voir
-                  plus d’offres.
+                  JobRadar met en avant les offres les plus proches de ton profil et de tes critères. Tu peux élargir
+                  la sélection pour découvrir plus d’opportunités.
                 </div>
                 <div className="jr-topMatchPanelActions">
                   <button
@@ -2349,7 +2350,7 @@ export default function JobRadarFeedPage() {
           showNoSearchResultsState ? (
             <EmptyState
               title="Aucune offre trouvée pour cette recherche"
-              description="Essaie un autre mot-clé, un autre pays, ou efface les critères pour revenir au feed général."
+              description="Essaie un autre mot-clé, un autre pays, ou efface les critères pour revenir à toutes les offres."
               primaryAction={{
                 label: "Effacer les critères",
                 onClick: () => {
@@ -2364,7 +2365,7 @@ export default function JobRadarFeedPage() {
             />
           ) : showNoPreciseMatchState ? (
             <EmptyState
-              title="Aucun match précis pour l’instant"
+              title="Aucune offre très proche de tes critères pour l’instant"
               description="Essaie d’élargir tes critères ou consulte toutes les offres."
               primaryAction={{
                 label: "Consulter toutes les offres",
@@ -2379,8 +2380,8 @@ export default function JobRadarFeedPage() {
             />
           ) : shadowUi.profileMode === "alerts_only" ? (
             <EmptyState
-              title="Tes alertes ne suffisent pas encore pour construire de vrais matchs"
-              description="On n’a rien trouvé de suffisamment propre à afficher pour l’instant. Définis un rôle cible pour améliorer la précision."
+              title="Tes alertes ne suffisent pas encore pour personnaliser les offres"
+              description="Définis un rôle cible pour aider JobRadar à mieux recommander les offres selon ton projet."
               primaryAction={{ label: "Définir mon rôle cible", to: "/jobradar/profile" }}
               secondaryAction={{
                 label: "Rafraîchir",

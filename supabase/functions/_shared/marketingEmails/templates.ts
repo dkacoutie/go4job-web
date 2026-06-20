@@ -226,13 +226,12 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
     : "";
 
   const html = renderLayout({
-    preheader: "Tu peux reprendre ton activation JobRadar en quelques secondes.",
-    title: "Ton accès JobRadar n'a pas semblé se finaliser",
+    preheader: "Tu peux reprendre ton paiement JobRadar quand tu veux.",
+    title: "Ton paiement n'a pas abouti — reprends où tu en étais",
     introHtml: `
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">Bonjour,</p>
       <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#374151;">
-        Tu avais commencé à activer ton accès JobRadar, mais l'activation ne semble pas être allée au bout.
-        Rien n'est bloqué : tu peux reprendre tranquillement si c'est toujours utile pour ta recherche.
+        Ton paiement n'a pas pu être finalisé. Aucun montant n'a été débité. Tu peux réessayer quand tu veux.
       </p>`,
     bodyHtml: `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;background:#f3faf8;border:1px solid #cfe7df;border-radius:12px;">
@@ -263,7 +262,7 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
         L'équipe Go4Job / JobRadar
       </p>`,
     primaryHref: variables.pricing_url,
-    primaryLabel: "Reprendre mon accès",
+    primaryLabel: "Réessayer le paiement",
     secondaryHref: variables.feed_url,
     secondaryLabel: "Voir les offres disponibles",
     unsubscribeUrl: variables.unsubscribe_url,
@@ -279,7 +278,7 @@ function paymentAttemptNoSuccess(variables: NormalizedMarketingEmailVariables) {
 
   const text = `Bonjour,
 
-Tu avais commencé à activer ton accès JobRadar, mais l'activation ne semble pas être allée au bout.
+Ton paiement n'a pas pu être finalisé. Aucun montant n'a été débité. Tu peux réessayer quand tu veux.
 Offres mises à jour en continu
 Filtrées selon ton profil
 Moins de recherche, plus de candidatures
@@ -430,12 +429,12 @@ function paystackAbandonedCheckoutEmail(variables: NormalizedMarketingEmailVaria
   const segmentMessage = variables.segment_message ||
     "Ce n'est peut-être qu'une interruption — ça arrive. Tu peux reprendre là où tu t'étais arrêté.";
   const html = renderLayout({
-    preheader: "Des offres complètes, des alertes personnalisées — en quelques secondes.",
-    title: "Tu étais à deux clics d'accéder à JobRadar",
+    preheader: "Tu peux reprendre ton paiement JobRadar quand tu veux.",
+    title: "Ton paiement n'a pas abouti — reprends où tu en étais",
     introHtml: `
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">Bonjour,</p>
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
-        Tu avais commencé à activer ton accès JobRadar — il ne manquait plus grand-chose.
+        Ton paiement n'a pas pu être finalisé. Aucun montant n'a été débité. Tu peux réessayer quand tu veux.
       </p>`,
     bodyHtml: `
       <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">
@@ -449,7 +448,7 @@ function paystackAbandonedCheckoutEmail(variables: NormalizedMarketingEmailVaria
         Si quelque chose a bloqué pendant le paiement, réponds simplement à ce mail. On regarde avec toi.
       </p>`,
     primaryHref: variables.recovery_url,
-    primaryLabel: "Accéder aux offres maintenant",
+    primaryLabel: "Réessayer le paiement",
     postCtaHtml: `
       <p style="margin:24px 0 0;font-size:15px;line-height:1.7;color:#374151;">
         L'équipe JobRadar
@@ -465,7 +464,7 @@ function paystackAbandonedCheckoutEmail(variables: NormalizedMarketingEmailVaria
 
   const text = `Bonjour,
 
-Tu avais commencé à activer ton accès JobRadar — il ne manquait plus grand-chose.
+Ton paiement n'a pas pu être finalisé. Aucun montant n'a été débité. Tu peux réessayer quand tu veux.
 
 ${segmentMessage}
 
@@ -488,7 +487,7 @@ const TEMPLATES: Record<string, TemplateDefinition> = {
   payment_attempt_no_success_email_1: {
     email_key: "payment_attempt_no_success_email_1",
     template_version: TEMPLATE_VERSION,
-    subject: "Ton accès JobRadar n'a pas semblé se finaliser",
+    subject: "Ton paiement n'a pas abouti — reprends où tu en étais",
     render: paymentAttemptNoSuccess,
   },
   interested_no_payment_attempt_email_1: {
@@ -512,7 +511,7 @@ const TEMPLATES: Record<string, TemplateDefinition> = {
   paystack_abandoned_checkout_email_1: {
     email_key: "paystack_abandoned_checkout_email_1",
     template_version: TEMPLATE_VERSION,
-    subject: "Tu étais à deux clics d'accéder à JobRadar",
+    subject: "Ton paiement n'a pas abouti — reprends où tu en étais",
     render: paystackAbandonedCheckoutEmail,
   },
 };

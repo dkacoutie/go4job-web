@@ -1,7 +1,7 @@
 import { type PaymentMarket, type PaymentMarketResolution } from "../lib/paymentMarket";
 
 const PAYMENT_PREFERENCE_ERROR_MESSAGE =
-  "Impossible d'enregistrer votre préférence pour l'instant. Vous pouvez continuer.";
+  "Une erreur temporaire est survenue. Tu peux continuer et réessayer plus tard.";
 
 type PaymentMarketPanelProps = {
   resolution: PaymentMarketResolution;
@@ -69,13 +69,13 @@ export default function PaymentMarketPanel({
 
       <p className="payment-market-panel__note">
         {resolution.market === "eur"
-          ? "Les prix sont affichés en euros. Le montant final est affiché avant confirmation du paiement."
-          : "Les prix sont affichés en francs CFA. Le montant final est affiché avant confirmation du paiement."}
+          ? "L’équivalent est affiché en euros. Le paiement est traité en francs CFA (FCFA). Montant exact affiché avant confirmation."
+          : "Le paiement est traité en francs CFA (FCFA). Montant exact affiché avant confirmation."}
       </p>
 
       {!canPersistPreference && (
         <p className="payment-market-panel__note">
-          Votre sélection est gardée pour cette session. Connectez-vous pour l'enregistrer sur votre profil.
+          Ton choix est gardé pour cette session. Connecte-toi pour l’enregistrer sur ton profil.
         </p>
       )}
 

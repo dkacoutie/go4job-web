@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
     return json(409, {
       ok: false,
       error: "checkout_currency_not_enabled",
-      message: "Le checkout actuel reste disponible en XOF le temps d'activer le provider EUR.",
+      message: "Le paiement est traité en francs CFA (FCFA). Le montant exact est affiché avant confirmation.",
     });
   }
 
@@ -231,7 +231,7 @@ Deno.serve(async (req) => {
     return json(409, {
       ok: false,
       error: "pass_already_active",
-      message: "Ton acces JobRadar est deja actif.",
+      message: "Ton accès JobRadar est déjà actif.",
       ends_at: activePass.ends_at,
     });
   }
@@ -254,7 +254,7 @@ Deno.serve(async (req) => {
     return json(409, {
       ok: false,
       error: "payment_pending",
-      message: "Un paiement Paystack est deja en cours. Termine-le avant d'en demarrer un autre.",
+      message: "Un paiement est déjà en cours. Termine-le avant d’en démarrer un autre.",
       reference: pendingPayment.provider_payment_id ?? null,
       authorization_url: existingAuthUrl,
     });
@@ -274,7 +274,7 @@ Deno.serve(async (req) => {
     return json(409, {
       ok: false,
       error: "test_payment_recent",
-      message: "Un paiement test recent existe deja. Attends quelques minutes avant de recommencer.",
+      message: "Un paiement test récent existe déjà. Attends quelques minutes avant de recommencer.",
       reference: recentTestPayment.provider_payment_id ?? null,
     });
   }

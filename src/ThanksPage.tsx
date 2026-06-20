@@ -23,7 +23,7 @@ export default function ThanksPage() {
       message = "Ce lien a déjà été utilisé, mais ton retour est déjà enregistré.";
     } else if (action === "up") {
       title = "Merci";
-      message = "Super. On utilise ton retour pour améliorer le matching.";
+      message = "Super. On utilise ton retour pour améliorer les offres recommandées.";
     } else if (action === "down") {
       title = "Merci";
       message = "Merci. Ton retour nous aide à filtrer les offres moins pertinentes.";

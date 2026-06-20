@@ -69,7 +69,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
       .maybeSingle();
 
     if (error) {
-      setErrorMsg("Impossible de verifier ton poste recherche pour le moment.");
+      setErrorMsg("Une erreur temporaire est survenue. Réessaie dans quelques instants.");
       setLoading(false);
       return;
     }
@@ -93,7 +93,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
 
     const nextDesiredRole = normalizeDesiredRole(desiredRoleInput);
     if (!nextDesiredRole) {
-      setErrorMsg("Renseigne le poste recherche pour continuer.");
+      setErrorMsg("Renseigne le poste recherché pour continuer.");
       return;
     }
 
@@ -119,7 +119,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
     setSaving(false);
 
     if (error) {
-      setErrorMsg("Impossible d'enregistrer ton poste recherche pour le moment.");
+      setErrorMsg("Une erreur temporaire est survenue. Réessaie dans quelques instants.");
       return;
     }
 
@@ -153,7 +153,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
 
         <form className="desiredRoleGate__form" onSubmit={handleSubmit}>
           <label className="desiredRoleGate__field">
-            Poste recherche
+            Poste recherché
             <input
               className="desiredRoleGate__input"
               value={desiredRoleInput}

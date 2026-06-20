@@ -64,7 +64,7 @@ export default function AppNav() {
         { label: "Mon CV", path: "/me/cv" },
         { label: "Mon profil", path: "/jobradar/profile" },
         ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
-        { label: "Mon abonnement", path: "/me/subscription" },
+        { label: "Mon accès JobRadar", path: "/me/subscription" },
       ] as Array<{ label: string; path: string }>,
     [hasPartnerAccount]
   );
@@ -337,7 +337,7 @@ export default function AppNav() {
                   onClick={onSignOut}
                   disabled={isSigningOut}
                 >
-                  {isSigningOut ? "Deconnexion..." : "Se deconnecter"}
+                  {isSigningOut ? "Déconnexion..." : "Se déconnecter"}
                 </button>
               </div>
             )}
@@ -421,7 +421,7 @@ export default function AppNav() {
               onClick={onSignOut}
               disabled={isSigningOut}
             >
-              {isSigningOut ? "Deconnexion..." : "Se deconnecter"}
+              {isSigningOut ? "Déconnexion..." : "Se déconnecter"}
             </button>
           </div>
         </div>

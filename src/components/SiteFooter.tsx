@@ -57,8 +57,8 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
           <section className="site-footer__brand" aria-label="Go4Job">
             <div className="site-footer__logoText">Go4Job</div>
             <p className="site-footer__desc">
-              JobRadar - alertes et suivi de candidatures pour les chercheurs d'emploi.
-              Simple, rapide et fiable.
+              JobRadar surveille les offres et met en avant celles qui correspondent à ton profil,
+              sans que tu aies à chercher chaque jour.
             </p>
 
             <div className="site-footer__socialIcons" aria-label="Réseaux sociaux">

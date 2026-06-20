@@ -28,7 +28,7 @@ export const PARTNER_PROGRAM_MESSAGES = {
       "Bonjour {{partner_name}},",
       "Je vous contacte car votre audience est tres proche du public que JobRadar aide chaque semaine a trouver plus vite des offres pertinentes et a mieux suivre ses candidatures.",
       "Nous ouvrons progressivement notre programme partenaires a quelques profils et structures capables de recommander JobRadar de facon simple et credible a leur communaute.",
-      "Le principe est clair : chaque partenaire dispose d'un lien personnel et d'un code partenaire, et la commission s'applique sur le premier abonnement paye du client recommande.",
+      "Le principe est clair : chaque partenaire dispose d'un lien personnel et d'un code partenaire, et la commission s'applique sur le premier pass payé du client recommandé.",
       "Si le sujet vous interesse, je peux vous envoyer le lien officiel pour rejoindre le programme et vous montrer concretement comment cela fonctionne.",
       "Bien a vous,",
       "L'equipe JobRadar by Go4Job",
@@ -42,7 +42,7 @@ export const PARTNER_PROGRAM_MESSAGES = {
       "Bonjour {{partner_name}},",
       "Comme convenu, voici le lien officiel pour rejoindre le programme partenaires JobRadar : {{program_entry_url}}",
       "Cette page sert uniquement a rejoindre le programme. Une fois l'acces active, votre espace partenaire vous donnera votre lien personnel et votre code partenaire a partager.",
-      "Le cadre reste volontairement simple : commission sur le premier abonnement paye du client recommande, suivi dans un espace partenaire dedie, et activation immediate apres inscription.",
+      "Le cadre reste volontairement simple : commission sur le premier pass payé du client recommandé, suivi dans un espace partenaire dédié, et activation immédiate après inscription.",
       "Si vous voulez, je peux aussi vous renvoyer un recap rapide des etapes juste apres votre inscription.",
       "Bien a vous,",
       "L'equipe JobRadar by Go4Job",
@@ -80,7 +80,7 @@ export const PARTNER_PROGRAM_FAQ: PartnerProgramFaqItem[] = [
   {
     question: "Comment fonctionne la commission ?",
     answers: [
-      "La commission porte sur le premier abonnement paye du client recommande.",
+      "La commission porte sur le premier pass payé du client recommandé.",
       "Les renouvellements ne sont pas commissionnes dans la version actuelle du programme.",
     ],
   },

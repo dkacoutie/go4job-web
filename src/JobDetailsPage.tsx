@@ -63,15 +63,6 @@ type AppRow = {
 
 const MIN_DESC_LEN = 400;
 
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object" && "message" in err) {
-    const maybeMessage = (err as { message?: unknown }).message;
-    if (typeof maybeMessage === "string") return maybeMessage;
-  }
-  return String(err);
-}
-
 function isUuid(v: unknown): v is string {
   return (
     typeof v === "string" &&
@@ -263,6 +254,7 @@ export default function JobDetailsPage() {
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
   const allowPremium = hasActivePass && !isLoadingPass;
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
   const DETAILS_GATE_MESSAGE = "Choisis un pass pour accéder à l’offre complète.";
   const userId = session?.user?.id ?? null;
 
@@ -361,7 +353,7 @@ export default function JobDetailsPage() {
         setApp(null);
       }
     } catch (error: unknown) {
-      if (isActive()) setErrorMsg(getErrorMessage(error) ?? "Erreur inconnue");
+      if (isActive()) setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       if (isActive()) setBusy(false);
     }
@@ -431,7 +423,7 @@ export default function JobDetailsPage() {
     }
 
     if (!applyLink) {
-      setErrorMsg("Aucun lien de candidature (apply_url/source_url) n'est disponible pour cette offre.");
+      setErrorMsg("Le lien de candidature n’est pas disponible pour cette offre.");
       return;
     }
 
@@ -450,8 +442,8 @@ export default function JobDetailsPage() {
 
       window.open(applyLink, "_blank", "noopener,noreferrer");
       await load();
-    } catch (error: unknown) {
-      setErrorMsg(getErrorMessage(error) ?? "Erreur inconnue");
+    } catch {
+      setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setActionBusy(false);
     }
@@ -467,8 +459,8 @@ export default function JobDetailsPage() {
       const { error } = await supabase.from("applications").delete().eq("user_id", userId).eq("job_id", id);
       if (error) throw error;
       setApp(null);
-    } catch (error: unknown) {
-      setErrorMsg(getErrorMessage(error) ?? "Erreur inconnue");
+    } catch {
+      setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setActionBusy(false);
     }
@@ -489,8 +481,8 @@ export default function JobDetailsPage() {
 
       if (error) throw error;
       await load();
-    } catch (error: unknown) {
-      setErrorMsg(getErrorMessage(error) ?? "Erreur inconnue");
+    } catch {
+      setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setActionBusy(false);
     }
@@ -518,11 +510,11 @@ export default function JobDetailsPage() {
       if (data?.ok) {
         setAiMsg("Génération lancée.");
       } else {
-        setAiMsg(data?.error ? String(data.error) : "Génération en échec.");
+        setAiMsg(GENERIC_SERVER_ERROR);
       }
       await load();
-    } catch (e) {
-      setAiMsg(getErrorMessage(e));
+    } catch {
+      setAiMsg(GENERIC_SERVER_ERROR);
     } finally {
       setAiBusy(false);
     }
@@ -533,7 +525,7 @@ export default function JobDetailsPage() {
     if (desc.scrapedOk) {
       return (
         <span className="chip jd-src jd-srcScraped">
-          Source: Site officiel
+          Source : site officiel
         </span>
       );
     }
@@ -555,7 +547,7 @@ export default function JobDetailsPage() {
             {"<-"} Retour
           </button>
           <button className="btn btnGhost" onClick={() => navigate("/jobradar/feed")}>
-            Feed JobRadar {"->"}
+            Offres pour moi {"->"}
           </button>
         </div>
 
@@ -571,7 +563,7 @@ export default function JobDetailsPage() {
             </div>
             <div className="jd-missingActions">
               <button className="btn btnPrimary" onClick={() => navigate("/jobradar/feed")}>
-                Retour au feed
+                Retour aux offres
               </button>
               <button className="btn btnGhost" onClick={() => navigate(similarLink)}>
                 Voir des offres similaires
@@ -610,7 +602,7 @@ export default function JobDetailsPage() {
               <>
             <div className="jd-actions">
               <button className="btn btnPrimary" disabled={actionBusy} onClick={postuler}>
-                {actionBusy ? "Ouverture..." : "Postuler / Soumettre"}
+                {actionBusy ? "Ouverture..." : "Ouvrir le lien de candidature"}
               </button>
 
               <div className="jd-actionsRow">
@@ -618,9 +610,9 @@ export default function JobDetailsPage() {
                   className="btn btnGhost"
                   disabled={actionBusy}
                   onClick={markSubmitted}
-                  title="Confirmer candidature envoyée"
+                  title="Confirmer que tu as envoyé ta candidature"
                 >
-                  Marquer envoyée
+                  Confirmer que j’ai postulé
                 </button>
 
                 {app && (
@@ -640,12 +632,6 @@ export default function JobDetailsPage() {
 
               <div className="jd-descMeta">
                 {descBadge()}
-                {desc.scrapedOk && job.desc_quality != null && (
-                  <span className="chip jd-quality">Qualité: {job.desc_quality}</span>
-                )}
-                {!desc.scrapedOk && desc.aiOk && job.ai_description_quality != null && (
-                  <span className="chip jd-quality">Qualité: {job.ai_description_quality}</span>
-                )}
                 {desc.scrapedOk && job.desc_updated_at && (
                   <span className="jd-dateSmall">
                     Mis à jour: {new Date(job.desc_updated_at).toLocaleDateString()}
@@ -672,7 +658,7 @@ export default function JobDetailsPage() {
                     <div>
                       <span className="jd-muted">Description en cours de génération...</span>
                       <div className="jd-genNote">
-                        La description sera enrichie automatiquement si le site source ne fournit pas assez de details.
+                        La description sera enrichie automatiquement si le site source ne fournit pas assez de détails.
                       </div>
                     </div>
                     <button className="btn btnPrimary jd-applyBtn" onClick={generateNow} disabled={aiBusy}>
@@ -682,10 +668,6 @@ export default function JobDetailsPage() {
                   </div>
                 )}
               </div>
-
-              {!desc.scrapedOk && !desc.aiOk && job.desc_last_error && (
-                <div className="jd-descHint">Dernière tentative: {job.desc_last_error}</div>
-              )}
 
               {!desc.scrapedOk && !desc.aiOk && applyLink && (
                 <a className="btn btnGhost jd-sourceBtn" href={applyLink} target="_blank" rel="noreferrer">
@@ -699,7 +681,7 @@ export default function JobDetailsPage() {
                 <div className="jd-lockedTitle">Accès complet</div>
                 <div className="jd-lockedText">{DETAILS_GATE_MESSAGE}</div>
                 <button className="btn btnPrimary" onClick={() => navigate("/pricing")}>
-                  Choisir ce pass
+                  Voir les pass JobRadar
                 </button>
               </div>
             )}

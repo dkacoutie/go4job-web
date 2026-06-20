@@ -27,6 +27,7 @@ export default function HomePage() {
 
   const [alertsCount, setAlertsCount] = useState(0);
   const [alertsLoading, setAlertsLoading] = useState(true);
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   const profileStatus = useMemo(() => {
     if (!profile) return "À compléter";
@@ -62,7 +63,7 @@ export default function HomePage() {
         .maybeSingle();
 
       if (profErr) {
-        setErrorMsg(profErr.message);
+        setErrorMsg(GENERIC_SERVER_ERROR);
         setProfileLoading(false);
         setAppsLoading(false);
         setAlertsLoading(false);
@@ -80,7 +81,7 @@ export default function HomePage() {
           .single();
 
         if (upsertErr) {
-          setErrorMsg(upsertErr.message);
+          setErrorMsg(GENERIC_SERVER_ERROR);
           setProfileLoading(false);
           setAppsLoading(false);
           setAlertsLoading(false);
@@ -99,7 +100,7 @@ export default function HomePage() {
         .select("*", { count: "exact", head: true })
         .eq("user_id", userId);
 
-      if (appsErr) setErrorMsg((m) => m ?? appsErr.message);
+      if (appsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
       setAppsCount(cApps ?? 0);
       setAppsLoading(false);
 
@@ -108,7 +109,7 @@ export default function HomePage() {
         .select("*", { count: "exact", head: true })
         .eq("user_id", userId);
 
-      if (alertsErr) setErrorMsg((m) => m ?? alertsErr.message);
+      if (alertsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
       setAlertsCount(cAlerts ?? 0);
       setAlertsLoading(false);
 
@@ -164,7 +165,7 @@ export default function HomePage() {
           <div className="onboard-head">
             <div>
               <div className="onboard-title">Commencer ici</div>
-              <div className="onboard-sub">Plus ton profil est complet, meilleurs sont tes matchs.</div>
+              <div className="onboard-sub">Plus ton profil est complet, plus les offres recommandées sont précises.</div>
             </div>
             <button className="btn btnGhost btnPill" type="button" onClick={() => navigate("/jobradar/feed")}>
               Explorer les offres

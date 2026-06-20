@@ -30,7 +30,7 @@ const PARTNER_BENEFITS = [
   },
   {
     title: "Une commission claire",
-    body: "Elle s'applique au premier abonnement payé du client recommandé.",
+    body: "Elle s'applique au premier pass payé du client recommandé.",
   },
   {
     title: "Un espace partenaire immédiat",
@@ -49,7 +49,7 @@ const INITIAL_FORM: PartnerApplicationFormState = {
 const PARTNER_ESSENTIAL_TERMS = [
   "Cette page /devenir-partenaire sert uniquement à rejoindre le programme.",
   "Votre lien personnel et votre code partenaire sont fournis après activation.",
-  "La commission porte sur le premier abonnement payé du client.",
+  "La commission porte sur le premier pass payé du client.",
 ];
 
 function normalizePartnerPageCopy(value: string) {

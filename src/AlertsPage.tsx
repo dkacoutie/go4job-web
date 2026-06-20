@@ -347,6 +347,7 @@ export default function AlertsPage() {
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
   const FREE_ACTIVE_ALERT_LIMIT = 1;
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
   const FREE_ALERT_LIMIT_MESSAGE =
     "Ton alerte gratuite est déjà active. Active un pass JobRadar pour créer plusieurs alertes.";
   const allowPremium = hasActivePass && !isLoadingPass;
@@ -455,8 +456,8 @@ export default function AlertsPage() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setErrorMsg(error.message);
-      pushToast({ kind: "error", title: "Impossible de charger les alertes", message: error.message });
+      setErrorMsg(GENERIC_SERVER_ERROR);
+      pushToast({ kind: "error", title: "Impossible de charger les alertes", message: GENERIC_SERVER_ERROR });
       setRows([]);
       setListLoading(false);
       return;
@@ -563,8 +564,8 @@ export default function AlertsPage() {
 
       if (countErr) {
         setBusy(false);
-        setErrorMsg(countErr.message);
-        pushToast({ kind: "error", title: "Création impossible", message: countErr.message });
+        setErrorMsg(GENERIC_SERVER_ERROR);
+        pushToast({ kind: "error", title: "Création impossible", message: GENERIC_SERVER_ERROR });
         return;
       }
 
@@ -596,8 +597,8 @@ export default function AlertsPage() {
     setBusy(false);
 
     if (error) {
-      setErrorMsg(error.message);
-      pushToast({ kind: "error", title: "Création impossible", message: error.message });
+      setErrorMsg(GENERIC_SERVER_ERROR);
+      pushToast({ kind: "error", title: "Création impossible", message: GENERIC_SERVER_ERROR });
       return;
     }
 
@@ -642,8 +643,8 @@ export default function AlertsPage() {
         .eq("is_active", true);
 
       if (countErr) {
-        setErrorMsg(countErr.message);
-        pushToast({ kind: "error", title: "Mise à jour impossible", message: countErr.message });
+        setErrorMsg(GENERIC_SERVER_ERROR);
+        pushToast({ kind: "error", title: "Mise à jour impossible", message: GENERIC_SERVER_ERROR });
         return;
       }
 
@@ -660,8 +661,8 @@ export default function AlertsPage() {
       .eq("user_id", userId);
 
     if (error) {
-      setErrorMsg(error.message);
-      pushToast({ kind: "error", title: "Mise à jour impossible", message: error.message });
+      setErrorMsg(GENERIC_SERVER_ERROR);
+      pushToast({ kind: "error", title: "Mise à jour impossible", message: GENERIC_SERVER_ERROR });
       return;
     }
 
@@ -728,7 +729,7 @@ export default function AlertsPage() {
     }
 
     if (!deleted) {
-      const msg = lastError ?? "La suppression n?a pas ?t? confirm?e.";
+      const msg = "La suppression n’a pas été confirmée. Réessaie dans quelques instants.";
       setErrorMsg(msg);
       pushToast({ kind: "error", title: "Suppression impossible", message: msg });
       // eslint-disable-next-line no-console
@@ -740,8 +741,8 @@ export default function AlertsPage() {
     setRows((prev) => prev.filter((x) => x.id !== toDelete.id));
     pushToast({
       kind: "success",
-      title: "Alerte supprim?e",
-      message: "Tu peux en cr?er une nouvelle quand tu veux.",
+      title: "Alerte supprimée",
+      message: "Tu peux en créer une nouvelle quand tu veux.",
     });
     setConfirmOpen(false);
     setToDelete(null);
@@ -765,7 +766,7 @@ export default function AlertsPage() {
           </div>
 
           <button className="btn btnGhost" type="button" onClick={() => navigate("/jobradar/feed")}>
-            Voir le feed →
+            Voir les offres →
           </button>
         </div>
       </section>
@@ -1093,7 +1094,7 @@ export default function AlertsPage() {
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modalTitle">Supprimer cette alerte ?</div>
-            <div className="modalText">Cette action est d?finitive.</div>
+            <div className="modalText">Cette action est définitive.</div>
 
             <div className="modalActions">
               <button

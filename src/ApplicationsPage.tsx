@@ -35,15 +35,6 @@ type AppRow = {
   jobs?: JobMini | null; // join
 };
 
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object" && "message" in err) {
-    const maybeMessage = (err as { message?: unknown }).message;
-    if (typeof maybeMessage === "string") return maybeMessage;
-  }
-  return String(err);
-}
-
 function norm(s: string) {
   return (s ?? "").toLowerCase().trim();
 }
@@ -88,6 +79,7 @@ export default function ApplicationsPage() {
 
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const { pushToast } = useToast();
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth", { replace: true });
@@ -155,8 +147,8 @@ export default function ApplicationsPage() {
         } satisfies AppRow;
       });
       setRows(normalized);
-    } catch (e: unknown) {
-      setErrorMsg(getErrorMessage(e) ?? "Erreur inconnue");
+    } catch {
+      setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setBusy(false);
     }
@@ -223,8 +215,8 @@ export default function ApplicationsPage() {
     setUpdatingId(null);
 
     if (error) {
-      setErrorMsg(error.message);
-      pushToast({ kind: "error", title: "Mise à jour impossible", message: error.message });
+      setErrorMsg(GENERIC_SERVER_ERROR);
+      pushToast({ kind: "error", title: "Mise à jour impossible", message: GENERIC_SERVER_ERROR });
       return;
     }
 
@@ -258,11 +250,11 @@ export default function ApplicationsPage() {
   function openApply(r: AppRow) {
     const url = getApplyLink(r.jobs);
     if (!url) {
-      setErrorMsg("Aucun lien de candidature (apply_url/source_url) pour cette offre.");
+      setErrorMsg("Le lien de candidature n’est pas disponible pour cette offre.");
       pushToast({
         kind: "error",
         title: "Lien de candidature indisponible",
-        message: "Cette offre n’a pas de lien apply_url/source_url.",
+        message: "Le lien de candidature n’est pas disponible pour cette offre.",
       });
       return;
     }
@@ -277,14 +269,14 @@ export default function ApplicationsPage() {
             <div>
               <h1>Candidatures</h1>
               <p>
-                Tes candidatures ajoutées depuis JobRadar.
+                Tes offres sauvegardées et les candidatures que tu suis dans JobRadar.
                 <span className="app-pill">{counts.all} au total</span>
               </p>
             </div>
 
             <div className="app-heroActions">
               <button className="btn btnGhost" onClick={() => navigate("/jobradar/feed")}>
-                Aller au feed →
+                Voir les offres →
               </button>
               <button className="btn btnGhost" onClick={load} disabled={busy}>
                 {busy ? "Chargement…" : "Rafraîchir"}
@@ -319,7 +311,7 @@ export default function ApplicationsPage() {
                 className="input"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Rechercher (titre, entreprise, pays, remote...)"
+                placeholder="Rechercher par titre, entreprise, pays ou télétravail..."
               />
             </div>
           </div>
@@ -332,7 +324,7 @@ export default function ApplicationsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState
             title="Tu n’as pas encore d’offres sauvegardées"
-            description="Explore le feed et ajoute des offres à ta liste À postuler."
+            description="Explore les offres et ajoute celles qui t’intéressent à ta liste À postuler."
             primaryAction={{ label: "Explorer les offres", to: "/jobradar/feed" }}
             tone="info"
           />
@@ -382,18 +374,18 @@ export default function ApplicationsPage() {
                             className="btn btnGhost"
                             disabled={isUpdating || !applyLink}
                             onClick={() => openApply(r)}
-                            title={!applyLink ? "Aucun lien apply_url/source_url" : "Ouvrir le formulaire / site"}
+                            title={!applyLink ? "Lien de candidature indisponible" : "Ouvrir le lien de candidature"}
                           >
-                            Soumettre
+                            Ouvrir le lien de candidature
                           </button>
 
                           <button
                             className="btn btnGhost"
                             disabled={isUpdating || r.status === "submitted"}
                             onClick={() => setStatus(r.id, r.job_id, "submitted")}
-                            title="Marquer comme candidature envoyée"
+                            title="Confirmer que tu as envoyé ta candidature"
                           >
-                            Marquer envoyée
+                            Confirmer que j’ai postulé
                           </button>
 
                           <button

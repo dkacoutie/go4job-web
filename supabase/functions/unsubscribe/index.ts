@@ -52,7 +52,7 @@ serve(async (req) => {
   const token = url.searchParams.get("t") || url.searchParams.get("token");
 
   if (!uid || !token) {
-    return htmlResponse(400, "<h2>Lien invalide</h2><p>Parametres manquants.</p>");
+    return htmlResponse(400, "<h2>Lien invalide</h2><p>Paramètres manquants.</p>");
   }
 
   const secret = Deno.env.get("CRON_SECRET") || "";
@@ -85,7 +85,7 @@ serve(async (req) => {
     200,
     `
     <div style="font-family:Arial,sans-serif;padding:24px;">
-      <h2>Desinscription confirmee</h2>
+      <h2>Désinscription confirmée</h2>
       <p>Tu ne recevras plus le digest quotidien JobRadar.</p>
     </div>
     `,

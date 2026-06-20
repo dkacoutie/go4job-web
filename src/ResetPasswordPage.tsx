@@ -5,15 +5,6 @@ import { useSession } from "./lib/useSession";
 import go4jobLogo from "./assets/go4job-logo.png";
 import "./AuthPage.css";
 
-function getErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (err && typeof err === "object" && "message" in err) {
-    const m = (err as { message?: unknown }).message;
-    if (typeof m === "string") return m;
-  }
-  return String(err);
-}
-
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -49,7 +40,7 @@ export default function ResetPasswordPage() {
 
     if (!session) {
       setErrorMsg(
-        "Impossible de changer le mot de passe : pas de session de récupération. Redemande un lien de reset."
+        "Ce lien de réinitialisation n’est plus valide. Demande un nouveau lien depuis la page de connexion."
       );
       return;
     }
@@ -72,8 +63,8 @@ export default function ResetPasswordPage() {
       setInfoMsg("Mot de passe mis à jour. Tu peux te reconnecter.");
       await supabase.auth.signOut();
       navigate("/auth", { replace: true });
-    } catch (e: unknown) {
-      setErrorMsg(getErrorMessage(e));
+    } catch {
+      setErrorMsg("Une erreur temporaire est survenue. Réessaie dans quelques instants.");
     } finally {
       setBusy(false);
     }

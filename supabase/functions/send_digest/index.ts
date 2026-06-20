@@ -756,7 +756,7 @@ function buildEmailHtml(params: {
   const exploreCount = explore.length;
   const totalCount = topCount + exploreCount;
   const alertsLabel = `${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""}`;
-  const topLabel = `${topCount} top match${topCount > 1 ? "s" : ""}`;
+  const topLabel = `${topCount} offre${topCount > 1 ? "s" : ""} recommandée${topCount > 1 ? "s" : ""}`;
   const newLabel = `${totalCount} nouvelle${totalCount > 1 ? "s" : ""} offre${totalCount > 1 ? "s" : ""}`;
   const summaryLine = `${alertsLabel} \u2022 ${topLabel} \u2022 ${newLabel}`;
 
@@ -787,7 +787,7 @@ function buildEmailHtml(params: {
     const link = buildJobLink(appUrl, job);
     const company = job.company_name ? escapeHtml(job.company_name) : "";
     const metaLine = [company, item.meta?.location ?? null, item.meta?.remote ?? null].filter(Boolean).join(" \u00B7 ");
-    const badgeHtml = item.badge ? badge(item.badge, item.badge === "Top match") : "";
+    const badgeHtml = item.badge ? badge(item.badge, item.badge === "Recommandée") : "";
 
     return `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border:1px solid ${EMAIL_COLORS.border};border-radius:12px;overflow:hidden;background:${EMAIL_COLORS.white};">
@@ -814,7 +814,7 @@ function buildEmailHtml(params: {
 
   const topEmptyHtml = `
     <div style="padding:14px;border:1px dashed ${EMAIL_COLORS.border};border-radius:12px;background:${EMAIL_COLORS.white};color:${EMAIL_COLORS.muted};font-size:13px;line-height:1.55;">
-      Aucun top match aujourd\u2019hui, mais tu peux explorer d\u2019autres opportunit\u00E9s ci-dessous.
+      Aucune offre recommandée aujourd\u2019hui, mais tu peux explorer d\u2019autres offres ci-dessous.
     </div>
   `;
 
@@ -914,7 +914,7 @@ function buildEmailText(params: {
   const exploreCount = explore.length;
   const totalCount = topCount + exploreCount;
   const alertsLabel = `${alertCount} alerte${alertCount > 1 ? "s" : ""} active${alertCount > 1 ? "s" : ""}`;
-  const topLabel = `${topCount} top match${topCount > 1 ? "s" : ""}`;
+  const topLabel = `${topCount} offre${topCount > 1 ? "s" : ""} recommandée${topCount > 1 ? "s" : ""}`;
   const newLabel = `${totalCount} nouvelle${totalCount > 1 ? "s" : ""} offre${totalCount > 1 ? "s" : ""}`;
   const summaryLine = `${alertsLabel} \u2022 ${topLabel} \u2022 ${newLabel}`;
   const primaryCta = { label: "Voir mes meilleures offres", url: radarUrl };
@@ -935,18 +935,22 @@ function buildEmailText(params: {
     return lines.join("\n");
   };
 
-  const topText = topCount ? top.map(itemText).join("\n\n") : "- Aucun top match aujourd'hui. Voir la section Explorer plus d'opportunites.";
+  const topText = topCount
+    ? top.map(itemText).join("\n\n")
+    : "- Aucune offre recommandée aujourd’hui. Consulte la section Explorer plus d’opportunités.";
   const exploreText = exploreCount ? explore.map(itemText).join("\n\n") : "";
 
   return [
     "JobRadar",
-    "Tes meilleures opportunites du jour",
+    "Tes meilleures opportunités du jour",
     introText,
     summaryLine,
     salutation,
     "",
     topTitle,
-    totalCount === 0 ? "Aucune offre aujourd'hui. Ajuste tes alertes pour recevoir plus d'opportunites pertinentes." : topText,
+    totalCount === 0
+      ? "Aucune offre aujourd’hui. Ajuste tes alertes pour recevoir plus d’opportunités pertinentes."
+      : topText,
     exploreCount ? "" : "",
     exploreCount ? exploreTitle : "",
     exploreCount ? exploreHelper : "",
@@ -1551,10 +1555,10 @@ serve(async (req) => {
       salutation,
       preview: copy.preview,
       introText: copy.introText,
-      topTitle: "Top matchs",
+      topTitle: "Offres recommandées",
       exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
       exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
-      top: buildItems(selectedTop, reasonsByJobId, "Top match"),
+      top: buildItems(selectedTop, reasonsByJobId, "Recommandée"),
       explore: buildItems(selectedExplore, reasonsByJobId, "Tr\u00E8s pertinent"),
       appBaseUrl,
       unsubscribeUrl,
@@ -1563,10 +1567,10 @@ serve(async (req) => {
     const text = buildEmailText({
       salutation,
       introText: copy.introText,
-      topTitle: "Top matchs",
+      topTitle: "Offres recommandées",
       exploreTitle: "Explorer plus d\u2019opportunit\u00E9s",
       exploreHelper: "D\u00E9couvre plus d\u2019offres s\u00E9lectionn\u00E9es pour aujourd\u2019hui.",
-      top: buildItems(selectedTop, reasonsByJobId, "Top match"),
+      top: buildItems(selectedTop, reasonsByJobId, "Recommandée"),
       explore: buildItems(selectedExplore, reasonsByJobId, "Tr\u00E8s pertinent"),
       appBaseUrl,
       unsubscribeUrl,

@@ -281,6 +281,7 @@ export default function MyCvPage() {
 
   const userId = session?.user?.id ?? null;
   const { pushToast } = useToast();
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   useEffect(() => {
     if (!loading && !session) navigate("/auth");
@@ -361,7 +362,7 @@ export default function MyCvPage() {
 
     const res = await invokeCvSave("get_active");
     if (!res?.ok) {
-      setErr(res?.error || res?.message || "Erreur lors du chargement du CV");
+      setErr(GENERIC_SERVER_ERROR);
       return;
     }
 
@@ -467,12 +468,12 @@ export default function MyCvPage() {
         title: "CV téléversé",
         message: "Ton CV est bien enregistré et synchronisé.",
       });
-    } catch (e: any) {
+    } catch {
       setCvError("Impossible d’envoyer ce CV. Réessaie avec un fichier plus léger.");
       pushToast({
         kind: "error",
         title: "Téléversement échoué",
-        message: e?.message ?? "Réessaie dans quelques instants.",
+        message: GENERIC_SERVER_ERROR,
       });
     } finally {
       setCvUploading(false);
@@ -517,12 +518,12 @@ export default function MyCvPage() {
         title: "CV supprimé",
         message: "Le CV a bien été retiré de ton profil.",
       });
-    } catch (e: any) {
+    } catch {
       setCvError("Impossible de supprimer le CV pour le moment.");
       pushToast({
         kind: "error",
         title: "Suppression échouée",
-        message: e?.message ?? "Réessaie dans quelques instants.",
+        message: GENERIC_SERVER_ERROR,
       });
     } finally {
       setCvUploading(false);
@@ -626,22 +627,21 @@ export default function MyCvPage() {
               title: "CV analysé (à vérifier)",
               message: "Certaines informations peuvent être incomplètes. Relis ton profil pour améliorer la précision.",
               primary: { label: "Relire mon profil", to: "/jobradar/profile" },
-              secondary: { label: "Voir mes Top matchs", to: "/jobradar/feed" },
+              secondary: { label: "Voir les offres pour moi", to: "/jobradar/feed" },
               tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "info",
             }
           : {
               title: "Prochaine étape recommandée",
-              message: "Vérifie ton profil détecté, puis mets à jour tes alertes et découvre tes Top matchs.",
-              primary: { label: "Voir mes Top matchs", to: "/jobradar/feed" },
+              message: "Vérifie ton profil détecté, puis mets à jour tes alertes et découvre les offres recommandées.",
+              primary: { label: "Voir les offres pour moi", to: "/jobradar/feed" },
               secondary: { label: "Mettre à jour mon profil", to: "/jobradar/profile" },
               tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "success",
             },
       );
     } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      setErr(msg);
+      setErr(GENERIC_SERVER_ERROR);
       pushToast({
         kind: "error",
         title: "Impossible d'analyser ce CV",
@@ -853,14 +853,14 @@ export default function MyCvPage() {
       pushToast({
         kind: "success",
         title: "Compétences mises à jour",
-        message: "Le matching utilisera ces nouvelles compétences.",
+        message: "JobRadar utilisera ces nouvelles compétences pour mieux recommander les offres.",
       });
-    } catch (e: any) {
-      setErr(e?.message ?? String(e));
+    } catch {
+      setErr(GENERIC_SERVER_ERROR);
       pushToast({
         kind: "error",
         title: "Impossible d'enregistrer les compétences",
-        message: e?.message ?? "Réessaie dans quelques instants.",
+        message: GENERIC_SERVER_ERROR,
       });
     } finally {
       setBusy(false);
@@ -895,7 +895,7 @@ export default function MyCvPage() {
       </div>
 
       <div className="cv-guidance">
-        <div className="cv-guidance__title">Ajoute ton CV pour améliorer tes matchs</div>
+        <div className="cv-guidance__title">Ajoute ton CV pour améliorer les offres recommandées</div>
         <div className="cv-guidance__text">
           JobRadar analyse ton CV pour mieux comprendre ton profil et te proposer des offres plus pertinentes.
           Tu pourras vérifier et corriger les informations détectées.
@@ -918,7 +918,7 @@ export default function MyCvPage() {
               <div className="cv-fileEmpty">
                 <div className="cv-fileEmptyTitle">Aucun CV enregistré</div>
                 <div className="cv-fileEmptyText">
-                  Téléverse ton CV pour l'utiliser dans JobRadar et accélérer les matchs.
+                  Téléverse ton CV pour aider JobRadar à mieux comprendre ton profil et recommander les offres.
                 </div>
                 <button
                   className="btn btnPrimary"
@@ -1002,7 +1002,7 @@ export default function MyCvPage() {
 
           {err && <div className="cv-alert">{err}</div>}
           <div className="cv-privacy">
-            Tes données CV sont utilisées uniquement pour améliorer le matching JobRadar. Tu peux supprimer ton CV à tout moment.
+            Tes données CV sont utilisées uniquement pour améliorer les offres recommandées par JobRadar. Tu peux supprimer ton CV à tout moment.
           </div>
         </section>
 
@@ -1041,7 +1041,7 @@ export default function MyCvPage() {
                   Préparation
                 </span>
                 <span className={phase === "analyze" || phase === "saving" ? "done" : ""}>Analyse du CV</span>
-                <span className={phase === "saving" ? "done" : ""}>Préparation des matchs</span>
+                <span className={phase === "saving" ? "done" : ""}>Préparation des recommandations</span>
               </div>
             </div>
           )}
@@ -1165,7 +1165,7 @@ export default function MyCvPage() {
                       Enregistrer
                     </button>
                   </div>
-                  <div className="cv-blockHint">Tu peux ajuster les compétences pour améliorer le matching.</div>
+                  <div className="cv-blockHint">Tu peux ajuster les compétences pour améliorer les offres recommandées.</div>
                 </div>
               </div>
 

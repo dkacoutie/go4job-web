@@ -58,7 +58,7 @@
       if (status === "ok") {
         if (action === "up") {
           titleEl.textContent = "Merci 👍";
-          msgEl.textContent = "Super ! On utilise ton 👍 pour améliorer le matching.";
+          msgEl.textContent = "Super ! On utilise ton 👍 pour améliorer les offres recommandées.";
           setBadge("ok", "Feedback enregistré");
         } else if (action === "down") {
           titleEl.textContent = "Merci 👎";
@@ -87,13 +87,7 @@
         setBadge("err", "Erreur");
       }
 
-      // Détails (debug léger)
-      const parts = [];
-      if (reason) parts.push("reason=" + reason);
-      if (action) parts.push("action=" + action);
-      if (feedback) parts.push("feedback=" + feedback);
-      if (jobId) parts.push("job_id=" + jobId);
-      detailsEl.textContent = parts.length ? ("Détails: " + parts.join(" • ")) : "";
+      detailsEl.textContent = "";
     </script>
   </body>
 </html>

@@ -64,6 +64,10 @@ function formatPaymentStatus(status?: string | null) {
   }
 }
 
+function displayPlanName(name: string | null | undefined) {
+  return name === "Pass Mensuel" ? "Pass Actif" : name || "Pass JobRadar";
+}
+
 export default function SubscriptionPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -74,6 +78,7 @@ export default function SubscriptionPage() {
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
   useEffect(() => {
     if (!loading && !session) {
@@ -98,7 +103,7 @@ export default function SubscriptionPage() {
       .select("id, plan_code, plan_name, status, starts_at, activated_at, ends_at, days_remaining")
       .maybeSingle();
 
-    if (passErr) setErrorMsg(passErr.message);
+    if (passErr) setErrorMsg(GENERIC_SERVER_ERROR);
     setCurrentPass((passData as CurrentPass) ?? null);
 
     const nowIso = new Date().toISOString();
@@ -126,7 +131,7 @@ export default function SubscriptionPage() {
       .order("created_at", { ascending: false })
       .limit(6);
 
-    if (paymentsErr) setErrorMsg((prev) => prev ?? paymentsErr.message);
+    if (paymentsErr) setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
     setPayments((paymentsData as PaymentRow[]) ?? []);
 
     setPageLoading(false);
@@ -151,13 +156,13 @@ export default function SubscriptionPage() {
         <div className="subscription-hero__inner">
           <div className="subscription-hero__kicker">JOBRADAR</div>
           <h1>Mon accès JobRadar</h1>
-          <p>Retrouvez votre accès actif, les dates utiles et vos paiements au même endroit.</p>
+          <p>Retrouve ton accès actif, les dates utiles et tes paiements au même endroit.</p>
           <button
             type="button"
             className="btn btnPrimary subscription-hero__cta"
             onClick={() => navigate(hasActivePass ? "/jobradar/feed" : "/pricing")}
           >
-            {hasActivePass ? "Voir mes offres" : "Choisir ou renouveler un Pass"}
+            {hasActivePass ? "Voir les offres pour moi" : "Choisir ou prolonger mon pass"}
           </button>
         </div>
       </header>
@@ -170,7 +175,7 @@ export default function SubscriptionPage() {
             <div>
               <h2>Mon accès actuel</h2>
               <p className="subscription-card__sub">
-                État de votre accès complet et prochaine échéance importante.
+                État de ton accès complet et prochaine échéance importante.
               </p>
             </div>
             {passStatus && (
@@ -186,12 +191,12 @@ export default function SubscriptionPage() {
             <div className="subscription-empty">
               <div className="subscription-empty__title">Aucun pass actif</div>
               <div className="subscription-empty__text">
-                Vous pouvez choisir ou renouveler votre Pass depuis la page JobRadar dédiée.
+                Tu peux choisir ou prolonger ton pass depuis la page JobRadar.
               </div>
             </div>
           ) : (
             <div className="subscription-pass">
-              <div className="subscription-pass__title">{currentPass.plan_name}</div>
+              <div className="subscription-pass__title">{displayPlanName(currentPass.plan_name)}</div>
               <div className="subscription-pass__grid">
                 <div className="subscription-pass__item">
                   <span>Statut</span>
@@ -219,7 +224,7 @@ export default function SubscriptionPage() {
             <div>
               <h2>Gérer mon Pass JobRadar</h2>
               <p className="subscription-card__sub">
-                Choisissez, renouvelez ou consultez les Pass disponibles depuis la nouvelle page JobRadar.
+                Choisis, prolonge ou consulte les pass disponibles sur la page JobRadar.
               </p>
             </div>
           </div>
@@ -228,7 +233,7 @@ export default function SubscriptionPage() {
             className="btn btnPrimary subscription-hero__cta"
             onClick={() => navigate("/pricing")}
           >
-            Choisir ou renouveler un Pass
+            Choisir ou prolonger mon pass
           </button>
         </section>
 
@@ -248,7 +253,7 @@ export default function SubscriptionPage() {
             <div className="subscription-empty">
               <div className="subscription-empty__title">Aucun paiement enregistré</div>
               <div className="subscription-empty__text">
-                Vos futurs paiements apparaîtront ici dès qu'un Pass sera activé.
+                Tes futurs paiements apparaîtront ici dès qu’un pass sera activé.
               </div>
             </div>
           ) : (
@@ -264,7 +269,7 @@ export default function SubscriptionPage() {
               {payments.map((payment) => {
                 const paymentStatus = formatPaymentStatus(payment.status);
                 const paymentDate = payment.paid_at || payment.created_at;
-                const planName = payment.plan?.name || "Pass JobRadar";
+                const planName = displayPlanName(payment.plan?.name);
                 const paymentRef = payment.provider_payment_id || payment.id;
 
                 return (

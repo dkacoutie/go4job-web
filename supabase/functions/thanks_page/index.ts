@@ -14,10 +14,8 @@ function pageHtml(params: {
   status: string;
   reason: string;
   action: string;
-  feedback: string;
-  jobId: string;
 }) {
-  const { status, reason, action, feedback, jobId } = params;
+  const { status, reason, action } = params;
 
   const isOk = status !== "error";
   let title = "Merci ✅";
@@ -28,7 +26,7 @@ function pageHtml(params: {
   if (isOk) {
     if (action === "up") {
       title = "Merci 👍";
-      message = "Super ! On utilise ton 👍 pour améliorer le matching.";
+      message = "Super ! On utilise ton 👍 pour améliorer les offres recommandées.";
       badge = "Feedback enregistré";
     } else if (action === "down") {
       title = "Merci 👎";
@@ -54,15 +52,6 @@ function pageHtml(params: {
       message = "Une erreur est survenue. Réessaie depuis l’email (ou le prochain digest).";
     }
   }
-
-  const detailsParts = [
-    reason ? `reason=${reason}` : "",
-    action ? `action=${action}` : "",
-    feedback ? `feedback=${feedback}` : "",
-    jobId ? `job_id=${jobId}` : "",
-  ].filter(Boolean);
-
-  const details = detailsParts.join(" • ");
 
   return `<!doctype html>
 <html lang="fr">
@@ -93,8 +82,6 @@ function pageHtml(params: {
 
       <span class="badge ${badgeKind}">${escapeHtml(badge)}</span>
 
-      ${details ? `<p class="muted small">Détails: ${escapeHtml(details)}</p>` : ""}
-
       <a class="btn" href="https://go4job.org/">Retour à Go4Job</a>
     </div>
 
@@ -112,10 +99,7 @@ serve((req) => {
   const status = url.searchParams.get("status") ?? "ok";
   const reason = url.searchParams.get("reason") ?? "";
   const action = url.searchParams.get("action") ?? "";
-  const feedback = url.searchParams.get("feedback") ?? "";
-  const jobId = url.searchParams.get("job_id") ?? "";
-
-  const html = pageHtml({ status, reason, action, feedback, jobId });
+  const html = pageHtml({ status, reason, action });
 
   return new Response(html, {
     status: 200,

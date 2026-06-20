@@ -134,9 +134,9 @@ export type JobRadarShadowUiConfig = {
 function humanizeFallbackReason(reason: string | null | undefined): string {
   switch (reason) {
     case "alert_signals_are_directional_but_not_strong_enough_for_high_confidence_top_match":
-      return "Tes alertes donnent une bonne direction, mais il manque encore un signal fort pour construire de vrais Top Match.";
+      return "Tes alertes donnent une bonne direction. Ajoute un rôle cible pour obtenir des offres encore mieux recommandées.";
     case "cv_skills_help_detect_domain_fit_but_role_intent_is_still_implicit":
-      return "Tes compétences permettent déjà de repérer un domaine pertinent, mais ton rôle cible reste encore implicite.";
+      return "Tes compétences permettent déjà de repérer un domaine pertinent. Indique le poste recherché pour préciser la sélection.";
     case "not_enough_personalization_signals_yet_for_strong_ranking":
       return "Il n’y a pas encore assez d’indices pour te proposer des recommandations très personnalisées.";
     default:
@@ -148,8 +148,8 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
   if (!meta) {
     return {
       profileMode: null,
-      heroTitle: "Découvre les opportunités du moment",
-      heroDescription: "On affine l'affichage selon les signaux déjà disponibles dans ton profil.",
+      heroTitle: "JobRadar surveille les offres pour toi",
+      heroDescription: "Découvre les opportunités du moment pendant que JobRadar affine la sélection selon ton profil.",
       showStrictTab: false,
       showOnlyVeryRelevantToggle: false,
       largeTabLabel: "Explorer",
@@ -171,7 +171,7 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
       heroTitle: "Découvre des offres basées sur tes alertes",
       heroDescription:
         humanizeFallbackReason(meta.fallback_reason) ||
-        "On met en avant une sélection guidée par tes alertes en attendant un signal plus fort.",
+        "JobRadar met en avant une sélection guidée par tes alertes.",
       showStrictTab: false,
       showOnlyVeryRelevantToggle: false,
       largeTabLabel: "Basé sur tes alertes",
@@ -181,7 +181,7 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
         title: "Basé sur tes alertes",
         message:
           humanizeFallbackReason(meta.fallback_reason) ||
-          "Ajoute un rôle cible pour transformer cette découverte guidée en recommandations plus précises.",
+          "Ajoute un rôle cible pour obtenir des offres recommandées plus précises.",
         primaryActionLabel: "Définir mon rôle cible",
         primaryActionTo: "/jobradar/profile",
       },
@@ -194,7 +194,7 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
       heroTitle: "Des offres alignées avec tes compétences",
       heroDescription:
         humanizeFallbackReason(meta.fallback_reason) ||
-        "On met en avant les offres cohérentes avec ton CV, puis on élargit pour explorer davantage.",
+        "JobRadar met en avant les offres cohérentes avec ton CV, puis élargit la sélection pour explorer davantage.",
       showStrictTab: true,
       showOnlyVeryRelevantToggle: topCount > 0,
       largeTabLabel: "Explorer",
@@ -236,8 +236,8 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
 
   return {
     profileMode: meta.profile_mode,
-    heroTitle: "Priorité aux meilleures opportunités",
-    heroDescription: "Voici les offres les plus adaptées à ton profil.",
+      heroTitle: "Priorité aux meilleures opportunités",
+    heroDescription: "JobRadar surveille les offres pour toi et met en avant celles qui correspondent à ton profil.",
     showStrictTab: true,
     showOnlyVeryRelevantToggle: true,
     largeTabLabel: "Explorer",
@@ -264,22 +264,22 @@ export function getJobRadarShadowSubline(
   matchMode: "strict" | "large"
 ): string {
   if (!meta) {
-    return "Explorer : sélection affichée sans personnalisation forte tant que ton profil est en cours d'analyse.";
+    return "Explorer : découvre les offres du moment pendant que JobRadar affine ta sélection.";
   }
   if (meta.profile_mode === "rich") {
     return matchMode === "strict"
       ? "Pour toi : offres triées par pertinence."
-      : "Explorer : sélection plus large, sans filtres trop stricts.";
+      : "Explorer : une sélection plus large pour découvrir davantage d’opportunités.";
   }
   if (meta.profile_mode === "alerts_only") {
     return matchMode === "large"
-      ? "Basé sur tes alertes : une sélection de découverte guidée pour élargir les opportunités."
+      ? "Basé sur tes alertes : une sélection guidée pour élargir les opportunités."
       : "Pour toi : disponible quand ton profil devient plus précis.";
   }
   if (meta.profile_mode === "cv_only") {
     return matchMode === "strict"
       ? "Pour toi : offres triées d’après tes compétences et ton domaine probable."
-      : "Explorer : opportunités adjacentes pour élargir la recherche.";
+      : "Explorer : d’autres opportunités proches de ta recherche.";
   }
   return matchMode === "large"
     ? "Opportunités récentes : une sélection de départ en attendant un profil plus complet."

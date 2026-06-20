@@ -273,7 +273,7 @@ export default function PartnerPortalPage() {
       title: conversion.status === "attributed" ? "Vente attribuee" : "Vente non commissionable",
       detail:
         conversion.status === "attributed"
-          ? `Code ${conversion.referral_code_used} | premier abonnement paye du client`
+          ? `Code ${conversion.referral_code_used} | premier pass payé du client`
           : `Code ${conversion.referral_code_used} | ${conversion.disqualification_reason ?? "non eligible"}`,
     }));
 
@@ -497,7 +497,7 @@ export default function PartnerPortalPage() {
               </div>
               <div className="partnerPortal__welcomeFact">
                 <span>Commission</span>
-                <strong>Premier abonnement paye du client</strong>
+                <strong>Premier pass payé du client</strong>
               </div>
             </div>
           </div>
@@ -601,19 +601,19 @@ export default function PartnerPortalPage() {
 
       <section className="partnerPortal__metrics" id="partner-performances">
         <article className="card partnerPortal__metric">
-          <span>Total abonnements vendus</span>
+          <span>Total des pass vendus</span>
           <strong>{effectiveSummary.total_subscriptions_sold}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Abonnements 7 jours vendus</span>
+          <span>Pass 7 jours vendus</span>
           <strong>{effectiveSummary.sold_7d_count}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Abonnements 30 jours vendus</span>
+          <span>Pass 30 jours vendus</span>
           <strong>{effectiveSummary.sold_30d_count}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Abonnements 90 jours vendus</span>
+          <span>Pass 90 jours vendus</span>
           <strong>{effectiveSummary.sold_90d_count}</strong>
         </article>
         <article className="card partnerPortal__metric">
@@ -676,7 +676,7 @@ export default function PartnerPortalPage() {
               {isCommissionInfoOpen && (
                 <div className="partnerPortal__infoBubble" role="dialog" aria-label="Regle de commission">
                   <p>
-                    Les commissions portent sur le premier abonnement paye du client. Les renouvellements ne sont pas
+                    Les commissions portent sur le premier pass payé du client. Les prolongations ne sont pas
                     commissionnes.
                   </p>
                   <button

@@ -231,7 +231,7 @@ function buildPreviewInfo(job: PreviewJob, params: { role: string; keywords: str
   const sector = params.sectors.find((item) => hay.includes(normalizeText(item.split("&")[0] ?? item)));
   if (sector) {
     score += 1;
-    reasons.push(`Le secteur ${sector} renforce le match.`);
+    reasons.push(`Le secteur ${sector} renforce la pertinence de cette offre.`);
   }
   if (!reasons.length) reasons.push("Cette offre ressemble aux postes que tu cherches.");
   return { score, reasons: reasons.slice(0, 2) };
@@ -312,7 +312,7 @@ function buildPreviewLocationReason(job: PreviewJob, kind: PreviewCardKind) {
   if (remote.includes("hybrid") || remote.includes("hybride")) {
     return kind === "match"
       ? "Le mode de travail correspond a ce que tu recherches."
-      : "Le mode de travail reste compatible avec tes criteres.";
+      : "Le mode de travail reste compatible avec tes critères.";
   }
 
   if (location) {
@@ -337,12 +337,12 @@ function buildPreviewEmploymentReason(job: PreviewJob, employmentTypes: Employme
     {
       type: "contract",
       tests: [" cdd ", "contract", "mission", "fixed term", "consultant"],
-      reason: "Le format mission reste compatible avec tes criteres.",
+      reason: "Le format mission reste compatible avec tes critères.",
     },
     {
       type: "internship",
       tests: ["stage", "internship", "intern ", "alternance", "trainee"],
-      reason: "Le format correspond au type d'opportunites que tu peux viser.",
+      reason: "Le format correspond au type d’opportunités que tu peux viser.",
     },
     {
       type: "freelance",
@@ -352,7 +352,7 @@ function buildPreviewEmploymentReason(job: PreviewJob, employmentTypes: Employme
     {
       type: "part-time",
       tests: ["part time", "part-time", "temps partiel"],
-      reason: "Le rythme du poste semble compatible avec tes criteres.",
+      reason: "Le rythme du poste semble compatible avec tes critères.",
     },
   ];
 
@@ -459,7 +459,7 @@ function buildPreviewReasons(
     add(
       params.kind === "match"
         ? "Ton profil rend cette offre plus interessante pour toi."
-        : "Ton profil donne deja un peu plus de poids a cette piste."
+        : "Ton profil donne déjà un peu plus de poids à cette piste."
     );
   }
 
@@ -479,7 +479,7 @@ function buildPreviewReasons(
     add(
       params.kind === "match"
         ? "Cette offre parait globalement proche de ton objectif."
-        : "Cette piste peut valoir le detour pendant que ta recherche se precise."
+        : "Cette piste peut valoir le détour pendant que ta recherche se précise."
     );
   }
 
@@ -690,7 +690,7 @@ export default function JobRadarOnboardingPage() {
         console.error("Failed to load JobRadar preview teasers", error);
         setPreviewMode("nearby");
         setPreviewCards([]);
-        setPreviewError("Impossible de charger tes premieres offres pour le moment. Reessaie dans un instant.");
+        setPreviewError("Impossible de charger tes premières offres pour le moment. Réessaie dans un instant.");
       } finally {
         if (active) setPreviewLoading(false);
       }
@@ -704,12 +704,12 @@ export default function JobRadarOnboardingPage() {
   const previewContent = useMemo(() => {
     if (previewMode === "match") {
       return {
-        eyebrow: "Premiers matchs",
-        title: "Ces offres semblent deja bien alignees avec ton projet.",
+        eyebrow: "Premières recommandations",
+        title: "Ces offres semblent déjà bien alignées avec ton projet.",
         body:
-          "On voit deja une bonne correspondance entre le metier vise, tes informations et les opportunites qui remontent. En continuant, JobRadar pourra elargir et rendre cette selection plus utile.",
+          "On voit déjà une bonne correspondance entre le métier visé, tes informations et les opportunités proposées. En continuant, JobRadar pourra élargir et rendre cette sélection plus utile.",
         chips: ["Metier cible pris en compte", "Informations prises en compte", "Plus d'offres apres activation"],
-        emptyTitle: "On affine encore la premiere selection.",
+        emptyTitle: "JobRadar affine encore la première sélection.",
         emptyBody:
           "Ton cap est clair, mais il n'y a pas encore assez d'offres solides a montrer maintenant. Enrichis ton profil pour debloquer des resultats plus convaincants.",
       };
@@ -717,13 +717,13 @@ export default function JobRadarOnboardingPage() {
 
     return {
       eyebrow: "Opportunites proches",
-      title: "Voici quelques opportunites proches pour demarrer.",
+      title: "Voici quelques opportunités proches pour démarrer.",
       body:
-        "Ton profil donne deja une direction, mais il manque encore assez d'informations pour afficher des offres vraiment ciblees. Ajoute ton CV, active tes alertes et ajuste tes criteres pour obtenir des resultats plus precis.",
-      chips: ["Ajoute ton CV", "Active tes alertes", "Ajuste tes criteres"],
+        "Ton profil donne déjà une direction, mais il manque encore quelques informations pour afficher des offres vraiment ciblées. Ajoute ton CV, active tes alertes et ajuste tes critères pour obtenir des recommandations plus précises.",
+      chips: ["Ajoute ton CV", "Active tes alertes", "Ajuste tes critères"],
       emptyTitle: "Le ciblage demarre, mais reste encore leger.",
       emptyBody:
-        "Complete ton profil, ajoute ton CV et precise tes criteres pour faire remonter des offres plus utiles des la prochaine etape.",
+        "Complète ton profil, ajoute ton CV et précise tes critères pour faire remonter des offres plus utiles dès la prochaine étape.",
     };
   }, [previewMode]);
   const preferencesAdvisor = useMemo(() => getJobRadarAdvisorCopy({ key: "onboarding-preferences" }), []);
@@ -1221,9 +1221,9 @@ export default function JobRadarOnboardingPage() {
         </div>
       </div>
       <div className="jrOnbValuePanel">
-        <h2>Choisissez votre Pass depuis la page JobRadar.</h2>
+        <h2>Choisis ton pass depuis la page JobRadar.</h2>
         <p>
-          Le choix, le renouvellement et l'achat d'un Pass se font maintenant sur la page unique des Pass
+          Le choix, le renouvellement et l’achat d’un pass se font sur la page des pass
           JobRadar.
         </p>
         <div className="jrOnbActions">

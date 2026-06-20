@@ -10,6 +10,9 @@ type AuthLocationState = {
 };
 
 const REDIRECT_STORAGE_KEY = "go4job_auth_redirect_to";
+const AUTH_CREDENTIALS_ERROR = "L’email ou le mot de passe ne correspond pas. Vérifie et réessaie.";
+const GENERIC_NETWORK_ERROR = "Une erreur est survenue. Vérifie ta connexion et réessaie.";
+const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 
 function isSafeInternalPath(path: unknown): path is string {
   if (typeof path !== "string") return false;
@@ -101,7 +104,7 @@ export default function AuthPage() {
       if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) {
-          setErrorMsg(error.message);
+          setErrorMsg(GENERIC_SERVER_ERROR);
           return;
         }
 
@@ -117,7 +120,7 @@ export default function AuthPage() {
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(AUTH_CREDENTIALS_ERROR);
         return;
       }
     } finally {
@@ -145,7 +148,7 @@ export default function AuthPage() {
       });
 
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(GENERIC_NETWORK_ERROR);
         clearStoredRedirect();
       }
     } finally {
@@ -169,7 +172,7 @@ export default function AuthPage() {
       const redirectTo = `${window.location.origin}/reset-password`;
       const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo });
       if (error) {
-        setErrorMsg(error.message);
+        setErrorMsg(GENERIC_NETWORK_ERROR);
         return;
       }
 
@@ -210,12 +213,12 @@ export default function AuthPage() {
             <h1 className="heroTitle">Espace candidat</h1>
 
             <p className="heroSubtitle">
-              Postule plus vite, centralise ton suivi, et reçois des opportunités pertinentes. Une expérience nette et
-              élégante, pensée pour toi.
+              JobRadar surveille les offres pour toi et met en avant celles qui correspondent à ton profil.
+              Toi, tu choisis où postuler.
             </p>
 
             <div className="hero-badges">
-              <div className="badge">Matching intelligent</div>
+              <div className="badge">Offres ciblées pour toi</div>
               <div className="badge">Candidature en 1 clic</div>
               <div className="badge">Suivi centralisé</div>
               <div className="badge">Données sécurisées</div>
