@@ -79,7 +79,7 @@ export default function ResetPasswordPage() {
           onClick={() => navigate("/")}
           aria-label="Aller au dashboard"
         >
-          <img src={go4jobLogo} alt="Go4Job" className="auth-brand-logo" draggable={false} />
+          <img src={go4jobLogo} alt="JobRadar" className="auth-brand-logo" draggable={false} />
         </button>
 
         <a

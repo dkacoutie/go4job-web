@@ -16,7 +16,7 @@ export default function PublicHeader() {
   return (
     <div className="public-header">
       <NavLink className="public-header__brand" to="/landing" aria-label="Aller à l’accueil JobRadar">
-        <img className="public-header__logo" src={go4jobLogo} alt="Go4Job" />
+        <img className="public-header__logo" src={go4jobLogo} alt="JobRadar" />
         <span className="public-header__brandText">
           <strong>Go4Job</strong>
           <span>JobRadar</span>

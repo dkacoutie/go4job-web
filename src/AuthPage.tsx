@@ -192,7 +192,7 @@ export default function AuthPage() {
     <div className="auth-shell">
       <div className="auth-top">
         <button type="button" className="auth-brand" onClick={() => navigate("/")} aria-label="Retour au hub">
-          <img src={go4jobLogo} alt="Go4Job" className="auth-brand-logo" draggable={false} />
+          <img src={go4jobLogo} alt="JobRadar" className="auth-brand-logo" draggable={false} />
         </button>
 
         <a

@@ -144,7 +144,7 @@ export default function DesiredRoleGate({ children }: { children: ReactNode }) {
   return (
     <div className="desiredRoleGate">
       <div className="desiredRoleGate__panel">
-        <img className="desiredRoleGate__logo" src={go4jobLogo} alt="Go4Job" />
+        <img className="desiredRoleGate__logo" src={go4jobLogo} alt="JobRadar" />
         <div className="desiredRoleGate__eyebrow">Configuration rapide</div>
         <h1 className="desiredRoleGate__title">Quel poste recherches-tu ?</h1>
         <p className="desiredRoleGate__body">

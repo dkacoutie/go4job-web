@@ -211,7 +211,7 @@ export default function AppNav() {
       )}
 
       <button className="appnav__brand" onClick={() => navigate("/")} type="button" aria-label="Aller au dashboard">
-        <img className="appnav__logo" src={go4jobLogo} alt="Go4Job" />
+        <img className="appnav__logo" src={go4jobLogo} alt="JobRadar" />
       </button>
 
       {!loading && session && (
