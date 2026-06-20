@@ -67,10 +67,6 @@ export default function AuthPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
-  // ✅ où aller après login :
-  // 1) state.from (quand on vient d'une page protégée)
-  // 2) localStorage (utile pour OAuth Google car location.state est perdu)
-  // 3) fallback feed
   const redirectTo = useMemo(() => {
     const st = (location.state ?? {}) as AuthLocationState;
     if (isSafeInternalPath(st.from)) return st.from;
@@ -81,7 +77,6 @@ export default function AuthPage() {
     return "/jobradar/feed";
   }, [location.state]);
 
-  // ✅ si connecté => rediriger vers la destination (pas "/")
   useEffect(() => {
     if (!loading && session) {
       clearStoredRedirect();
@@ -108,13 +103,11 @@ export default function AuthPage() {
           return;
         }
 
-        // Si confirmation email activée, session peut être null
         if (!data.session) {
           setInfoMsg("Compte créé ✅ Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.");
           return;
         }
 
-        // Sinon, connecté directement → useEffect redirige
         return;
       }
 
@@ -136,10 +129,8 @@ export default function AuthPage() {
     setInfoMsg(null);
 
     try {
-      // ✅ mémorise la destination avant de quitter l’app (OAuth)
       storeRedirect(redirectTo);
 
-      // retour après OAuth
       const oauthRedirectTo = `${window.location.origin}/auth`;
 
       const { error } = await supabase.auth.signInWithOAuth({
@@ -176,7 +167,7 @@ export default function AuthPage() {
         return;
       }
 
-      setInfoMsg("Lien envoyé ✅ Vérifie ta boîte mail (et les spams).");
+      setInfoMsg("Lien envoyé ✅ Vérifie ta boîte mail, y compris les spams.");
     } finally {
       setBusy(false);
     }
@@ -191,7 +182,12 @@ export default function AuthPage() {
   return (
     <div className="auth-shell">
       <div className="auth-top">
-        <button type="button" className="auth-brand" onClick={() => navigate("/")} aria-label="Retour au hub">
+        <button
+          type="button"
+          className="auth-brand"
+          onClick={() => navigate("/landing")}
+          aria-label="Retour à l’accueil JobRadar"
+        >
           <img src={go4jobLogo} alt="JobRadar" className="auth-brand-logo" draggable={false} />
         </button>
 
@@ -207,20 +203,19 @@ export default function AuthPage() {
       </div>
 
       <div className="auth-main">
-        {/* LEFT / HERO */}
         <section className="hero">
           <div className="hero-content">
-            <h1 className="heroTitle">Espace candidat</h1>
+            <h1 className="heroTitle">Ton espace JobRadar</h1>
 
             <p className="heroSubtitle">
-              JobRadar surveille les offres pour toi et met en avant celles qui correspondent à ton profil.
-              Toi, tu choisis où postuler.
+              Connecte-toi pour voir les offres repérées pour toi, suivre tes opportunités et
+              avancer plus vite dans ta recherche d’emploi.
             </p>
 
             <div className="hero-badges">
-              <div className="badge">Offres ciblées pour toi</div>
-              <div className="badge">Candidature en 1 clic</div>
-              <div className="badge">Suivi centralisé</div>
+              <div className="badge">Offres ciblées selon ton profil</div>
+              <div className="badge">Alertes personnalisées</div>
+              <div className="badge">Offres sauvegardées</div>
               <div className="badge">Données sécurisées</div>
             </div>
 
@@ -235,24 +230,23 @@ export default function AuthPage() {
                 </button>
               </div>
 
-              {/* ✅ 2 textes alignés sous chaque bouton */}
               <div className="hero-ctaHints">
-                <p className="hero-ctaHint">Nouveau ? Crée ton espace en 30 secondes.</p>
-                <p className="hero-ctaHint">Déjà inscrit ? Connecte-toi.</p>
+                <p className="hero-ctaHint">Nouveau ? Crée ton espace en moins d’une minute.</p>
+                <p className="hero-ctaHint">Déjà inscrit ? Retrouve tes offres.</p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* RIGHT / FORM */}
         <aside className="card">
           <h2>{mode === "signup" ? "Créer un compte" : "Connexion"}</h2>
 
           <p className="sub">
-            {mode === "signup" ? "Crée ton espace candidat en moins d’une minute." : "Accède à ton espace candidat."}
+            {mode === "signup"
+              ? "Crée ton espace JobRadar pour voir les offres qui correspondent à ton profil."
+              : "Accède à ton espace JobRadar et retrouve tes offres recommandées."}
           </p>
 
-          {/* ✅ Google OAuth */}
           <div style={{ display: "grid", gap: 10, marginTop: 10, marginBottom: 10 }}>
             <button className="btn btnSecondary wFull btnGoogle" type="button" disabled={busy} onClick={signInWithGoogle}>
               <svg className="googleIcon" viewBox="0 0 48 48" aria-hidden="true">
@@ -283,7 +277,6 @@ export default function AuthPage() {
             </div>
           </div>
 
-          {/* ✅ form : Enter = submit */}
           <form
             className="form"
             onSubmit={(e) => {
@@ -298,7 +291,7 @@ export default function AuthPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
-                placeholder="ex: contact@go4jobapp.com"
+                placeholder="ex: ton.email@example.com"
                 autoComplete="email"
               />
             </label>
@@ -339,10 +332,9 @@ export default function AuthPage() {
             {errorMsg && <div className="error">{errorMsg}</div>}
             {infoMsg && <div className="foot">{infoMsg}</div>}
 
-            {/* ✅ boutons alignés / même largeur */}
             <div className="authActions">
               <button className="btn btnPrimary wFull" disabled={!canSubmit || busy} type="submit">
-                {busy ? "Patiente..." : mode === "signup" ? "Créer un compte" : "Se connecter"}
+                {busy ? "Patiente..." : mode === "signup" ? "Créer mon compte" : "Se connecter"}
               </button>
 
               <button
@@ -355,7 +347,7 @@ export default function AuthPage() {
               </button>
             </div>
 
-            <div className="foot">Connexion par email ou Google.</div>
+            <div className="foot">Connexion possible par email ou Google.</div>
           </form>
         </aside>
       </div>
