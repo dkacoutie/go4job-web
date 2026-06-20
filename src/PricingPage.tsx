@@ -68,22 +68,26 @@ const GENERIC_PAYMENT_ERROR =
 
 const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> = {
   pass_7d: {
-    benefit: "7 jours pour explorer JobRadar sans engagement.",
-    bullets: ["Accès complet aux offres", "Alertes ciblées activées", "Sans engagement"],
+    benefit: "7 jours pour découvrir JobRadar et repérer tes premières opportunités.",
+    bullets: [
+      "Accès complet aux offres débloquées",
+      "Alertes ciblées selon ton profil",
+      "Paiement unique, sans abonnement",
+    ],
   },
   pass_30d: {
-    benefit: "30 jours pour suivre tes opportunités plus facilement.",
+    benefit: "30 jours pour laisser JobRadar surveiller les offres pendant ta recherche.",
     bullets: [
-      "Alertes ciblées selon ton profil",
-      "Zone de recherche personnalisée",
-      "30 jours de suivi continu",
+      "Offres triées selon ton profil",
+      "Alertes ciblées pendant 30 jours",
+      "Idéal pour une recherche active",
     ],
   },
   pass_90d: {
-    benefit: "90 jours au meilleur rapport durée/prix.",
+    benefit: "90 jours pour suivre tes opportunités plus longtemps, au meilleur rapport durée/prix.",
     bullets: [
-      "Tout ce qui est inclus dans le Pass Actif",
-      "90 jours sans renouveler",
+      "Tout l’accès JobRadar pendant 90 jours",
+      "Plus de temps pour suivre les bonnes offres",
       "Meilleur rapport durée/prix",
     ],
   },
@@ -91,18 +95,23 @@ const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> 
 
 const FAQ_ITEMS = [
   {
+    question: "Que débloque un pass JobRadar ?",
+    answer:
+      "Un pass te donne accès aux offres complètes et aux fonctionnalités prévues pendant la durée choisie. Tu peux consulter, suivre et organiser plus facilement les opportunités qui correspondent à ta recherche.",
+  },
+  {
     question: "Quand mon accès est-il activé ?",
     answer: "Après confirmation du paiement. Tu recevras aussi un e-mail de confirmation.",
   },
   {
     question: "Y a-t-il un renouvellement automatique ?",
     answer:
-      "Non. Chaque pass est à durée fixe. Tu choisis de le renouveler quand tu le souhaites.",
+      "Non. Chaque pass est un paiement unique à durée fixe. Tu choisis toi-même de renouveler si tu veux continuer.",
   },
   {
-    question: "Puis-je choisir un autre Pass ensuite ?",
+    question: "JobRadar postule-t-il à ma place ?",
     answer:
-      "Oui. À la fin de ta période en cours, tu peux choisir le pass qui correspond à ton besoin.",
+      "Non. JobRadar t’aide à repérer et organiser les bonnes opportunités. Tu restes libre de choisir les offres à ouvrir, sauvegarder ou suivre.",
   },
   {
     question: "Quels moyens de paiement sont acceptés ?",
@@ -484,11 +493,11 @@ export default function PricingPage() {
     <div className="pricing-shell">
       <header className="pricing-hero">
         <div className="pricing-hero__inner">
-          <div className="pricing-hero__brand">JOBRADAR</div>
-          <h1>Arrête de chercher partout. Laisse JobRadar surveiller les offres pour toi.</h1>
+          <div className="pricing-hero__brand">PASS JOBRADAR</div>
+          <h1>Débloque plus d’opportunités pendant que JobRadar surveille pour toi.</h1>
           <p>
             Choisis la durée qui correspond à ton rythme de recherche. Tu paies une fois, tu accèdes
-            à JobRadar, sans renouvellement automatique.
+            aux offres débloquées et aux alertes ciblées, sans renouvellement automatique.
           </p>
         </div>
       </header>
@@ -535,7 +544,7 @@ export default function PricingPage() {
 
         <section className="pricing-plans" aria-label="Pass JobRadar">
           <div className="pricing-plan-intro">
-            Choisis le pass qui correspond à ton rythme
+            Choisis le pass adapté à ton rythme de recherche
           </div>
 
           <section className="pricing-currency-panel" aria-label="Devise d'affichage">
@@ -670,6 +679,7 @@ export default function PricingPage() {
         <section className="pricing-trust-strip" aria-label="Confiance paiement">
           <span>Paiement unique</span>
           <span>Carte ou Mobile Money</span>
+          <span>Accès activé après paiement</span>
           <span>Aucun renouvellement automatique</span>
         </section>
 
