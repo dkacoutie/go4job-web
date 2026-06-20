@@ -38,13 +38,13 @@
 }
 
 .appnav__logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
   object-fit: contain;
   display: block;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 2px;
   border: 1px solid rgba(15, 23, 42, 0.1);
   box-shadow: 0 12px 28px rgba(2, 6, 23, 0.08);
 }
@@ -451,9 +451,10 @@
   }
 
   .appnav__logo {
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    padding: 2px;
   }
 
   .appnav__name {
