@@ -33,7 +33,10 @@ export default function AppNav() {
 
   const jobradarActive = useMemo(() => loc.pathname.startsWith("/jobradar"), [loc.pathname]);
   const accountActive = useMemo(
-    () => loc.pathname.startsWith("/me") || loc.pathname.startsWith("/jobradar/profile"),
+    () =>
+      loc.pathname.startsWith("/me") ||
+      loc.pathname.startsWith("/jobradar/profile") ||
+      loc.pathname.startsWith("/capcarriere"),
     [loc.pathname]
   );
   const adminActive = useMemo(() => loc.pathname.startsWith("/admin"), [loc.pathname]);
@@ -62,6 +65,7 @@ export default function AppNav() {
     () =>
       [
         { label: "Mon CV", path: "/me/cv" },
+        { label: "Mes dossiers CapCarrière", path: "/capcarriere/applications" },
         { label: "Mon profil", path: "/jobradar/profile" },
         ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
         { label: "Mon accès JobRadar", path: "/me/subscription" },
