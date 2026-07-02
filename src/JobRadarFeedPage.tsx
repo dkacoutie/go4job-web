@@ -1313,6 +1313,10 @@ export default function JobRadarFeedPage() {
 
       scheduleDeferredFeedTask(() => {
         if (!isCurrentLoad()) return;
+        if (!feedBackendShadowFlag) {
+          logFeedPerf("jobradar_match_feed skipped", { reason: "shadow_flag_disabled" });
+          return;
+        }
         const shadowStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
         void fetchShadowFeed()
           .then((nextShadowFeed) => {
@@ -1344,6 +1348,7 @@ export default function JobRadarFeedPage() {
     fetchJobsRange,
     fetchProfileContext,
     fetchShadowFeed,
+    feedBackendShadowFlag,
     hydrateJobDescriptions,
     loadUserJobState,
     logFeedPerf,

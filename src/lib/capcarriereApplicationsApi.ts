@@ -65,6 +65,13 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+export function logCapcarriereOptionalError(scope: string, error: unknown) {
+  if (!import.meta.env.DEV) return;
+
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn("[CapCarriere applications]", scope, { message });
+}
+
 export async function fetchCapcarriereDrafts(userId: string): Promise<CapcarriereDraft[]> {
   const { data, error } = await supabase
     .from("cc_application_drafts")

@@ -110,17 +110,67 @@ export type AdminHealthResponse = {
   message?: string;
 };
 
+function redactEdgeErrorMessage(value: string) {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]")
+    .replace(/[A-Za-z0-9_-]{48,}/g, "[redacted]")
+    .slice(0, 500);
+}
+
+function readStringField(source: unknown, key: string) {
+  if (!source || typeof source !== "object") return "";
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function readEdgeErrorBody(context: unknown) {
+  if (!(context instanceof Response)) {
+    return { status: undefined as number | undefined, code: "", message: "" };
+  }
+
+  const status = context.status;
+  const raw = (await context.clone().text().catch(() => "")).trim();
+  if (!raw) return { status, code: "", message: "" };
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const code = readStringField(parsed, "error") || readStringField(parsed, "code");
+    const message = readStringField(parsed, "message") || code || raw;
+    return { status, code, message: redactEdgeErrorMessage(message) };
+  } catch {
+    return { status, code: "", message: redactEdgeErrorMessage(raw) };
+  }
+}
+
+async function buildAdminHealthError(error: unknown) {
+  const fallbackMessage = error instanceof Error ? error.message : "admin_health_failed";
+  const context = error && typeof error === "object" ? (error as { context?: unknown }).context : undefined;
+  const details = await readEdgeErrorBody(context);
+  const parts = [
+    details.status ? `status ${details.status}` : null,
+    details.code ? `code ${details.code}` : null,
+    details.message || redactEdgeErrorMessage(fallbackMessage),
+  ].filter(Boolean);
+
+  return new Error(`admin_health failed: ${parts.join(" - ")}`);
+}
+
 export async function fetchAdminHealthV1() {
   const { data, error } = await supabase.functions.invoke<AdminHealthResponse>("admin_health", {
     body: { scope: "jobradar_health_v1" },
   });
 
   if (error) {
-    throw new Error(error.message || "admin_health_failed");
+    throw await buildAdminHealthError(error);
   }
 
   if (!data?.ok || !data.data) {
-    throw new Error(data?.message || data?.error || "admin_health_unavailable");
+    const parts = [
+      data?.error ? `code ${redactEdgeErrorMessage(data.error)}` : null,
+      data?.message ? redactEdgeErrorMessage(data.message) : null,
+    ].filter(Boolean);
+    throw new Error(`admin_health unavailable: ${parts.join(" - ") || "empty response"}`);
   }
 
   return data.data;

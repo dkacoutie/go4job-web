@@ -5,6 +5,7 @@ import {
   fetchCapcarriereDrafts,
   fetchCapcarriereEvents,
   fetchCurrentCapcarriereCv,
+  logCapcarriereOptionalError,
   reviewCapcarriereDraft,
   type CapcarriereCv,
   type CapcarriereDraft,
@@ -97,16 +98,23 @@ export default function CapcarriereApplicationsPage() {
     setError(null);
 
     try {
-      const [nextDrafts, nextCv] = await Promise.all([
-        fetchCapcarriereDrafts(userId),
-        fetchCurrentCapcarriereCv(userId),
-      ]);
+      const nextDrafts = await fetchCapcarriereDrafts(userId);
       setDrafts(nextDrafts);
-      setCurrentCv(nextCv);
     } catch (loadError) {
       setError(getErrorMessage(loadError));
-    } finally {
+      setCurrentCv(null);
       setLoading(false);
+      return;
+    }
+
+    setLoading(false);
+
+    try {
+      const nextCv = await fetchCurrentCapcarriereCv(userId);
+      setCurrentCv(nextCv);
+    } catch (cvError) {
+      setCurrentCv(null);
+      logCapcarriereOptionalError("current_cv_unavailable", cvError);
     }
   }, [userId]);
 
