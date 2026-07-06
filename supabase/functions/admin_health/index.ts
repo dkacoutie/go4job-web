@@ -15,6 +15,15 @@ type HealthPayload = {
   crons: unknown;
 };
 
+type HealthRpcKey = keyof HealthPayload;
+
+const healthRpcs: Array<{ key: HealthRpcKey; name: string }> = [
+  { key: "overview", name: "admin_health_v1_overview" },
+  { key: "sources", name: "admin_health_v1_sources" },
+  { key: "runs", name: "admin_health_v1_runs" },
+  { key: "crons", name: "admin_health_v1_crons" },
+];
+
 function cleanSecret(value: string | undefined | null): string {
   let v = (value ?? "").trim();
   v = v.replace(/^['"]|['"]$/g, "");
@@ -48,6 +57,18 @@ function json(status: number, body: Record<string, unknown>, headers: Record<str
   });
 }
 
+function cleanErrorValue(value: unknown, maxLen = 260): string | null {
+  if (typeof value !== "string") return null;
+
+  const cleaned = value
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]")
+    .replace(/[A-Za-z0-9_-]{48,}/g, "[redacted]")
+    .trim();
+
+  return cleaned ? cleaned.slice(0, maxLen) : null;
+}
+
 serve(async (req) => {
   const headers = corsHeaders(req.headers.get("origin"));
 
@@ -66,9 +87,8 @@ serve(async (req) => {
 
   const supabaseUrl = cleanSecret(Deno.env.get("SUPABASE_URL"));
   const anonKey = cleanSecret(Deno.env.get("SUPABASE_ANON_KEY"));
-  const serviceKey = cleanSecret(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
 
-  if (!supabaseUrl || !anonKey || !serviceKey) {
+  if (!supabaseUrl || !anonKey) {
     return json(500, { ok: false, error: "server_misconfigured" }, headers);
   }
 
@@ -91,39 +111,43 @@ serve(async (req) => {
     return json(403, { ok: false, error: "admin_only" }, headers);
   }
 
-  const serviceClient = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const rpcResults = await Promise.all(
+    healthRpcs.map(async (rpc) => ({
+      ...rpc,
+      result: await userClient.rpc(rpc.name),
+    })),
+  );
 
-  const [overviewRes, sourcesRes, runsRes, cronsRes] = await Promise.all([
-    serviceClient.rpc("admin_health_v1_overview"),
-    serviceClient.rpc("admin_health_v1_sources"),
-    serviceClient.rpc("admin_health_v1_runs"),
-    serviceClient.rpc("admin_health_v1_crons"),
-  ]);
+  const failedRpc = rpcResults.find((rpc) => rpc.result.error);
+  if (failedRpc?.result.error) {
+    const rpcError = failedRpc.result.error;
+    const safeError = {
+      rpc: failedRpc.name,
+      code: cleanErrorValue(rpcError.code, 80),
+      message: cleanErrorValue(rpcError.message),
+      details: cleanErrorValue(rpcError.details),
+      hint: cleanErrorValue(rpcError.hint),
+    };
 
-  const firstError = overviewRes.error ?? sourcesRes.error ?? runsRes.error ?? cronsRes.error;
-  if (firstError) {
-    console.error("admin_health RPC failed", {
-      overview: overviewRes.error,
-      sources: sourcesRes.error,
-      runs: runsRes.error,
-      crons: cronsRes.error,
-    });
+    console.error("admin_health RPC failed", safeError);
 
     return json(500, {
       ok: false,
       error: "health_rpc_failed",
+      failed_rpc: failedRpc.name,
+      code: safeError.code,
       message: "Unable to load admin health data.",
+      technical_message: safeError.message,
     }, headers);
   }
 
-  const payload: HealthPayload = {
-    overview: overviewRes.data,
-    sources: sourcesRes.data,
-    runs: runsRes.data,
-    crons: cronsRes.data,
-  };
+  const payload = rpcResults.reduce(
+    (acc, rpc) => ({
+      ...acc,
+      [rpc.key]: rpc.result.data,
+    }),
+    {} as HealthPayload,
+  );
 
   return json(200, {
     ok: true,
