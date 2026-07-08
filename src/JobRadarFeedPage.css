@@ -1256,53 +1256,58 @@
   }
 }
 
-/* skeleton */
-.jr-skeletonWrap {
-  margin-top: 16px;
+/* skeleton (job card placeholder — reuses .jr-card/.jr-cardTop/.jr-meta/.jr-whyBox/.jr-cardActions
+   layout classes so dimensions stay identical to the real card by construction) */
+.jr-cardSkeleton {
+  cursor: default;
 }
 
-.jr-skeletonRow {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-@media (max-width: 1100px) {
-  .jr-skeletonRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 720px) {
-  .jr-skeletonRow { grid-template-columns: 1fr; }
-}
-
-.jr-skeletonCard {
-  border-radius: var(--jr-radius);
-  border: 1px solid var(--jr-border);
-  background: var(--jr-card);
-  padding: 14px;
+.jr-cardSkeleton:hover {
+  transform: none;
   box-shadow: var(--jr-shadow);
 }
 
-.sk-title,
-.sk-line,
-.sk-btn,
-.sk-chipRow span {
-  display: block;
-  background: linear-gradient(90deg, rgba(15,23,42,0.06), rgba(15,23,42,0.12), rgba(15,23,42,0.06));
-  background-size: 200% 100%;
-  animation: sk-shimmer 1.2s infinite;
-  border-radius: 999px;
+.jr-whyBoxSkeleton {
+  display: grid;
+  gap: 6px;
 }
 
-.sk-title { height: 14px; width: 70%; margin-bottom: 10px; }
-.sk-line { height: 10px; width: 100%; margin-bottom: 8px; }
-.sk-line.short { width: 60%; }
-.sk-chipRow { display: flex; gap: 6px; margin: 8px 0 12px; }
-.sk-chipRow span { height: 18px; width: 60px; }
-.sk-btn { height: 34px; width: 60%; margin: 6px auto 0; }
+.sk {
+  display: block;
+  border-radius: 999px;
+  background: var(--jr-border);
+  animation: sk-pulse 1.4s ease-in-out infinite;
+}
 
-@keyframes sk-shimmer {
-  0% { background-position: 0% 0; }
-  100% { background-position: -200% 0; }
+.sk-title { height: 14px; width: 70%; }
+.sk-badge { flex: 0 0 auto; height: 24px; width: 72px; }
+.sk-meta { height: 12px; width: 55%; }
+.sk-whyTitle { height: 11px; width: 40%; }
+.sk-whyLine { height: 11px; width: 90%; }
+.sk-whyLineShort { width: 65%; }
+.sk-cta { height: 36px; width: 100%; max-width: 220px; border-radius: 12px; margin: 0 auto; }
+.sk-link { height: 12px; width: 70px; }
+.sk-dismiss { height: 28px; width: 96px; border-radius: 12px; }
+
+@keyframes sk-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* fade-in for real cards replacing the skeleton, slightly staggered */
+@keyframes jr-cardFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.jr-card--enter {
+  animation: jr-cardFadeIn 150ms ease-out both;
+  animation-delay: var(--sk-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk { animation: none; opacity: 0.75; }
+  .jr-card--enter { animation: none; }
 }
 
 /* responsive */

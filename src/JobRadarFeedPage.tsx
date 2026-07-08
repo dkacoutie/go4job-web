@@ -737,6 +737,33 @@ function jobMatchesSearchQuery(job: JobRow, rawQuery: string) {
   return tokens.every((token) => hay.includes(token));
 }
 
+function JobCardSkeleton({ index = 0 }: { index?: number }) {
+  const style = { ["--sk-delay" as any]: `${Math.min(index, 7) * 60}ms` };
+  return (
+    <div className="jr-card jr-cardSkeleton" style={style} aria-hidden="true">
+      <div className="jr-cardTop">
+        <div className="sk sk-title" />
+        <div className="sk sk-badge" />
+      </div>
+      <div className="jr-meta">
+        <div className="sk sk-meta" />
+      </div>
+      <div className="jr-whyBox jr-whyBoxSkeleton">
+        <div className="sk sk-whyTitle" />
+        <div className="sk sk-whyLine" />
+        <div className="sk sk-whyLine sk-whyLineShort" />
+      </div>
+      <div className="jr-cardActions">
+        <div className="sk sk-cta" />
+        <div className="jr-footerActions">
+          <div className="sk sk-link" />
+          <div className="sk sk-dismiss" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function JobRadarFeedPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -2326,21 +2353,10 @@ export default function JobRadarFeedPage() {
         )}
 
         {busy ? (
-          <div className="jr-skeletonWrap" aria-live="polite">
-            <div className="jr-skeletonRow">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div className="jr-skeletonCard" key={`sk_${i}`}>
-                  <div className="sk-title" />
-                  <div className="sk-line" />
-                  <div className="sk-line short" />
-                  <div className="sk-chipRow">
-                    <span />
-                    <span />
-                  </div>
-                  <div className="sk-btn" />
-                </div>
-              ))}
-            </div>
+          <div className="jr-grid" aria-live="polite">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <JobCardSkeleton key={`sk_${i}`} index={i} />
+            ))}
             <div className="sr-only">Chargement des offres…</div>
           </div>
         ) : alerts.length === 0 && !shadowUi.suppressNoAlertsEmptyState ? (
@@ -2440,7 +2456,7 @@ export default function JobRadarFeedPage() {
           <>
             <div className="jr-grid" id="jr-results">
               <>
-                {displayedLimited.map((row: FeedDisplayRow) => {
+                {displayedLimited.map((row: FeedDisplayRow, index: number) => {
                   const { job, p, why, dataQuality } = row;
                   const eventPayload = buildMatchEventPayload(row);
                   const isAdding = addingJobId === job.id;
@@ -2472,7 +2488,8 @@ export default function JobRadarFeedPage() {
 
                   return (
                     <div
-                      className="jr-card"
+                      className="jr-card jr-card--enter"
+                      style={{ ["--sk-delay" as any]: `${Math.min(index, 7) * 25}ms` }}
                       key={job.id}
                       role="button"
                       tabIndex={0}
