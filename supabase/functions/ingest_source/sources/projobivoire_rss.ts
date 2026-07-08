@@ -1,3 +1,5 @@
+import { detectCountryCodesFromText } from "../_shared/ciGeoGazetteer.ts";
+
 export type ProjobivoireRssDryRunOptions = {
   dryRun: boolean;
   maxPages?: number;
@@ -46,6 +48,7 @@ export type ProjobivoireRssImportItem = {
   title: string | null;
   company_name: string | null;
   company_name_source: CompanyNameSource;
+  country_codes: string[] | null;
   location: string | null;
   published_at: string | null;
   expires_at: string | null;
@@ -710,6 +713,7 @@ function buildResult(
         title: item.title,
         company_name: company.companyName,
         company_name_source: company.source,
+        country_codes: detectCountryCodesFromText(item.title, item.location),
         location: item.location,
         published_at: item.published_at,
         expires_at: item.expires_at,

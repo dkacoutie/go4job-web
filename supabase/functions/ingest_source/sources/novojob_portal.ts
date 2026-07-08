@@ -137,6 +137,17 @@ function extractCompanyName(description: string | null | undefined) {
   return companyName;
 }
 
+// Novojob's URL path already tells us the country reliably (e.g. "/senegal/"),
+// so this is a direct code lookup rather than a free-text gazetteer match.
+const NOVOJOB_COUNTRY_NAME_TO_ISO: Record<string, string> = {
+  "Cote d'Ivoire": "CI",
+  "Senegal": "SN",
+  "Benin": "BJ",
+  "Togo": "TG",
+  "Burkina Faso": "BF",
+  "Guinea": "GN",
+};
+
 function improveNovojob(job: CommercialSourceJob): CommercialSourceJob {
   const normalizedUrl = normalizeNovojobUrl(job.source_url);
   const baseJob = normalizedUrl
@@ -166,6 +177,9 @@ function improveNovojob(job: CommercialSourceJob): CommercialSourceJob {
     ...baseJob,
     company_name: companyName,
     country,
+    country_codes: country && NOVOJOB_COUNTRY_NAME_TO_ISO[country]
+      ? [NOVOJOB_COUNTRY_NAME_TO_ISO[country]]
+      : null,
     location: country,
     tags: [country ?? "Unknown", "novojob_portal"],
   };

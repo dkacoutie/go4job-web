@@ -1,3 +1,5 @@
+import { detectCountryCodesFromText } from "../_shared/ciGeoGazetteer.ts";
+
 export type AejItem = {
   external_id: string;
   title: string;
@@ -14,6 +16,7 @@ export type AejItem = {
   source_url: string;
   apply_url: string;
   country: "CI";
+  country_codes: string[] | null;
   is_expired: boolean;
 };
 
@@ -424,6 +427,7 @@ function buildItem(
     source_url: sourceUrl,
     apply_url: sourceUrl,
     country: "CI",
+    country_codes: detectCountryCodesFromText(location),
     is_expired: isExpired,
   };
 }

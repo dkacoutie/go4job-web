@@ -3,6 +3,7 @@ export type CommercialSourceJob = {
   title: string;
   company_name: string | null;
   country: string | null;
+  country_codes?: string[] | null;
   location: string | null;
   sector?: string | null;
   contract_type?: string | null;

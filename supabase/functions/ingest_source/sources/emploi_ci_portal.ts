@@ -1,10 +1,13 @@
 // supabase/functions/ingest_source/sources/emploi_ci_portal.ts
 
+import { detectCountryCodesFromText } from "../_shared/ciGeoGazetteer.ts";
+
 export type EmploiCiPortalItem = {
   external_id: string;
   title: string;
   company_name: string | null;
   country: "CI";
+  country_codes: string[] | null;
   location: string | null;
   source_url: string;
   apply_url: string;
@@ -244,6 +247,7 @@ async function parseOffersFromHtml(html: string) {
       title,
       company_name: companyName,
       country: "CI",
+      country_codes: detectCountryCodesFromText(location),
       location,
       source_url: sourceUrl,
       apply_url: sourceUrl,

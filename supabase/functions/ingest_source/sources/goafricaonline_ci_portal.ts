@@ -3,6 +3,7 @@ import {
   type CommercialSourceJob,
   fetchCommercialSourceDryRun,
 } from "./west_africa_source_common.ts";
+import { detectCountryCodesFromText } from "../_shared/ciGeoGazetteer.ts";
 
 const SOURCE_CODE = "goafricaonline_ci_portal";
 const SOURCE_FAMILY = "goafricaonline_ci_portal";
@@ -258,13 +259,15 @@ function parseGoAfricaOnlineHtmlJobs(
 function improveGoAfricaJob(job: CommercialSourceJob): CommercialSourceJob {
   const normalizedUrl = normalizeGoAfricaJobUrl(job.source_url);
   const sourceUrl = normalizedUrl ?? job.source_url;
+  const location = job.location?.trim() || COUNTRY;
   return {
     ...job,
     external_id: `${SOURCE_CODE}:${sourceUrl}`,
     source_url: sourceUrl,
     apply_url: sourceUrl,
     country: COUNTRY,
-    location: job.location?.trim() || COUNTRY,
+    country_codes: detectCountryCodesFromText(location),
+    location,
     tags: [COUNTRY, SOURCE_FAMILY],
   };
 }

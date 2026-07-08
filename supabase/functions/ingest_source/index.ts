@@ -864,6 +864,7 @@ type ScrapedItem = {
   company_name?: string | null;
   location?: string | null;
   country?: string | null;
+  country_codes?: string[] | null;
   contract_type?: string | null;
   sector?: string | null;
   experience?: string | null;
@@ -924,6 +925,7 @@ async function mapScrapedItemsToRows(
       company_name: companyName,
       location,
       country: it.country ?? jobSource.country ?? null,
+      country_codes: it.country_codes ?? null,
       remote_type: null,
       contract_type: it.contract_type ?? null,
       seniority: null,
@@ -1718,6 +1720,7 @@ Deno.serve(async (req) => {
           company_name: companyName,
           location,
           country: jobSource.country ?? "Cote d'Ivoire",
+          country_codes: item.country_codes,
           remote_type: null,
           contract_type: item.contract_type,
           seniority: null,

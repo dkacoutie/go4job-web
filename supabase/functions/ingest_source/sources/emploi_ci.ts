@@ -6,6 +6,7 @@ export type EmploiCiItem = {
   source_url: string;
   apply_url: string;
   country: "CI";
+  country_codes: string[];
   location: string | null;
   company_name: string | null;
   contract_type: string | null;
@@ -210,6 +211,7 @@ function parseOffersFromHtml(html: string) {
       source_url: sourceUrl,
       apply_url: sourceUrl,
       country: "CI",
+      country_codes: ["CI"],
       location: "Cote d'Ivoire",
       company_name: null,
       contract_type: extractContractType(anchorTexts),
