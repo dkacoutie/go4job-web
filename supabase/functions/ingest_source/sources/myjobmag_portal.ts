@@ -448,6 +448,7 @@ function parseJobsFeed(xml: string, config: MyJobMagConfig, aggregateByTitle: Ma
       title: parsedTitle.title,
       company_name: parsedTitle.company,
       country: config.country,
+      country_codes: [config.country],
       location: normalizedLocation.location,
       contract_type: cleanText(aggregate?.contractType ?? "") || null,
       experience: cleanText(aggregate?.experience ?? "") || null,

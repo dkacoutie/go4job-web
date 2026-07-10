@@ -2667,6 +2667,7 @@ Deno.serve(async (req) => {
           company_name: companyName,
           location,
           country: it.country,
+          country_codes: it.country_codes ?? null,
           remote_type: null,
           contract_type: it.contract_type ?? null,
           seniority: null,

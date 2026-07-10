@@ -80,8 +80,9 @@ function improveJobWebJob(job: CommercialSourceJob): CommercialSourceJob {
       external_id: `jobwebghana_portal:${normalizedUrl}`,
       source_url: normalizedUrl,
       apply_url: normalizedUrl,
+      country_codes: ["GH"],
     }
-    : job;
+    : { ...job, country_codes: ["GH"] };
 
   const titleMatch = baseJob.title.match(/^(.+?)\s+at\s+(.+)$/i);
   if (titleMatch?.[1] && titleMatch?.[2]) {

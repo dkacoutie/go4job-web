@@ -5,6 +5,7 @@ export type EmploiSenegalPortalItem = {
   title: string;
   company_name: string | null;
   country: "SN";
+  country_codes: ["SN"];
   location: string | null;
   source_url: string;
   apply_url: string;
@@ -232,6 +233,7 @@ async function parseOffersFromHtml(html: string) {
       title,
       company_name: companyName,
       country: "SN",
+      country_codes: ["SN"],
       location,
       source_url: sourceUrl,
       apply_url: sourceUrl,
