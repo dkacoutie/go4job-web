@@ -1,8 +1,36 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "./lib/supabaseClient";
 import "./LandingPage.css";
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [jobCount, setJobCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from("jobs")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true)
+      .eq("is_expired", false)
+      .then(({ count }) => {
+        if (!cancelled && typeof count === "number") setJobCount(count);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const roundedJobCount = jobCount !== null ? Math.floor(jobCount / 1000) * 1000 : null;
+  const badgeText =
+    roundedJobCount !== null
+      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres disponibles`
+      : "Des milliers d’offres disponibles";
+  const proofbarText =
+    roundedJobCount !== null
+      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement`
+      : "Des milliers d’offres mises à jour régulièrement";
 
   const goAuth = () => {
     navigate("/auth", { state: { from: "/jobradar/feed" } });
@@ -16,13 +44,14 @@ export default function LandingPage() {
     <div className="landing-shell">
       <section className="landing-hero">
         <div className="landing-hero__content">
-          <div className="landing-badge">Plus de 11 000 offres disponibles</div>
+          <div className="landing-badge">{badgeText}</div>
 
           <h1>Les bonnes offres passent vite. JobRadar les repère pour toi.</h1>
 
           <p>
-            JobRadar surveille les offres d’emploi, les trie selon ton profil et met en avant
-            celles qui méritent ton attention — sans que tu aies à chercher partout chaque jour.
+            JobRadar surveille les offres d’emploi en Afrique, en Europe, aux États-Unis et à
+            distance, les trie selon ton profil et met en avant celles qui méritent ton attention
+            — sans que tu aies à chercher partout chaque jour.
           </p>
 
           <div className="landing-hero__cta">
@@ -51,8 +80,8 @@ export default function LandingPage() {
       </section>
 
       <section className="landing-proofbar" aria-label="Preuves">
-        <div className="landing-proofbar__item">Plus de 11 000 offres mises à jour régulièrement</div>
-        <div className="landing-proofbar__item">Afrique, Europe et offres à distance</div>
+        <div className="landing-proofbar__item">{proofbarText}</div>
+        <div className="landing-proofbar__item">Afrique, Europe, États-Unis et offres à distance</div>
         <div className="landing-proofbar__item">Offres utiles sauvegardées au même endroit</div>
       </section>
 
@@ -148,14 +177,6 @@ export default function LandingPage() {
         <button type="button" className="btn btnPrimary" onClick={goAuth}>
           Voir les offres pour moi
         </button>
-      </section>
-
-      <section className="landing-footer">
-        <div className="landing-footer__brand">JobRadar</div>
-        <div className="landing-footer__links">
-          <a href="/auth">Créer un compte</a>
-          <a href="/contact">Contact</a>
-        </div>
       </section>
     </div>
   );
