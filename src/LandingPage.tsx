@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import "./LandingPage.css";
@@ -6,6 +6,7 @@ import "./LandingPage.css";
 export default function LandingPage() {
   const navigate = useNavigate();
   const [jobCount, setJobCount] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -32,12 +33,19 @@ export default function LandingPage() {
       ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement`
       : "Des milliers d’offres mises à jour régulièrement";
 
-  const goAuth = () => {
-    navigate("/auth", { state: { from: "/jobradar/feed" } });
+  const goAuth = (query?: string) => {
+    const trimmed = query?.trim();
+    const from = trimmed ? `/jobradar/feed?q=${encodeURIComponent(trimmed)}` : "/jobradar/feed";
+    navigate("/auth", { state: { from } });
   };
 
   const goPricing = () => {
     navigate("/pricing");
+  };
+
+  const handleSearchSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    goAuth(searchQuery);
   };
 
   return (
@@ -46,19 +54,29 @@ export default function LandingPage() {
         <div className="landing-hero__content">
           <div className="landing-badge">{badgeText}</div>
 
-          <h1>Les bonnes offres passent vite. JobRadar les repère pour toi.</h1>
+          <h1>JobRadar trouve les bonnes offres pour toi.</h1>
 
           <p>
-            JobRadar surveille les offres d’emploi en Afrique, en Europe, aux États-Unis et à
-            distance, les trie selon ton profil et met en avant celles qui méritent ton attention
-            — sans que tu aies à chercher partout chaque jour.
+            Surveille les offres d’emploi en Afrique, en Europe, aux États-Unis et à distance,
+            triées selon ton profil.
           </p>
 
-          <div className="landing-hero__cta">
-            <button type="button" className="btn btnPrimary" onClick={goAuth}>
+          <form className="landing-search" onSubmit={handleSearchSubmit}>
+            <input
+              type="text"
+              className="landing-search__input"
+              placeholder="Poste, mot-clé, ville…"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Rechercher une offre"
+            />
+            <button type="submit" className="btn btnPrimary landing-search__submit">
               Voir les offres pour moi
             </button>
-            <button type="button" className="btn btnGhost" onClick={goPricing}>
+          </form>
+
+          <div className="landing-hero__secondary">
+            <button type="button" className="landing-link" onClick={goPricing}>
               Découvrir les pass
             </button>
           </div>
@@ -68,15 +86,6 @@ export default function LandingPage() {
             d’opportunités et d’avancer plus loin dans ta recherche.
           </div>
         </div>
-
-        <a
-          className="landing-hero__visual hero-media"
-          href="/auth"
-          aria-label="Créer mon compte JobRadar"
-          style={{ ["--hero-image" as any]: "url('/jobradar-hero-vertical.png')" }}
-        >
-          <div className="hero-media__frame" />
-        </a>
       </section>
 
       <section className="landing-proofbar" aria-label="Preuves">
@@ -174,7 +183,7 @@ export default function LandingPage() {
           </span>
         </div>
 
-        <button type="button" className="btn btnPrimary" onClick={goAuth}>
+        <button type="button" className="btn btnPrimary" onClick={() => goAuth()}>
           Voir les offres pour moi
         </button>
       </section>
