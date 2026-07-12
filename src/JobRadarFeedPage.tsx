@@ -1058,31 +1058,37 @@ export default function JobRadarFeedPage() {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
       if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
       const serverTerms = buildServerSearchTerms(rawQuery);
-      const results: JobRow[] = [];
 
-      for (const term of serverTerms) {
-        const { data, error } = await supabase
-          .from("jobs")
-          .select(JOB_SELECT_FIELDS)
-          .eq("is_active", true)
-          .eq("is_expired", false)
-          .in("job_status", ["active", "stale"])
-          .or("quality_status.eq.ok,quality_status.is.null")
-          .or(
-            [
-              `title.ilike.%${term}%`,
-              `company_name.ilike.%${term}%`,
-              `location.ilike.%${term}%`,
-              `country.ilike.%${term}%`,
-            ].join(",")
-          )
-          .order("published_at", { ascending: false, nullsFirst: false })
-          .order("scraped_at", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false, nullsFirst: false })
-          .limit(SEARCH_LIMIT);
-        if (error) throw error;
-        results.push(...((data ?? []) as JobRow[]));
-      }
+      // Run all term queries in parallel instead of sequentially: with a trigram
+      // index in place each query is fast on its own, but awaiting them one by one
+      // in a loop still sums their latencies (was the main cause of the multi-second
+      // feed freeze diagnosed 2026-07-12, see migration 20260712140000).
+      const perTermResults = await Promise.all(
+        serverTerms.map(async (term) => {
+          const { data, error } = await supabase
+            .from("jobs")
+            .select(JOB_SELECT_FIELDS)
+            .eq("is_active", true)
+            .eq("is_expired", false)
+            .in("job_status", ["active", "stale"])
+            .or("quality_status.eq.ok,quality_status.is.null")
+            .or(
+              [
+                `title.ilike.%${term}%`,
+                `company_name.ilike.%${term}%`,
+                `location.ilike.%${term}%`,
+                `country.ilike.%${term}%`,
+              ].join(",")
+            )
+            .order("published_at", { ascending: false, nullsFirst: false })
+            .order("scraped_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false, nullsFirst: false })
+            .limit(SEARCH_LIMIT);
+          if (error) throw error;
+          return (data ?? []) as JobRow[];
+        })
+      );
+      const results = perTermResults.flat();
 
       return mergeUniqueById([], results)
         .filter((job) => jobMatchesSearchQuery(job, rawQuery))
