@@ -95,6 +95,11 @@ const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> 
 
 const FAQ_ITEMS = [
   {
+    question: "Qu’est-ce qui est gratuit sur JobRadar ?",
+    answer:
+      "Tu peux créer ton compte, lancer une recherche et voir un aperçu de 4 offres, avec une alerte active par email, sans carte bancaire. Un pass débloque l’accès aux offres complètes, le lien de candidature, la sauvegarde d’offres et plusieurs alertes actives en parallèle.",
+  },
+  {
     question: "Que débloque un pass JobRadar ?",
     answer:
       "Un pass te donne accès aux offres complètes et aux fonctionnalités prévues pendant la durée choisie. Tu peux consulter, suivre et organiser plus facilement les opportunités qui correspondent à ta recherche.",
@@ -590,6 +595,30 @@ export default function PricingPage() {
             <div className="pricing-loading">Chargement...</div>
           ) : (
             <section className="pricing-grid">
+              <div className="pricing-card" data-disabled="false">
+                <div className="pricing-card__top" />
+                <div className="pricing-card__meta">Sans engagement</div>
+                <div className="pricing-card__title">Gratuit</div>
+                <div className="pricing-card__short">Pour découvrir JobRadar</div>
+
+                <div className="pricing-card__priceWrap">
+                  <div className="pricing-card__price">Gratuit</div>
+                </div>
+
+                <div className="pricing-card__benefit">
+                  Découvre JobRadar sans engagement avant de choisir un pass.
+                </div>
+                <ul className="pricing-card__bullets">
+                  <li>Aperçu de 4 offres par recherche</li>
+                  <li>1 alerte active par email</li>
+                  <li>Aucune carte bancaire requise</li>
+                </ul>
+
+                <button type="button" className="pricing-card__cta" disabled>
+                  Inclus dans ton compte
+                </button>
+              </div>
+
               {plans.map((plan) => {
                 const prices = plan.billing_plan_prices ?? [];
                 const price = prices.find((entry) => entry.currency === "XOF") ?? null;
