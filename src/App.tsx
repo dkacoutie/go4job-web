@@ -132,7 +132,6 @@ function AuthGate() {
 function PublicLayout() {
   const location = useLocation();
   const hideHeader = location.pathname === "/auth" || location.pathname === "/reset-password";
-  const hideFooter = location.pathname === "/landing";
 
   return (
     <div className="app-shell">
@@ -149,7 +148,7 @@ function PublicLayout() {
           <Outlet />
         </main>
       </div>
-      {!hideFooter && <SiteFooter variant="public" />}
+      <SiteFooter variant="public" />
     </div>
   );
 }
