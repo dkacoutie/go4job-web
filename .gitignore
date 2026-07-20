@@ -17,6 +17,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Local data dumps (contain production PII, never commit)
+prod_data.sql
+*.dump.sql
+
 # OS / system
 .DS_Store
 Thumbs.db
