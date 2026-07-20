@@ -8,16 +8,7 @@
 }
 
 .jrOnbShell::before {
-  content: "";
-  position: absolute;
-  inset: -20px 0 auto;
-  height: 220px;
-  border-radius: 36px;
-  background:
-    radial-gradient(circle at top center, rgba(59, 130, 246, 0.12), transparent 52%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0));
-  pointer-events: none;
-  z-index: 0;
+  display: none;
 }
 
 .jrOnbHero,
@@ -52,15 +43,15 @@
 }
 
 .jrOnbHero__badge {
-  background: rgba(234, 243, 255, 0.96);
-  color: #0b4cc2;
-  border: 1px solid rgba(11, 76, 194, 0.14);
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border: 1px solid var(--brand-400);
 }
 
 .jrOnbHero__phase {
-  background: rgba(248, 250, 252, 0.96);
-  color: #475569;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border-strong);
 }
 
 .jrOnbHero__copy {
@@ -75,20 +66,20 @@
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1.02;
   letter-spacing: -0.04em;
-  color: #071f63;
+  color: var(--brand-900);
 }
 
 .jrOnbHero p,
 .jrOnbPanel p {
   margin: 0;
-  color: #475569;
+  color: var(--muted);
   line-height: 1.65;
 }
 
 .jrOnbHero__helper {
   font-size: 0.92rem;
   font-weight: 600;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .jrOnbContent {
@@ -100,14 +91,9 @@
   display: grid;
   gap: 22px;
   padding: clamp(22px, 3vw, 34px);
-  border-radius: 32px;
-  background:
-    radial-gradient(circle at top center, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 36%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.96));
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow:
-    0 22px 60px rgba(15, 23, 42, 0.08),
-    0 2px 10px rgba(15, 23, 42, 0.04);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
 }
 
 .jrOnbFormGrid,
@@ -130,7 +116,7 @@
   display: grid;
   gap: 10px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .jrOnbField--compact {
@@ -140,7 +126,7 @@
 .jrOnbFieldHint {
   font-size: 0.88rem;
   font-weight: 600;
-  color: #64748b;
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -148,26 +134,25 @@
   width: 100%;
   min-height: 54px;
   padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(255, 255, 255, 0.95);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
   font-size: 0.98rem;
-  color: #0f172a;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.02);
+  color: var(--text);
 }
 
 .jrOnbInput:focus {
   outline: none;
-  border-color: rgba(37, 99, 235, 0.34);
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+  border-color: var(--brand-600);
+  box-shadow: var(--ring);
 }
 
 .jrOnbChoice,
 .jrOnbPill {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(255, 255, 255, 0.96);
-  color: #0f172a;
-  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: var(--radius);
   padding: 14px 16px;
   text-align: left;
   cursor: pointer;
@@ -177,15 +162,13 @@
 .jrOnbChoice:hover,
 .jrOnbPill:hover {
   transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.09);
+  border-color: var(--brand-400);
 }
 
 .jrOnbChoice.is-active,
 .jrOnbPill.is-active {
-  border-color: rgba(11, 76, 194, 0.28);
-  background: linear-gradient(180deg, rgba(243, 248, 255, 0.98), rgba(232, 241, 255, 0.98));
-  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.1);
+  border-color: var(--brand-600);
+  background: var(--brand-100);
 }
 
 .jrOnbChoice span {
@@ -197,7 +180,7 @@
 .jrOnbChoice small {
   display: block;
   margin-top: 6px;
-  color: #64748b;
+  color: var(--muted);
   line-height: 1.45;
 }
 
@@ -223,9 +206,9 @@
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(243, 248, 255, 0.96);
-  border: 1px solid rgba(11, 76, 194, 0.12);
-  color: #0b4cc2;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-400);
+  color: var(--brand-700);
   font-size: 0.84rem;
   font-weight: 700;
 }
@@ -234,10 +217,9 @@
   display: grid;
   gap: 16px;
   padding: 22px;
-  border-radius: 28px;
-  background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(255, 255, 255, 0.98));
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
 }
 
 .jrOnbPersonalBlock__header {
@@ -248,12 +230,12 @@
 .jrOnbPersonalBlock__header h2 {
   margin: 4px 0 0;
   font-size: 1.26rem;
-  color: #071f63;
+  color: var(--brand-900);
 }
 
 .jrOnbPersonalBlock__header p {
   margin: 0;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .jrOnbKeywordComposer {
@@ -269,10 +251,9 @@
   display: grid;
   gap: 12px;
   padding: 20px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
 }
 
 .jrOnbJobCard__top {
@@ -290,16 +271,16 @@
 
 .jrOnbSectionIntro {
   gap: 8px;
-  background: linear-gradient(180deg, rgba(243, 248, 255, 0.98), rgba(255, 255, 255, 0.98));
+  background: var(--brand-50);
 }
 
 .jrOnbSectionIntro strong {
   font-size: 1rem;
-  color: #071f63;
+  color: var(--brand-900);
 }
 
 .jrOnbSectionIntro span {
-  color: #475569;
+  color: var(--muted);
   line-height: 1.6;
 }
 
@@ -314,13 +295,12 @@
 }
 
 .jrOnbJobCard--match {
-  border-color: rgba(11, 76, 194, 0.16);
-  box-shadow: 0 16px 34px rgba(11, 76, 194, 0.08);
+  border-color: var(--brand-400);
 }
 
 .jrOnbJobCard--nearby {
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
-  border-color: rgba(148, 163, 184, 0.2);
+  background: var(--bg);
+  border-color: var(--border-strong);
 }
 
 .jrOnbJobCard--interactive {
@@ -330,16 +310,14 @@
 
 .jrOnbJobCard--interactive:hover {
   transform: translateY(-2px);
-  border-color: rgba(37, 99, 235, 0.24);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.08);
+  border-color: var(--brand-400);
+  box-shadow: var(--shadow-sm);
 }
 
 .jrOnbJobCard--interactive:focus-visible {
   outline: none;
-  border-color: rgba(37, 99, 235, 0.34);
-  box-shadow:
-    0 0 0 4px rgba(59, 130, 246, 0.12),
-    0 18px 34px rgba(15, 23, 42, 0.08);
+  border-color: var(--brand-600);
+  box-shadow: var(--ring);
 }
 
 .jrOnbJobCard__badge {
@@ -355,22 +333,22 @@
 }
 
 .jrOnbJobCard__badge.is-match {
-  background: rgba(220, 252, 231, 0.9);
-  border: 1px solid rgba(34, 197, 94, 0.16);
-  color: #166534;
+  background: var(--success-100);
+  border: 1px solid transparent;
+  color: var(--success-600);
 }
 
 .jrOnbJobCard__badge.is-nearby {
-  background: rgba(255, 247, 237, 0.94);
-  border: 1px solid rgba(249, 115, 22, 0.14);
-  color: #c2410c;
+  background: var(--warning-100);
+  border: 1px solid transparent;
+  color: var(--warning-600);
 }
 
 .jrOnbJobCard__score {
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(11, 76, 194, 0.08);
-  color: #0a3aa5;
+  background: var(--brand-100);
+  color: var(--brand-800);
   font-weight: 800;
   font-size: 0.88rem;
   white-space: nowrap;
@@ -379,12 +357,12 @@
 .jrOnbJobCard__whyTitle {
   font-size: 0.9rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .jrOnbJobCard__why ul {
   padding-left: 18px;
-  color: #475569;
+  color: var(--muted);
   line-height: 1.55;
 }
 
@@ -397,10 +375,10 @@
 .jrOnbJobCard__cta {
   min-height: 38px;
   padding: 0 14px;
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(135deg, rgba(11, 76, 194, 0.12), rgba(37, 99, 235, 0.08));
-  color: #0b4cc2;
+  border: 1px solid var(--brand-400);
+  border-radius: var(--radius-sm);
+  background: var(--brand-50);
+  color: var(--brand-800);
   font-size: 0.84rem;
   font-weight: 800;
   cursor: pointer;
@@ -409,7 +387,7 @@
 
 .jrOnbJobCard__cta:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.12);
+  box-shadow: var(--shadow-sm);
 }
 
 .jrOnbBenefitGrid {
@@ -429,12 +407,12 @@
 .jrOnbDrafts__header h2 {
   margin: 4px 0 0;
   font-size: 1.3rem;
-  color: #071f63;
+  color: var(--brand-900);
 }
 
 .jrOnbDrafts__header p {
   margin: 0;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .jrOnbDrafts__eyebrow {
@@ -442,7 +420,7 @@
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #0b4cc2;
+  color: var(--brand-700);
 }
 
 .jrOnbAlertGrid {
@@ -459,7 +437,7 @@
 .jrOnbAlertCard__title {
   font-size: 1rem;
   font-weight: 800;
-  color: #071f63;
+  color: var(--brand-900);
   line-height: 1.35;
 }
 
@@ -486,16 +464,16 @@
   min-height: 30px;
   padding: 0 11px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.04);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
   font-size: 0.8rem;
   font-weight: 700;
-  color: #475569;
+  color: var(--muted);
 }
 
 .jrOnbAlertCard__why {
   font-size: 0.92rem;
-  color: #475569;
+  color: var(--muted);
 }
 
 .jrOnbPills--dense {
@@ -511,13 +489,13 @@
 }
 
 .jrOnbPill--suggested {
-  border-color: rgba(11, 76, 194, 0.16);
-  background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(238, 245, 255, 0.98));
+  border-color: var(--brand-400);
+  background: var(--brand-50);
 }
 
 .jrOnbPill--secondary {
-  color: #475569;
-  background: rgba(255, 255, 255, 0.84);
+  color: var(--muted);
+  background: var(--panel);
 }
 
 .jrOnbPill--static {
@@ -535,7 +513,7 @@
 
 .jrOnbBenefitCard span,
 .jrOnbValueCard span {
-  color: #475569;
+  color: var(--muted);
   line-height: 1.55;
 }
 
@@ -545,22 +523,22 @@
 
 .jrOnbChecklist__item {
   padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.04);
-  color: #475569;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
   font-weight: 700;
 }
 
 .jrOnbChecklist__item.is-done {
-  background: rgba(16, 185, 129, 0.12);
-  color: #065f46;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .jrOnbState {
   padding: 20px;
-  border-radius: 20px;
-  background: rgba(15, 23, 42, 0.04);
-  color: #475569;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--muted);
   line-height: 1.6;
 }
 
@@ -577,24 +555,21 @@
   display: grid;
   gap: 14px;
   padding: 22px;
-  border-radius: 28px;
-  background:
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(243, 248, 255, 0.98), rgba(255, 255, 255, 0.98));
-  border: 1px solid rgba(11, 76, 194, 0.12);
-  box-shadow: 0 16px 34px rgba(11, 76, 194, 0.08);
+  border-radius: var(--radius-lg);
+  background: var(--brand-50);
+  border: 1px solid var(--brand-400);
 }
 
 .jrOnbValuePanel h2 {
   margin: 0;
   font-size: 1.42rem;
   line-height: 1.18;
-  color: #071f63;
+  color: var(--brand-900);
 }
 
 .jrOnbValuePanel p {
   margin: 0;
-  color: #475569;
+  color: var(--muted);
 }
 
 .jrOnbValuePanel__chips {
@@ -609,17 +584,16 @@
   min-height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(11, 76, 194, 0.14);
-  color: #0b4cc2;
+  background: var(--panel);
+  border: 1px solid var(--brand-400);
+  color: var(--brand-700);
   font-size: 0.82rem;
   font-weight: 700;
 }
 
 .jrOnbValuePanel--soft {
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.98));
-  border-color: rgba(148, 163, 184, 0.16);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  background: var(--bg);
+  border-color: var(--border-strong);
 }
 
 .jrOnbActions {

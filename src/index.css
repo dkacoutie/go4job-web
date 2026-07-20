@@ -2,27 +2,57 @@
   /* Typography */
   --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 
-  /* Brand */
-  --brand-800: #071f63;
-  --brand-700: #0a3aa5;
-  --brand-600: #0b4cc2;
-  --brand-500: #2563eb;
-  --brand-400: #60a5fa;
+  --text-xs: 12px;
+  --text-sm: 13.5px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+
+  /* Brand — bleu JobRadar, plus profond, posé à plat (sans dégradé) */
+  --brand-900: #071433;
+  --brand-800: #0b2a5c;
+  --brand-700: #123e8a;
+  --brand-600: #1b4fa6;
+  --brand-500: #2b63c4;
+  --brand-400: #6d93d6;
+  --brand-100: #e1e9f7;
+  --brand-50: #f1f5fc;
+
+  /* Accent — terracotta, réservé aux signaux de pertinence / statut */
+  --accent-700: #8a3d22;
+  --accent-600: #b5502a;
+  --accent-500: #c86438;
+  --accent-100: #f1e3d8;
+  --accent-50: #fbf3ee;
 
   /* Neutrals */
-  --bg: #f5f7fb;
+  --bg: #f5f6f4;
   --bg-soft: #eef3ff;
   --panel: #ffffff;
   --text: #0b1220;
   --muted: #5b677a;
-  --border: rgba(15, 23, 42, 0.10);
+  --border: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.14);
 
-  /* UI */
-  --shadow-sm: 0 10px 24px rgba(2, 6, 23, 0.08);
-  --shadow: 0 18px 45px rgba(2, 6, 23, 0.12);
-  --shadow-lg: 0 28px 70px rgba(2, 6, 23, 0.14);
-  --radius: 16px;
-  --radius-sm: 12px;
+  /* Functional */
+  --success-600: #1f8a4c;
+  --success-100: #e3f5ea;
+  --warning-600: #a35b0a;
+  --warning-100: #faedd8;
+  --error-600: #b42318;
+  --error-100: #fbe7e5;
+  --info-600: var(--brand-600);
+  --info-100: var(--brand-100);
+
+  /* UI — ombres réservées aux éléments flottants (menus, modales, toasts) */
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.14);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
 
   /* Layout */
   --container: 1200px;
@@ -30,7 +60,7 @@
   --gutter-y: 16px;
 
   /* Focus ring */
-  --ring: 0 0 0 4px rgba(0, 82, 204, 0.18);
+  --ring: 0 0 0 4px rgba(18, 62, 138, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -58,4 +88,4 @@ a:hover { text-decoration: none; }
   margin: 0 auto;
 }
 
-::selection { background: rgba(0, 82, 204, 0.18); }
+::selection { background: rgba(18, 62, 138, 0.18); }

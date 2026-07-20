@@ -1,38 +1,22 @@
-﻿.subscription-shell {
+.subscription-shell {
   min-height: 100vh;
-  background: #f4f7fb;
-  color: #0d1324;
-  font-family: "Source Sans 3", "Work Sans", "Manrope", "Helvetica Neue", sans-serif;
-  --jr-ink-900: #0b1324;
-  --jr-ink-700: #1a2b4a;
-  --jr-gold-600: #d4b15e;
-  --jr-gold-100: #f6edd6;
-  --jr-slate-100: #eef2f7;
-  --jr-slate-200: #d7e0ee;
-  --jr-slate-400: #94a3b8;
+  background: var(--bg);
+  color: var(--text);
+  --jr-ink-900: var(--text);
+  --jr-ink-700: var(--text);
+  --jr-gold-600: var(--accent-600);
+  --jr-gold-100: var(--accent-100);
+  --jr-slate-100: var(--bg);
+  --jr-slate-200: var(--border-strong);
+  --jr-slate-400: var(--muted);
 }
 
 .subscription-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(140deg, #142f63 0%, #1d4a99 52%, #2b64c9 100%);
-  color: #ffffff;
+  background: var(--brand-800);
+  color: #fff;
   padding: 44px 24px 54px;
-}
-
-.subscription-hero::after {
-  content: "";
-  position: absolute;
-  width: 320px;
-  height: 320px;
-  top: -120px;
-  right: -140px;
-  background: radial-gradient(
-    circle,
-    rgba(247, 220, 143, 0.2) 0%,
-    rgba(247, 220, 143, 0) 72%
-  );
-  pointer-events: none;
 }
 
 .subscription-hero__inner {
@@ -55,7 +39,6 @@
   font-size: 40px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  font-family: "Libre Baskerville", "Cormorant Garamond", "Times New Roman", serif;
 }
 
 .subscription-hero p {
@@ -69,7 +52,7 @@
 .subscription-hero__cta {
   height: 44px;
   padding: 0 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 .subscription-main {
@@ -81,11 +64,10 @@
 }
 
 .subscription-card {
-  background: #ffffff;
+  background: var(--panel);
   border: 1px solid var(--jr-slate-200);
   border-radius: 18px;
   padding: 20px;
-  box-shadow: 0 12px 26px rgba(20, 35, 80, 0.08);
 }
 
 .subscription-card__head {
@@ -103,7 +85,7 @@
 
 .subscription-card__sub {
   margin: 6px 0 0;
-  color: #5b667a;
+  color: var(--muted);
   font-size: 13.5px;
 }
 
@@ -112,28 +94,28 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  background: #eef2f7;
-  color: #5b667a;
+  background: var(--bg);
+  color: var(--muted);
 }
 
 .subscription-pill--active {
-  background: #e8f3ea;
-  color: #2f6b4e;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .subscription-pill--expired {
-  background: #f6e2e2;
-  color: #9a2937;
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .subscription-pill--neutral {
-  background: #eef2f7;
-  color: #5b667a;
+  background: var(--bg);
+  color: var(--muted);
 }
 
 .subscription-pass {
   border: 1px solid var(--jr-slate-200);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 16px;
   background: var(--jr-slate-100);
   display: grid;
@@ -155,28 +137,28 @@
   display: grid;
   gap: 4px;
   font-size: 12.5px;
-  color: #5b667a;
+  color: var(--muted);
 }
 
 .subscription-pass__item strong {
-  color: #0b1324;
+  color: var(--text);
   font-weight: 700;
 }
 
 .subscription-empty {
   display: grid;
   gap: 10px;
-  color: #5b667a;
+  color: var(--muted);
   font-size: 14.5px;
 }
 
 .subscription-empty__title {
   font-weight: 700;
-  color: #0b1324;
+  color: var(--text);
 }
 
 .subscription-empty__text {
-  color: #5b667a;
+  color: var(--muted);
   font-size: 13.5px;
 }
 
@@ -202,7 +184,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: #6b7280;
+  color: var(--muted);
   padding: 0 6px;
 }
 
@@ -210,7 +192,7 @@
   border: 1px solid var(--jr-slate-200);
   border-radius: 14px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--panel);
 }
 
 .subscription-payments__cell {
@@ -218,14 +200,14 @@
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
-  color: #0b1324;
+  color: var(--text);
 }
 
 .subscription-payments__label {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #9aa3b2;
+  color: var(--muted);
   display: none;
 }
 
@@ -238,14 +220,14 @@
 
 .subscription-payments__currency {
   font-size: 11px;
-  color: #7a8796;
+  color: var(--muted);
   font-weight: 700;
 }
 
 .subscription-payments__ref {
   font-family: "Source Code Pro", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
-  color: #5b667a;
+  color: var(--muted);
   word-break: break-all;
 }
 
@@ -257,43 +239,43 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  background: #eef2f7;
-  color: #5b667a;
+  background: var(--bg);
+  color: var(--muted);
   width: fit-content;
 }
 
 .subscription-status--success {
-  background: #e8f4f0;
-  color: #2f6b4e;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .subscription-status--pending {
-  background: #fff7e6;
-  color: #7a4e14;
+  background: var(--warning-100);
+  color: var(--warning-600);
 }
 
 .subscription-status--danger {
-  background: #f6e2e2;
-  color: #9a2937;
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .subscription-status--neutral {
-  background: #eef2f7;
-  color: #5b667a;
+  background: var(--bg);
+  color: var(--muted);
 }
 
 .subscription-error {
-  border: 1px solid #f3c2c8;
+  border: 1px solid var(--error-600);
   border-radius: 14px;
   padding: 12px 16px;
-  background: #fff1f2;
-  color: #991b1b;
+  background: var(--error-100);
+  color: var(--error-600);
   font-size: 14px;
 }
 
 .subscription-loading {
   padding: 16px 0;
-  color: #5b667a;
+  color: var(--muted);
 }
 
 @media (max-width: 860px) {

@@ -16,8 +16,8 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
   background:
     radial-gradient(circle at top left, rgba(16, 152, 173, 0.12), transparent 36%),
-    linear-gradient(135deg, #fffdf8, #f4fbff 56%, #ffffff);
-  box-shadow: 0 24px 60px rgba(13, 38, 59, 0.08);
+    linear-gradient(135deg, #fffdf8, var(--bg) 56%, var(--panel));
+  box-shadow: var(--shadow-sm);
 }
 
 .adminPartners__hero h1 {
@@ -42,7 +42,7 @@
 
 .adminPartners__tab {
   border: 1px solid rgba(0, 0, 0, 0.1);
-  background: #fff;
+  background: var(--panel);
   color: rgba(0, 0, 0, 0.72);
   border-radius: 999px;
   padding: 10px 16px;
@@ -52,10 +52,10 @@
 }
 
 .adminPartners__tab.is-active {
-  background: linear-gradient(135deg, #0f7d8f, #0d5f9e);
-  color: #fff;
+  background: linear-gradient(135deg, #0f7d8f, var(--brand-700));
+  color: var(--panel);
   border-color: transparent;
-  box-shadow: 0 14px 30px rgba(13, 95, 158, 0.18);
+  box-shadow: var(--shadow-sm);
 }
 
 .adminPartners__tab:hover {
@@ -136,7 +136,7 @@
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
@@ -199,7 +199,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(239, 68, 68, 0.05);
   border: 1px solid rgba(239, 68, 68, 0.12);
 }
@@ -249,14 +249,13 @@
 .adminPartners__filterChip.is-active {
   background: rgba(13, 95, 158, 0.12);
   border-color: rgba(13, 95, 158, 0.28);
-  color: #0d5f9e;
+  color: var(--brand-700);
 }
 
 .adminPartners__overlay {
   position: fixed;
   inset: 0;
   background: rgba(10, 18, 31, 0.44);
-  backdrop-filter: blur(6px);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -268,10 +267,10 @@
   width: min(760px, calc(100vw - 28px));
   max-height: min(92vh, 1040px);
   overflow: auto;
-  background: linear-gradient(180deg, #fff, #f9fbfd);
+  background: linear-gradient(180deg, var(--panel), var(--bg));
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 30px 80px rgba(10, 18, 31, 0.26);
+  box-shadow: var(--shadow-sm);
   padding: 22px;
 }
 
@@ -323,7 +322,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
@@ -356,7 +355,7 @@
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -391,7 +390,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
@@ -419,7 +418,7 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
   border: 1px solid rgba(0, 0, 0, 0.06);
-  box-shadow: 0 12px 26px rgba(10, 18, 31, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .adminPartners__messageHead {
@@ -453,8 +452,8 @@
 .adminPartners__messageBody {
   margin: 0;
   padding: 14px;
-  border-radius: 16px;
-  background: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--panel);
   border: 1px solid rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.8);
   font: inherit;
@@ -496,7 +495,7 @@
   padding: 11px 13px;
   font-size: 14px;
   font-family: inherit;
-  background: #fff;
+  background: var(--panel);
   outline: none;
 }
 
@@ -567,7 +566,7 @@
   gap: 12px;
   justify-content: space-between;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   border: 1px solid rgba(0, 0, 0, 0.07);
   background: rgba(255, 255, 255, 0.92);
 }

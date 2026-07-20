@@ -4,13 +4,13 @@ body {
 
 .cvats-page {
   --color-bg-main: #F7FAFF;
-  --color-bg-cream: #FFF8EA;
+  --color-bg-cream: var(--warning-100);
   --color-text-primary: #081A3A;
   --color-text-secondary: #526179;
   --color-cta: #1A5CF0;
   --color-cta-hover: #0F4BCC;
   --color-badge-bg: #EAF2FF;
-  --color-accent-cream: #FFF3D6;
+  --color-accent-cream: var(--warning-100);
   --color-green: #18A67A;
   --color-border: #DDE7F5;
   --color-cta-final-bg: #0D1F45;
@@ -224,10 +224,10 @@ body {
   display: block;
   width: 100%;
   max-height: 560px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
   object-position: center;
-  box-shadow: 0 10px 36px rgba(8, 26, 58, 0.14);
+  box-shadow: var(--shadow-sm);
 }
 
 .cvats-form__badge {
@@ -245,9 +245,9 @@ body {
   min-width: 0;
   gap: 15px;
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-main);
-  box-shadow: 0 4px 24px rgba(8, 26, 58, 0.08);
+  box-shadow: var(--shadow-sm);
   padding: 28px 24px;
 }
 
@@ -284,8 +284,8 @@ body {
 .cvats-form input {
   height: 48px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #FFFFFF;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
   color: var(--color-text-primary);
   font-size: 15px;
   outline: none;
@@ -303,7 +303,7 @@ body {
 }
 
 .cvats-form input.is-error {
-  border-color: #E84242;
+  border-color: var(--error-600);
 }
 
 .cvats-field-error {
@@ -319,7 +319,7 @@ body {
 .cvats-finalCta__email {
   min-height: 48px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -335,7 +335,7 @@ body {
 .cvats-primaryBtn,
 .cvats-secondaryBtn {
   background: var(--color-cta);
-  color: #FFFFFF;
+  color: var(--panel);
   padding: 0 22px;
 }
 
@@ -395,8 +395,8 @@ body {
 
 .cvats-errorBox {
   border: 1px solid rgba(232, 66, 66, 0.2);
-  background: #FFF2F0;
-  color: #991B1B;
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .cvats-successBox {
@@ -461,9 +461,9 @@ body {
   min-width: 0;
   gap: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #FFFFFF;
-  box-shadow: 0 2px 12px rgba(8, 26, 58, 0.06);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
   padding: 24px;
 }
 
@@ -473,7 +473,7 @@ body {
   height: 36px;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--color-badge-bg);
 }
 
@@ -508,7 +508,7 @@ body {
   border-left: 3px solid var(--color-cta);
   border-radius: 0;
   background: none;
-  color: #111827;
+  color: var(--text);
   font-size: 18px;
   font-style: italic;
   font-weight: 600;
@@ -520,7 +520,7 @@ body {
 .cvats-problemCard {
   min-width: 0;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--color-bg-main);
   padding: 20px;
 }
@@ -547,7 +547,7 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #E84242;
+  background: var(--error-600);
 }
 
 .cvats-guide-grid {
@@ -574,7 +574,7 @@ body {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   align-items: center;
   gap: 30px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-cream);
   padding: 34px;
 }
@@ -598,8 +598,8 @@ body {
   min-width: 0;
   gap: 10px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #FFFFFF;
+  border-radius: var(--radius);
+  background: var(--panel);
   padding: 20px 24px;
 }
 
@@ -619,16 +619,16 @@ body {
   justify-items: center;
   gap: 18px;
   margin: 28px 0 64px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--color-cta-final-bg);
-  color: #FFFFFF;
+  color: var(--panel);
   padding: 42px 28px;
   text-align: center;
 }
 
 .cvats-finalCta h2 {
   margin: 0;
-  color: #FFFFFF;
+  color: var(--panel);
   font-size: 28px;
   font-weight: 700;
   line-height: 1.22;
@@ -639,7 +639,7 @@ body {
 }
 
 .cvats-finalCta__button {
-  background: #FFFFFF;
+  background: var(--panel);
   color: var(--color-text-primary);
   padding: 14px 28px;
 }
@@ -653,7 +653,7 @@ body {
 }
 
 .cvats-finalCta__email:hover {
-  color: #FFFFFF;
+  color: var(--panel);
 }
 
 .cvats-finalCta > span {
@@ -758,9 +758,9 @@ body {
   min-width: 0;
   gap: 18px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: #FFFFFF;
-  box-shadow: 0 2px 12px rgba(8, 26, 58, 0.06);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
   padding: 24px;
 }
 
@@ -795,7 +795,7 @@ body {
 .cvats-option:has(input:checked) {
   border-color: var(--color-cta);
   background: var(--color-cta);
-  color: #FFFFFF;
+  color: var(--panel);
 }
 
 .cvats-option input {
@@ -815,7 +815,7 @@ body {
 .cvats-tip {
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #FFFFFF;
+  background: var(--panel);
   color: var(--color-text-primary);
   font-size: 15px;
   font-weight: 600;
@@ -968,7 +968,7 @@ body {
 
   .cvats-ecosystem,
   .cvats-finalCta {
-    border-radius: 12px;
+    border-radius: var(--radius);
     padding: 24px 18px;
   }
 

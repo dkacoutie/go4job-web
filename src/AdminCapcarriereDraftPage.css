@@ -1,19 +1,19 @@
 .admin-capcarriere-page {
   --cap-primary: #1A56DB;
   --cap-bg: #F4F6FA;
-  --cap-card-bg: #FFFFFF;
-  --cap-card-border: #E5E7EB;
+  --cap-card-bg: var(--panel);
+  --cap-card-border: var(--border-strong);
   --cap-card-radius: 14px;
-  --cap-text-primary: #111827;
+  --cap-text-primary: var(--text);
   --cap-text-secondary: #6B7280;
-  --cap-badge-draft-bg: #FEF3C7;
+  --cap-badge-draft-bg: var(--warning-100);
   --cap-badge-draft-text: #92400E;
   --cap-security-bg: #F0FDF4;
   --cap-security-border: #BBF7D0;
-  --cap-security-text: #166534;
-  --cap-alert-bg: #FEF2F2;
+  --cap-security-text: var(--success-600);
+  --cap-alert-bg: var(--error-100);
   --cap-alert-border-l: #EF4444;
-  --cap-alert-text: #991B1B;
+  --cap-alert-text: var(--error-600);
   --cap-deadline-bg: #EFF6FF;
   --cap-deadline-border: #BFDBFE;
   --cap-content-max: 960px;
@@ -97,7 +97,7 @@
 .cap-hero p {
   max-width: 660px;
   margin: 10px 0 0;
-  color: #374151;
+  color: var(--muted);
   font-size: 16px;
   line-height: 1.55;
 }
@@ -150,7 +150,7 @@
 
 .cap-cv-link {
   border: 1px solid rgba(153, 27, 27, 0.22);
-  background: #FFFFFF;
+  background: var(--panel);
   color: var(--cap-alert-text);
   text-decoration: none;
 }
@@ -177,7 +177,7 @@
 
 .cap-security-grid span {
   border: 1px solid var(--cap-security-border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 11px 12px;
   background: rgba(255, 255, 255, 0.68);
   font-weight: 900;
@@ -246,7 +246,7 @@
 .cap-deadline-box {
   margin-top: 18px;
   border: 1px solid var(--cap-deadline-border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 14px;
   background: var(--cap-deadline-bg);
 }
@@ -276,7 +276,7 @@
 
 .cap-body-panel h3 {
   margin-bottom: 10px;
-  color: #1F2937;
+  color: var(--text);
   font-size: 15px;
 }
 
@@ -285,10 +285,10 @@
   max-height: 620px;
   overflow: auto;
   border: 1px solid #E2E8F0;
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 18px;
   background: #F8FAFC;
-  color: #1F2937;
+  color: var(--text);
   font-size: 15px;
   line-height: 1.72;
   white-space: pre-wrap;
@@ -301,7 +301,7 @@
 }
 
 .cap-send-safety {
-  background: linear-gradient(180deg, #FFFFFF 0%, #F9FAFB 100%);
+  background: linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
 }
 
 .cap-compact-grid {
@@ -332,7 +332,7 @@
 
 .cap-timeline-item strong {
   display: block;
-  color: #111827;
+  color: var(--text);
 }
 
 .cap-timeline-item p,
@@ -350,7 +350,7 @@
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
-  color: #111827;
+  color: var(--text);
   font-weight: 900;
 }
 
@@ -371,19 +371,19 @@
 
 .cap-json-grid h3 {
   margin-bottom: 8px;
-  color: #374151;
+  color: var(--muted);
   font-size: 13px;
 }
 
 .cap-json-grid pre {
   max-height: 360px;
   overflow: auto;
-  border: 1px solid #E5E7EB;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   margin: 0;
   padding: 12px;
-  background: #F9FAFB;
-  color: #374151;
+  background: var(--bg);
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

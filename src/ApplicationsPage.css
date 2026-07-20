@@ -3,7 +3,7 @@
   --app-pad: 16px;
 
   --app-card: var(--panel);
-  --app-border: var(--border);
+  --app-border: var(--border-strong);
 
   --app-text: var(--text);
   --app-muted: var(--muted);
@@ -12,9 +12,9 @@
   --app-shadow: var(--shadow-sm);
   --app-shadow2: var(--shadow);
 
-  --app-surface: rgba(15, 23, 42, 0.04);
-  --app-surface2: rgba(15, 23, 42, 0.06);
-  --app-focus: rgba(59, 130, 246, 0.25);
+  --app-surface: var(--bg);
+  --app-surface2: var(--border-strong);
+  --app-focus: rgba(18, 62, 138, 0.25);
 }
 
 .app-shell {
@@ -32,11 +32,10 @@
 /* HERO */
 .app-hero {
   margin-top: 6px;
-  padding: 18px;
+  padding: 22px;
   border: 1px solid var(--app-border);
-  border-radius: var(--app-radius);
-  background: var(--app-card);
-  box-shadow: var(--app-shadow);
+  border-radius: var(--radius-lg);
+  background: var(--bg-soft);
 }
 
 .app-heroTop {
@@ -49,7 +48,8 @@
 .app-hero h1 {
   margin: 0 0 8px;
   font-size: 26px;
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--app-text);
 }
 
@@ -71,10 +71,11 @@
   display: inline-flex;
   align-items: center;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--app-border);
-  background: var(--app-surface);
+  background: var(--panel);
   font-size: 12px;
+  color: var(--app-text);
 }
 
 /* TOOLBAR (tabs + search) */
@@ -95,10 +96,10 @@
 
 .app-tab {
   border: 1px solid var(--app-border);
-  background: var(--app-surface);
+  background: var(--panel);
   color: var(--app-text);
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13px;
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
@@ -106,12 +107,13 @@
 
 .app-tab:hover {
   transform: translateY(-1px);
-  background: var(--app-surface2);
+  background: var(--bg);
 }
 
 .app-tab.isActive {
-  background: rgba(59, 130, 246, 0.10);
-  border-color: rgba(59, 130, 246, 0.28);
+  background: var(--brand-100);
+  border-color: var(--brand-400);
+  color: var(--brand-800);
 }
 
 .app-count {
@@ -123,7 +125,7 @@
   justify-content: center;
   padding: 0 6px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--border-strong);
   font-size: 12px;
 }
 
@@ -142,10 +144,10 @@
 .app-error {
   margin-top: 12px;
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.12);
-  color: rgba(120, 10, 10, 0.95);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--error-600);
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .app-empty {
@@ -185,18 +187,18 @@
   border-radius: var(--app-radius);
   border: 1px solid var(--app-border);
   background: var(--app-card);
-  box-shadow: var(--app-shadow);
   padding: 14px;
   transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
 .app-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--app-shadow2);
+  box-shadow: var(--app-shadow);
+  border-color: var(--brand-400);
 }
 
 .app-card:focus-within {
-  box-shadow: 0 0 0 3px var(--app-focus), var(--app-shadow2);
+  box-shadow: var(--ring);
 }
 
 /* Top row */
@@ -226,14 +228,14 @@
   margin-bottom: 10px;
 }
 
-/* Failed note */
+/* Failed / retired note */
 .app-failNote {
   margin: 8px 0 10px;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(239, 68, 68, 0.10);
-  border: 1px solid rgba(239, 68, 68, 0.22);
-  color: rgba(127, 29, 29, 0.95);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -252,13 +254,13 @@
   flex-wrap: wrap;
 }
 
-/* Chips (autonomes, pas besoin d’un .chip global) */
+/* Chips (autonomes, pas besoin d'un .chip global) */
 .chip {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--app-border);
   background: var(--app-surface);
   color: var(--app-text);
@@ -272,51 +274,31 @@
 }
 
 .chipQueued {
-  border-color: rgba(59, 130, 246, 0.30);
-  background: rgba(59, 130, 246, 0.10);
-  color: rgba(30, 64, 175, 0.95);
+  border-color: transparent;
+  background: var(--brand-100);
+  color: var(--brand-800);
 }
 
 .chipInProgress {
-  border-color: rgba(245, 158, 11, 0.30);
-  background: rgba(245, 158, 11, 0.10);
-  color: rgba(146, 64, 14, 0.95);
+  border-color: transparent;
+  background: var(--warning-100);
+  color: var(--warning-600);
 }
 
 .chipSubmitted {
-  border-color: rgba(34, 197, 94, 0.28);
-  background: rgba(34, 197, 94, 0.10);
-  color: rgba(20, 83, 45, 0.95);
+  border-color: transparent;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .chipFailed {
-  border-color: rgba(239, 68, 68, 0.28);
-  background: rgba(239, 68, 68, 0.10);
-  color: rgba(127, 29, 29, 0.95);
-}
-/* ===== NEW: Retired status (Retirée) ===== */
-.chipRetired {
-  border-color: rgba(100, 116, 139, 0.30);      /* slate */
-  background: rgba(100, 116, 139, 0.10);
-  color: rgba(51, 65, 85, 0.95);
+  border-color: transparent;
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
-/* Optionnel : note "retirée" plus neutre/premium (moins rouge) */
-.app-failNote {
-  background: rgba(100, 116, 139, 0.08);
-  border: 1px solid rgba(100, 116, 139, 0.22);
-  color: rgba(51, 65, 85, 0.95);
-}
-/* ===== NEW: Retired status (Retirée) ===== */
 .chipRetired {
-  border-color: rgba(100, 116, 139, 0.30);      /* slate */
-  background: rgba(100, 116, 139, 0.10);
-  color: rgba(51, 65, 85, 0.95);
-}
-
-/* Optionnel : note "retirée" plus neutre/premium (moins rouge) */
-.app-failNote {
-  background: rgba(100, 116, 139, 0.08);
-  border: 1px solid rgba(100, 116, 139, 0.22);
-  color: rgba(51, 65, 85, 0.95);
+  border-color: var(--border-strong);
+  background: var(--bg);
+  color: var(--muted);
 }

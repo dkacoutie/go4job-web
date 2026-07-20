@@ -3,10 +3,10 @@
   --jd-pad: 16px;
 
   --jd-card: var(--panel);
-  --jd-border: var(--border);
+  --jd-border: var(--border-strong);
   --jd-text: var(--text);
   --jd-muted: var(--muted);
-  --jd-surface: rgba(15, 23, 42, 0.04);
+  --jd-surface: var(--bg);
 
   --jd-radius: var(--radius);
   --jd-shadow: var(--shadow-sm);
@@ -36,10 +36,10 @@
 .jd-error {
   margin-top: 12px;
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 80, 80, 0.35);
-  background: rgba(255, 80, 80, 0.12);
-  color: rgba(120, 10, 10, 0.95);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--error-600);
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .jd-empty {
@@ -54,9 +54,9 @@
 .jd-missing {
   margin-top: 14px;
   padding: 20px;
-  border: 1px solid rgba(59, 130, 246, 0.22);
+  border: 1px solid var(--brand-400);
   border-radius: var(--jd-radius);
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--brand-50);
   color: var(--jd-text);
   display: grid;
   gap: 10px;
@@ -83,8 +83,7 @@
   border-radius: var(--jd-radius);
   border: 1px solid var(--jd-border);
   background: var(--jd-card);
-  box-shadow: var(--jd-shadow);
-  padding: 18px;
+  padding: 24px;
 }
 
 .jd-head {
@@ -98,7 +97,8 @@
 .jd-title {
   margin: 0 0 8px;
   font-size: 26px;
-  letter-spacing: 0.2px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--jd-text);
 }
 
@@ -136,8 +136,8 @@
 
 .jd-locked {
   margin-top: 16px;
-  border: 1px solid rgba(59, 130, 246, 0.18);
-  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid var(--brand-400);
+  background: var(--brand-50);
   border-radius: var(--jd-radius);
   padding: 16px;
   display: grid;
@@ -164,11 +164,12 @@
 .jd-body h3 {
   margin: 0 0 10px;
   color: var(--jd-text);
+  font-weight: 700;
 }
 
 .jd-desc {
   color: var(--jd-text);
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
@@ -181,27 +182,27 @@
 }
 
 .jd-src {
-  border: 1px solid rgba(2, 6, 23, 0.12);
-  background: rgba(2, 6, 23, 0.04);
-  color: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--jd-border);
+  background: var(--jd-surface);
+  color: var(--jd-text);
 }
 
 .jd-srcScraped {
-  border-color: rgba(16, 185, 129, 0.25);
-  background: rgba(16, 185, 129, 0.10);
-  color: rgba(5, 120, 87, 0.95);
+  border-color: transparent;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .jd-srcAi {
-  border-color: rgba(59, 130, 246, 0.25);
-  background: rgba(59, 130, 246, 0.10);
-  color: rgba(30, 64, 175, 0.95);
+  border-color: transparent;
+  background: var(--brand-100);
+  color: var(--brand-800);
 }
 
 .jd-quality {
-  border-color: rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.7);
-  color: rgba(15, 23, 42, 0.82);
+  border-color: var(--jd-border);
+  background: var(--panel);
+  color: var(--jd-muted);
 }
 
 .jd-dateSmall {
@@ -219,7 +220,7 @@
 .jd-applyBtn {
   height: 36px;
   padding: 0 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 .jd-genNote {
@@ -230,11 +231,11 @@
 
 .jd-aiMsg {
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.8);
-  background: rgba(15, 23, 42, 0.05);
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  color: var(--jd-muted);
+  background: var(--jd-surface);
+  border: 1px solid var(--jd-border);
   padding: 6px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .jd-descHint {
@@ -257,7 +258,7 @@
   align-items: center;
   font-size: 12px;
   padding: 6px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   line-height: 1;
 }
 .chipStatus {
@@ -266,22 +267,22 @@
   color: var(--jd-text);
 }
 .chipQueued {
-  border-color: rgba(59, 130, 246, 0.30);
-  background: rgba(59, 130, 246, 0.10);
-  color: rgba(30, 64, 175, 0.95);
+  border-color: transparent;
+  background: var(--brand-100);
+  color: var(--brand-800);
 }
 .chipInProgress {
-  border-color: rgba(245, 158, 11, 0.30);
-  background: rgba(245, 158, 11, 0.10);
-  color: rgba(146, 64, 14, 0.95);
+  border-color: transparent;
+  background: var(--warning-100);
+  color: var(--warning-600);
 }
 .chipSubmitted {
-  border-color: rgba(34, 197, 94, 0.28);
-  background: rgba(34, 197, 94, 0.10);
-  color: rgba(20, 83, 45, 0.95);
+  border-color: transparent;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 .chipFailed {
-  border-color: rgba(239, 68, 68, 0.28);
-  background: rgba(239, 68, 68, 0.10);
-  color: rgba(127, 29, 29, 0.95);
+  border-color: transparent;
+  background: var(--error-100);
+  color: var(--error-600);
 }

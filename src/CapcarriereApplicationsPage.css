@@ -1,8 +1,8 @@
 .cc-candidate {
-  --cc-blue: #1d4ed8;
+  --cc-blue: var(--brand-600);
   --cc-navy: #172554;
-  --cc-border: #dbe3f0;
-  --cc-muted: #64748b;
+  --cc-border: var(--border-strong);
+  --cc-muted: var(--muted);
   max-width: 1120px;
   margin: 0 auto;
   color: #172033;
@@ -19,8 +19,8 @@
   padding: 28px;
   background:
     radial-gradient(circle at 92% 10%, rgba(59, 130, 246, 0.2), transparent 34%),
-    linear-gradient(135deg, #ffffff, #eff6ff);
-  box-shadow: 0 18px 48px rgba(30, 64, 175, 0.08);
+    linear-gradient(135deg, var(--panel), var(--brand-50));
+  box-shadow: var(--shadow-sm);
 }
 
 .cc-candidate__logo {
@@ -49,7 +49,7 @@
 .cc-candidate__hero p:last-child {
   max-width: 650px;
   margin: 10px 0 0;
-  color: #475569;
+  color: var(--muted);
   line-height: 1.6;
 }
 
@@ -72,7 +72,7 @@
 
 .cc-candidate__counter span {
   margin-top: 8px;
-  color: #475569;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
 }
@@ -85,11 +85,11 @@
 }
 
 .cc-candidate__safety span {
-  border: 1px solid #bbf7d0;
-  border-radius: 12px;
+  border: 1px solid var(--success-100);
+  border-radius: var(--radius);
   padding: 12px;
-  background: #f0fdf4;
-  color: #166534;
+  background: var(--success-100);
+  color: var(--success-600);
   font-size: 13px;
   font-weight: 850;
   text-align: center;
@@ -107,8 +107,8 @@
 .cc-candidate__state {
   border: 1px solid var(--cc-border);
   border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
 }
 
 .cc-candidate__list {
@@ -133,8 +133,8 @@
 
 .cc-candidate__listItem:hover,
 .cc-candidate__listItem.is-active {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--brand-100);
+  background: var(--brand-50);
 }
 
 .cc-candidate__listItem > strong {
@@ -150,22 +150,22 @@
   justify-self: start;
   border-radius: 999px;
   padding: 5px 9px;
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warning-100);
+  color: var(--warning-600);
   font-size: 11px;
   font-weight: 900;
 }
 
 .cc-candidate__status--approved_by_user {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--success-100);
+  color: var(--success-600);
 }
 
 .cc-candidate__status--cancelled,
 .cc-candidate__status--blocked,
 .cc-candidate__status--failed {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--error-100);
+  color: var(--error-600);
 }
 
 .cc-candidate__detail {
@@ -210,10 +210,10 @@
 .cc-candidate__facts div {
   display: grid;
   gap: 4px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   padding: 12px;
-  background: #f8fafc;
+  background: var(--bg);
 }
 
 .cc-candidate__facts span,
@@ -232,7 +232,7 @@
 .cc-candidate__cv,
 .cc-candidate__history {
   margin-top: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-strong);
   border-radius: 14px;
   padding: 17px;
 }
@@ -256,7 +256,7 @@
   overflow: auto;
   border-radius: 10px;
   padding: 15px;
-  background: #f8fafc;
+  background: var(--bg);
   line-height: 1.7;
   white-space: pre-wrap;
 }
@@ -283,7 +283,7 @@
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 9px 12px;
-  background: #eff6ff;
+  background: var(--brand-50);
   color: var(--cc-blue);
   font-size: 13px;
   font-weight: 900;
@@ -302,7 +302,7 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--bg);
   padding-bottom: 9px;
 }
 
@@ -313,10 +313,10 @@
 
 .cc-candidate__decision {
   margin-top: 16px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--brand-100);
   border-radius: 14px;
   padding: 16px;
-  background: #eff6ff;
+  background: var(--brand-50);
 }
 
 .cc-candidate__decision p {
@@ -346,21 +346,21 @@
 }
 
 .cc-candidate__reject {
-  border: 1px solid #fecaca;
-  background: #fff;
-  color: #991b1b;
+  border: 1px solid var(--error-100);
+  background: var(--panel);
+  color: var(--error-600);
 }
 
 .cc-candidate__approve {
   border: 1px solid var(--cc-blue);
   background: var(--cc-blue);
-  color: #fff;
+  color: var(--panel);
 }
 
 .cc-candidate__decision--done {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-  color: #166534;
+  border-color: var(--success-100);
+  background: var(--success-100);
+  color: var(--success-600);
   font-weight: 800;
 }
 
@@ -380,11 +380,11 @@
 
 .cc-candidate__error {
   margin: 14px 0;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
+  border: 1px solid var(--error-100);
+  border-radius: var(--radius);
   padding: 12px 14px;
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--error-100);
+  color: var(--error-600);
   font-weight: 750;
 }
 
