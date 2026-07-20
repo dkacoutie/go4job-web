@@ -49,3 +49,5 @@ coverage
 
 
 tmp/
+
+prod_data.sql
