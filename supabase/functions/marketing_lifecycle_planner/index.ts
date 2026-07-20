@@ -621,6 +621,37 @@ serve(async (req) => {
           continue;
         }
 
+        // Le check "pending" ci-dessus ne couvre que les statuts en file
+        // d'attente (PENDING_QUEUE_STATUSES) et filtre par user_id. La
+        // contrainte unique reelle (marketing_email_queue_email_sequence_step_uidx)
+        // porte elle sur (lower(email), sequence_key, step_key), tous statuts
+        // confondus. Un candidat deja present sous un autre statut (sent,
+        // failed...) passait donc ce filtre puis faisait echouer l'insert en
+        // bloc sur une violation de contrainte unique, bloquant tout l'envoi
+        // marketing du jour meme pour les autres candidats propres du batch.
+        // Bug confirme en prod du 17 au 19/07/2026 (marketing_planner_logs,
+        // error "duplicate key value violates unique constraint
+        // marketing_email_queue_email_sequence_step_uidx").
+        const {
+          count: existingAnyStatusCountRaw,
+          error: existingAnyStatusError,
+        } = await supabase
+          .from("marketing_email_queue")
+          .select("*", { count: "exact", head: true })
+          .ilike("email", candidate.email)
+          .eq("sequence_key", typedCampaign.sequence_key)
+          .eq("step_key", typedCampaign.step_key);
+
+        if (existingAnyStatusError) {
+          blockedReason = "existing_queue_check_failed";
+          enqueueError = existingAnyStatusError.message;
+          break;
+        }
+        if ((existingAnyStatusCountRaw ?? 0) > 0) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+
         selectedCandidates.push(candidate);
         if (selectedCandidates.length >= cappedLimit) {
           break;
