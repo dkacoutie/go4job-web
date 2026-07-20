@@ -47,3 +47,8 @@ coverage
 .env.*
 !.env.example
 
+
+# Local Netlify folder
+.netlify
+
+prod_data.sql
