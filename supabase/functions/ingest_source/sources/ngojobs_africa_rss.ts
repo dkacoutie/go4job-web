@@ -45,6 +45,19 @@ const COUNTRY_SIGNALS = [
   { country: "Niger", signals: ["niger", "niamey"] },
 ];
 
+const COUNTRY_ISO_CODES: Record<string, string> = {
+  "Nigeria": "NG",
+  "Ghana": "GH",
+  "Cote d'Ivoire": "CI",
+  "Senegal": "SN",
+  "Benin": "BJ",
+  "Togo": "TG",
+  "Burkina Faso": "BF",
+  "Mali": "ML",
+  "Guinea": "GN",
+  "Niger": "NE",
+};
+
 function normalize(value: string | null | undefined) {
   return String(value ?? "")
     .normalize("NFD")
@@ -66,9 +79,30 @@ function isNonJobContent(job: CommercialSourceJob) {
   return /\bprogram(me)?s?\b/.test(title) && !PROGRAM_JOB_EXCEPTIONS.some((term) => title.includes(term));
 }
 
+function containsCountrySignal(haystack: string, signal: string): boolean {
+  const escaped = signal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
+  return pattern.test(haystack);
+}
+
 function detectCountry(job: CommercialSourceJob) {
   const haystack = normalize(`${job.source_url} ${job.title} ${job.description_text ?? ""}`);
-  return COUNTRY_SIGNALS.find((entry) => entry.signals.some((signal) => haystack.includes(signal)))?.country ?? null;
+  return COUNTRY_SIGNALS.find((entry) => entry.signals.some((signal) => containsCountrySignal(haystack, signal)))?.country ?? null;
+}
+
+// Reutilisee par le handler RSS generique (index.ts) pour l'ingestion reelle,
+// qui ne passe pas par improveNgoJob.
+export function detectNgoJobCountry(
+  input: { title?: string; description?: string; sourceUrl?: string },
+) {
+  const haystack = normalize(
+    `${input.sourceUrl ?? ""} ${input.title ?? ""} ${input.description ?? ""}`,
+  );
+  const match = COUNTRY_SIGNALS.find((entry) =>
+    entry.signals.some((signal) => containsCountrySignal(haystack, signal))
+  );
+  if (!match) return { country: null, countryCode: null as string | null };
+  return { country: match.country, countryCode: COUNTRY_ISO_CODES[match.country] ?? null };
 }
 
 function improveNgoJob(job: CommercialSourceJob): CommercialSourceJob {
@@ -82,6 +116,9 @@ function improveNgoJob(job: CommercialSourceJob): CommercialSourceJob {
     company_name: companyName,
     country: detectedCountry ?? "Unknown",
     location: detectedCountry,
+    country_codes: detectedCountry
+      ? [COUNTRY_ISO_CODES[detectedCountry]].filter(Boolean) as string[]
+      : null,
     tags: [detectedCountry ?? "Unknown", "ngojobs_africa_rss"],
     payload: {
       ...job.payload,

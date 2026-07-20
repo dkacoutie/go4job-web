@@ -18,7 +18,7 @@ import {
 } from "./sources/projobivoire_rss.ts";
 import { fetchMyJobMagPortalItems } from "./sources/myjobmag_portal.ts";
 import { fetchMyJobMagRssItems } from "./sources/myjobmag_rss.ts";
-import { fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
+import { detectNgoJobCountry, fetchNgoJobsAfricaRssItems } from "./sources/ngojobs_africa_rss.ts";
 import { fetchJobWebGhanaPortalItems } from "./sources/jobwebghana_portal.ts";
 import { fetchHotNigerianJobsPortalItems } from "./sources/hotnigerianjobs_portal.ts";
 import { fetchNovojobPortalItems } from "./sources/novojob_portal.ts";
@@ -199,6 +199,36 @@ function parseTitleCompany(rawTitle: string) {
     }
   }
   return { title, company: "" };
+}
+
+// Talentsoft ATS feeds (used by Air France, EDF, MAIF, ALTEN, and ~50 other
+// active sources) format their <title> as "{offerReference} - {job title}".
+// The reference scheme is set per client and varies widely -- plain
+// "2026-24105" (most clients), prefixed "DKA-REC-2026-13293" (EDF), or
+// free-text admin codes like "IAS/HUDA/RENNES/35-11274" or "AT 2 -11044"
+// (Coallia) -- but every sample observed across multiple client sites uses
+// the same "{reference} - {title}" shape with a literal " - " separator
+// between the two, so we split on the first occurrence of it rather than
+// trying to pattern-match every reference format. parseTitleCompany() above
+// wrongly reads the reference as the title and the real title as the
+// company (and drops anything after a 2nd " - " in the real title). These
+// feeds are single-company career sites, so the company name comes from
+// job_sources.name, never from the feed text.
+function isTalentsoftFeed(feedUrl: string): boolean {
+  return /\/handlers\/offerRss\.ashx/i.test(feedUrl);
+}
+
+function parseTalentsoftTitle(rawTitle: string): { title: string; reference: string | null } {
+  const trimmed = rawTitle.trim();
+  const sep = " - ";
+  const idx = trimmed.indexOf(sep);
+  if (idx === -1) return { title: trimmed, reference: null };
+  const reference = trimmed.slice(0, idx).trim();
+  const rest = trimmed.slice(idx + sep.length).trim();
+  if (!reference || !rest) {
+    return { title: trimmed, reference: null };
+  }
+  return { title: rest, reference };
 }
 
 function detectJobType(title: string, desc: string) {
@@ -2053,6 +2083,7 @@ Deno.serve(async (req) => {
         "myjobmag_ng_rss",
         "myjobmag_gh_rss",
         "ngojobs_africa_rss",
+        "rss_ngojobsinafrica",
         "jobwebghana_portal",
         "hotnigerianjobs_portal",
         "novojob_portal",
@@ -2124,7 +2155,11 @@ Deno.serve(async (req) => {
           limit: commercialDryRunLimit,
         })));
       }
-      if (dry_run && source_code === "ngojobs_africa_rss") {
+      if (
+        dry_run &&
+        (source_code === "rss_ngojobsinafrica" ||
+          source_code === "ngojobs_africa_rss")
+      ) {
         return json(commercialDryRunResponse(await fetchNgoJobsAfricaRssItems({
           limit: commercialDryRunLimit,
         })));
@@ -4970,11 +5005,19 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
 
     const rows = [];
+    const talentsoftFeed = isTalentsoftFeed(feedUrl);
     for (const item of data.items) {
       const rawTitle = item.title || "Untitled";
-      const parsed = parseTitleCompany(rawTitle);
-      const title = parsed.title || rawTitle;
-      const company = parsed.company || null;
+      let title: string;
+      let company: string | null;
+      if (talentsoftFeed) {
+        title = parseTalentsoftTitle(rawTitle).title || rawTitle;
+        company = jobSource.name ?? null;
+      } else {
+        const parsed = parseTitleCompany(rawTitle);
+        title = parsed.title || rawTitle;
+        company = parsed.company || null;
+      }
       const location = jobSource.region ?? null;
       const link = canonicalizeJobUrl(item.link || "").canonicalUrl ?? "";
       const guid = item.guid?.trim() || "";
@@ -4987,10 +5030,25 @@ Deno.serve(async (req) => {
       const text = html ? stripHtml(html) : "";
 
       const jobType = detectJobType(title, text);
+      let rowLocation = location;
+      let rowCountry = jobSource.country ?? null;
+      let rowCountryCodes: string[] | null = null;
+      if (source_code === "rss_ngojobsinafrica") {
+        const detected = detectNgoJobCountry({
+          title,
+          description: text,
+          sourceUrl: link,
+        });
+        if (detected.countryCode) {
+          rowCountryCodes = [detected.countryCode];
+          rowLocation = detected.country;
+          rowCountry = detected.country;
+        }
+      }
       const identity = await buildCrossSourceJobIdentity({
         title,
         companyName: company,
-        location,
+        location: rowLocation,
         sourceUrl: link || null,
         applyUrl: link || null,
       });
@@ -5019,8 +5077,9 @@ Deno.serve(async (req) => {
         external_id,
         title,
         company_name: company,
-        location,
-        country: jobSource.country ?? null,
+        location: rowLocation,
+        country: rowCountry,
+        country_codes: rowCountryCodes,
         remote_type: null,
         contract_type: null,
         seniority: null,
