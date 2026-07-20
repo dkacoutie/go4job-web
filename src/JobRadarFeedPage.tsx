@@ -264,13 +264,35 @@ type FilterOption = {
   label: string;
 };
 
+// Aligne sur COUNTRY_ALIAS_MAP (src/lib/jobMatching.ts) : la resolution de
+// pays (resolveCountrySearchQuery) comprend deja ces 24 codes, ce menu se
+// contentait d'en exposer 6. Audit du 20/07/2026 : cf. migration
+// 20260720070000_jobradar_country_codes_hygiene.sql pour le contexte.
 const COUNTRY_FILTER_OPTIONS: FilterOption[] = [
   { value: "", label: "Tous les pays" },
   { value: "CI", label: "Côte d’Ivoire" },
-  { value: "FR", label: "France" },
   { value: "SN", label: "Sénégal" },
+  { value: "BF", label: "Burkina Faso" },
+  { value: "ML", label: "Mali" },
+  { value: "BJ", label: "Bénin" },
+  { value: "TG", label: "Togo" },
+  { value: "NE", label: "Niger" },
+  { value: "GN", label: "Guinée" },
   { value: "GH", label: "Ghana" },
   { value: "NG", label: "Nigeria" },
+  { value: "CM", label: "Cameroun" },
+  { value: "KE", label: "Kenya" },
+  { value: "RW", label: "Rwanda" },
+  { value: "ZA", label: "Afrique du Sud" },
+  { value: "MA", label: "Maroc" },
+  { value: "TN", label: "Tunisie" },
+  { value: "DZ", label: "Algérie" },
+  { value: "FR", label: "France" },
+  { value: "BE", label: "Belgique" },
+  { value: "CH", label: "Suisse" },
+  { value: "DE", label: "Allemagne" },
+  { value: "CA", label: "Canada" },
+  { value: "US", label: "États-Unis" },
   { value: "GB", label: "Royaume-Uni" },
   { value: "REMOTE", label: "Remote / international" },
 ];

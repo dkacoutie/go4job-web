@@ -39,10 +39,11 @@ Ce fichier donne à Claude Code le contexte du projet en début de session.
 
 ## Points de vigilance connus
 
-- **projobivoire_rss** couvre en réalité neuf pays d'Afrique de l'Ouest, malgré son nom. Ne jamais supposer qu'une source ne couvre que le pays annoncé dans son nom sans vérifier son contenu réel.
+- **projobivoire_rss** est en réalité panafricain (CI, Gabon, Maroc, Mauritanie, Maurice, Rwanda, Tchad, Afrique du Sud constatés dans les données au 20/07/2026), pas limité à l'Afrique de l'Ouest malgré son nom. Ne jamais supposer qu'une source ne couvre que le pays annoncé dans son nom sans vérifier son contenu réel.
 - **emploisenegal_portal** : country_codes vaut ["SN"] en dur pour toute offre collectée (filtre sur l'URL de catégorie du site, pas de détection texte). Fiable tant que la structure du site ne change pas. La source est bloquée par Cloudflare depuis mai 2026 : si elle se débloque, relire manuellement le premier lot collecté avant de faire confiance au flux en continu.
+- **rss_ngojobsinafrica** (NGO Jobs in Africa) : le connecteur d'ingestion n'extrait pas le pays par offre, seulement "AFRICA" en générique. 104 offres actives au 20/07/2026 sans country_codes exploitable — non couvert par le backfill du 20/07/2026 (migration 20260720070000) car un tag panafricain générique aurait été trompeur (ni un pays précis, ni "remote"). Reste à corriger à la source (extraction du pays réel depuis le contenu de chaque offre) si ce connecteur prend de l'ampleur.
 - Avant d'assigner un country_code fixe à une nouvelle source, toujours vérifier si le site ou le flux est mono-pays ou multi-pays. En cas de doute, échantillonner les offres réelles (titre, localisation) plutôt que de supposer.
-- Connecteurs africains restants à auditer sur ce même point : emploi_ma_portal, hotnigerianjobs_portal, jobberman_portal, ngojobs_africa_rss.
+- Audit du 20/07/2026 (migration 20260720070000_jobradar_country_codes_hygiene.sql) : couverture country_codes sur les offres actives passée de 35% à 99,9% (casse fr/gb normalisée + backfill FR/US/DE/CA/GB/CI/BE/NG + tag WW pour les sources remote/multi-pays). emploi_ma, hotnigerianjobs, jobberman_ng, jobberman_gh sont actuellement inactifs (aucune offre en base) — à réauditer sur ce même point le jour où ils seraient réactivés.
 
 ## Outils disponibles pour Claude Code
 
