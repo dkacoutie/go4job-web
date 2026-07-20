@@ -47,3 +47,7 @@ coverage
 .env.*
 !.env.example
 
+
+prod_data.sql
+
+tmp/
