@@ -1292,22 +1292,28 @@ export default function JobRadarFeedPage() {
 
       if (aErr) throw aErr;
 
-      const effectiveCriteria = {
-        ...initialCriteria,
-        q: initialCriteria.q || nextProfileContext.desiredRole,
-      };
-      const shouldSearchInitial = hasFeedSearchCriteria(effectiveCriteria);
+      // Audit du 23/07/2026 : le rôle cible du profil (texte libre saisi à
+      // l'onboarding, ex. "08041889" ou "For 5 ut tu" trouvés en base) ne doit
+      // JAMAIS remplacer silencieusement une simple consultation par une
+      // recherche texte bloquante. Mesuré sur un échantillon réel de profils :
+      // 41% des rôles cibles ne correspondent littéralement à aucune offre
+      // active, ce qui produisait un feed à zéro offre sans aucune erreur ni
+      // explication. Le rôle cible reste utilisé plus bas comme signal de
+      // pertinence (computeJobMatchScore / profileDesiredRole), jamais comme
+      // filtre de récupération. Seule une recherche ou un filtre choisis
+      // explicitement par l'utilisateur déclenchent le chemin "search".
+      const shouldSearchInitial = hasFeedSearchCriteria(initialCriteria);
       const jobsFetchStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
       logFeedPerf("jobs fetch start", {
         since_load_start_ms: Math.round(jobsFetchStartedAt - loadStartedAt),
         mode: shouldSearchInitial ? "search" : "range",
-        q: effectiveCriteria.q ? "yes" : "no",
-        countries: effectiveCriteria.countries.length,
-        contract: Boolean(effectiveCriteria.contract),
-        work_mode: Boolean(effectiveCriteria.workMode),
+        q: initialCriteria.q ? "yes" : "no",
+        countries: initialCriteria.countries.length,
+        contract: Boolean(initialCriteria.contract),
+        work_mode: Boolean(initialCriteria.workMode),
       });
       const fetchedJobs = shouldSearchInitial
-        ? await fetchJobsSearchRef.current(effectiveCriteria.q)
+        ? await fetchJobsSearchRef.current(initialCriteria.q)
         : await fetchJobsRange(0, PAGE_SIZE - 1);
       const jobsFetchDuration = (typeof performance !== "undefined" ? performance.now() : 0) - jobsFetchStartedAt;
 
@@ -1321,18 +1327,13 @@ export default function JobRadarFeedPage() {
         query_payload: initialDescriptionChars > 0 ? "with_description" : "light",
       });
 
-      if (!initialCriteria.q && effectiveCriteria.q) {
-        setQ(effectiveCriteria.q);
-        currentFeedCriteriaRef.current = effectiveCriteria;
-      }
-
       setAlerts((aData ?? []) as AlertRow[]);
       setProfileExp(nextProfileContext.experienceYears);
       setProfileDesiredRole(nextProfileContext.desiredRole);
       setJobs(fetchedJobs);
       setPageFrom(fetchedJobs.length);
       setHasMore(shouldSearchInitial ? false : fetchedJobs.length === PAGE_SIZE);
-      lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(effectiveCriteria) : "";
+      lastServerSearchQueryRef.current = shouldSearchInitial ? buildFeedCriteriaKey(initialCriteria) : "";
       setBusy(false);
 
       scheduleDeferredFeedTask(() => {
@@ -1394,7 +1395,20 @@ export default function JobRadarFeedPage() {
       }, 800);
     } catch (e: unknown) {
       if (!isCurrentLoad()) return;
-      setErrorMsg(GENERIC_SERVER_ERROR);
+      // Audit du 23/07/2026 : ce catch capte indifféremment une panne réseau,
+      // un timeout Postgres (statement_timeout, cf. cause racine identifiée
+      // côté cron de santé) ou un vrai bug, sans aucune trace exploitable.
+      // On garde le message rassurant pour l'utilisateur, mais on ajoute une
+      // référence courte, loguée en détail côté navigateur (et visible dans
+      // les futurs outils d'observabilité), pour pouvoir retrouver l'incident
+      // précis si quelqu'un le signale.
+      const errorRef = Math.random().toString(36).slice(2, 8);
+      console.error("[JobRadar feed] load failed", {
+        ref: errorRef,
+        message: getErrorMessage(e),
+        at_ms: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - loadStartedAt),
+      });
+      setErrorMsg(`${GENERIC_SERVER_ERROR} (réf. ${errorRef})`);
       setBusy(false);
     }
   }, [
