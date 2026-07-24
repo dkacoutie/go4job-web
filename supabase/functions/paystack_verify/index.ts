@@ -111,10 +111,30 @@ Deno.serve(async (req) => {
     if (hasActivePass) {
       return json(200, { ok: true, status: "already_active", activated: false });
     }
-    const { data: sub } = await admin.rpc("activate_pass_from_payment", {
+    // Bug trouvé le 24/07/2026 (Ajustement 7) : cette branche ignorait
+    // l'erreur éventuelle de activate_pass_from_payment et renvoyait quand
+    // même { ok: true, status: "already_paid" } avec subscription: null.
+    // Le frontend traite ok:true comme une activation confirmée et affiche
+    // "Ton pass est actif" — ce qui aurait été un FAUX succès si le RPC
+    // échouait ici (paiement réellement encaissé mais pass non activé,
+    // sans que personne ne le sache). On distingue maintenant explicitement
+    // ce cas : le paiement reste confirmé (ok:true) mais activated:false,
+    // avec un statut dédié que le frontend affiche comme "activation en
+    // cours" plutôt que comme un succès, et sur lequel il continue de
+    // vérifier (le RPC est idempotent, un nouvel appel peut réussir).
+    const { data: sub, error: subErr } = await admin.rpc("activate_pass_from_payment", {
       p_payment_id: payment.id,
     });
-    return json(200, { ok: true, status: "already_paid", subscription: sub || null });
+    if (subErr) {
+      console.error("paystack_verify: activate failed (already paid)", subErr.message);
+      await admin.from("billing_events").insert({
+        user_id: payment.user_id,
+        event_type: "paystack_verify_activation_delayed",
+        payload: { reference, payment_id: payment.id, error: subErr.message },
+      });
+      return json(200, { ok: true, status: "paid_activation_pending", activated: false });
+    }
+    return json(200, { ok: true, status: "already_paid", subscription: sub || null, activated: true });
   }
   if (payment.status === "paid_test") {
     if (hasActivePass) {

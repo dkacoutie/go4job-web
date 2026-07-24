@@ -94,6 +94,54 @@ const POLL_DELAY_MS = 8000;
 const MAX_POLL_ATTEMPTS = 8;
 const MAX_POLL_WALL_CLOCK_MS = 5 * 60 * 1000;
 
+// Ajustement 7 : écran d'attente dédié, distinct des bannières
+// info/erreur génériques déjà utilisées ailleurs sur cette page (chargement
+// des données, checkout...). Ces bannières ne sont pas touchées : seule la
+// vérification post-paiement pilote cet état séparé.
+type PaymentWaitPhase = "checking" | "pending" | "activation_delayed" | "timeout" | "timeout_activation_delayed";
+
+const PAYMENT_WAIT_COPY: Record<PaymentWaitPhase, { title: string; text: string }> = {
+  checking: {
+    title: "Vérification du paiement",
+    text: "Vérification de ton paiement en cours…",
+  },
+  pending: {
+    title: "Paiement en cours de confirmation",
+    text: PENDING_MESSAGE,
+  },
+  activation_delayed: {
+    title: "Paiement confirmé, activation en cours",
+    text: "Ton paiement a bien été confirmé. L'activation de ton pass prend juste un peu plus de temps que prévu — nous réessayons automatiquement, rien n'est perdu.",
+  },
+  timeout: {
+    title: "Paiement en cours de confirmation",
+    text: PENDING_TIMEOUT_MESSAGE,
+  },
+  timeout_activation_delayed: {
+    title: "Paiement confirmé, activation en cours",
+    text: "Ton paiement a bien été confirmé, mais l'activation n'est pas encore terminée. Reviens sur cette page dans quelques minutes : la vérification reprendra automatiquement. Si ton pass n'est toujours pas actif d'ici 30 minutes, contacte le support en indiquant la référence ci-dessous.",
+  },
+};
+
+function PaymentWaitingCard({ phase, reference }: { phase: PaymentWaitPhase; reference: string | null }) {
+  const copy = PAYMENT_WAIT_COPY[phase];
+  const isActive = phase === "checking" || phase === "pending" || phase === "activation_delayed";
+  return (
+    <div className="pricing-wait-card" role="status" aria-live="polite">
+      <div className="pricing-wait-card__top">
+        {isActive && <span className="pricing-wait-card__spinner" aria-hidden="true" />}
+        <div className="pricing-wait-card__title">{copy.title}</div>
+      </div>
+      <div className="pricing-wait-card__text">{copy.text}</div>
+      {reference && (
+        <div className="pricing-wait-card__ref">
+          Référence de paiement : <code>{reference}</code>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> = {
   pass_7d: {
     benefit: "7 jours pour découvrir JobRadar et repérer tes premières opportunités.",
@@ -245,6 +293,8 @@ export default function PricingPage() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [showPostCheckout, setShowPostCheckout] = useState(false);
+  const [paymentWaitPhase, setPaymentWaitPhase] = useState<PaymentWaitPhase | null>(null);
+  const [paymentWaitReference, setPaymentWaitReference] = useState<string | null>(null);
   const [hasRecentTestPayment, setHasRecentTestPayment] = useState(false);
   const [isTestPass, setIsTestPass] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
@@ -390,6 +440,13 @@ export default function PricingPage() {
     let pollTimeoutId: number | null = null;
     const startedAt = Date.now();
     let pendingTracked = false;
+    // Distingue, au moment d'un éventuel timeout, si on attendait encore la
+    // confirmation Paystack ("pending") ou si le paiement était déjà
+    // confirmé et qu'on attendait seulement l'activation ("activation_delayed") —
+    // ce sont deux messages différents pour l'utilisateur (voir PAYMENT_WAIT_COPY).
+    let lastPhaseKind: "pending" | "activation_delayed" = "pending";
+
+    setPaymentWaitReference(reference);
 
     const clearScheduledPoll = () => {
       if (pollTimeoutId !== null) {
@@ -408,7 +465,7 @@ export default function PricingPage() {
       const elapsed = Date.now() - startedAt;
       if (cancelled || attempt >= MAX_POLL_ATTEMPTS || elapsed >= MAX_POLL_WALL_CLOCK_MS) {
         setIsVerifying(false);
-        setInfoMsg(PENDING_TIMEOUT_MESSAGE);
+        setPaymentWaitPhase(lastPhaseKind === "activation_delayed" ? "timeout_activation_delayed" : "timeout");
         return;
       }
       const schedule = () => {
@@ -432,7 +489,7 @@ export default function PricingPage() {
     const runVerify = async (attempt = 1) => {
       if (cancelled) return;
       setIsVerifying(true);
-      setInfoMsg(attempt === 1 ? "Vérification du paiement en cours..." : PENDING_MESSAGE);
+      setPaymentWaitPhase(attempt === 1 ? "checking" : lastPhaseKind);
       setErrorMsg(null);
       setShowPostCheckout(false);
 
@@ -450,8 +507,29 @@ export default function PricingPage() {
         return;
       }
 
+      const status = typeof data?.status === "string" ? data.status : "";
+
+      // Bug corrigé le 24/07/2026 (Ajustement 7) : paystack_verify pouvait
+      // renvoyer ok:true alors que l'activation du pass avait réellement
+      // échoué côté serveur (paiement confirmé, mais aucune souscription
+      // créée). Ce statut dédié permet de ne JAMAIS afficher "Ton pass est
+      // actif" tant que l'activation n'est pas confirmée — on continue de
+      // vérifier dans les mêmes bornes, activate_pass_from_payment étant
+      // idempotent (un prochain essai peut suffire).
+      if (data?.ok && status === "paid_activation_pending") {
+        lastPhaseKind = "activation_delayed";
+        if (!pendingTracked) {
+          pendingTracked = true;
+          trackPaymentPending({});
+        }
+        scheduleNextPoll(attempt);
+        return;
+      }
+
       if (data?.ok) {
         clearScheduledPoll();
+        setPaymentWaitPhase(null);
+        setPaymentWaitReference(null);
         trackPaymentConfirmed({ path: "user_return" });
         if (utmCampaign.startsWith("jobradar_payment_reminder")) {
           trackPaymentRecoveredAfterReminder({});
@@ -495,8 +573,8 @@ export default function PricingPage() {
         return;
       }
 
-      const status = typeof data?.status === "string" ? data.status : "";
       if (STILL_RESOLVING_STATUSES.has(status)) {
+        lastPhaseKind = "pending";
         if (!pendingTracked) {
           pendingTracked = true;
           trackPaymentPending({});
@@ -510,7 +588,9 @@ export default function PricingPage() {
       }
 
       // Statut réellement négatif (failed, abandoned, cancelled, mismatch...).
-      setErrorMsg(GENERIC_PAYMENT_ERROR);
+      setPaymentWaitPhase(null);
+      setPaymentWaitReference(null);
+      setErrorMsg(`${GENERIC_PAYMENT_ERROR} Référence : ${reference}`);
       trackPaymentFailed({ reason: status || "verify_not_ok" });
       setIsVerifying(false);
       sessionStorage.removeItem("paystack_ref");
@@ -686,6 +766,7 @@ export default function PricingPage() {
           <div className="pricing-error">Le paiement est temporairement indisponible. Réessaie dans quelques instants.</div>
         )}
         {errorMsg && <div className="pricing-error">Erreur : {errorMsg}</div>}
+        {paymentWaitPhase && <PaymentWaitingCard phase={paymentWaitPhase} reference={paymentWaitReference} />}
         {infoMsg && <div className="pricing-info">{infoMsg}</div>}
 
         {showPostCheckout && <PricingPostCheckoutActions />}
