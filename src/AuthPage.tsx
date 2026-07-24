@@ -13,6 +13,8 @@ const REDIRECT_STORAGE_KEY = "go4job_auth_redirect_to";
 const AUTH_CREDENTIALS_ERROR = "L’email ou le mot de passe ne correspond pas. Vérifie et réessaie.";
 const GENERIC_NETWORK_ERROR = "Une erreur est survenue. Vérifie ta connexion et réessaie.";
 const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
+const ACCOUNT_EXISTS_ERROR =
+  "Un compte existe déjà avec cette adresse email. Clique sur « J’ai déjà un compte » ci-dessous pour te connecter, ou utilise « Mot de passe oublié ? » si besoin.";
 
 function isSafeInternalPath(path: unknown): path is string {
   if (typeof path !== "string") return false;
@@ -100,6 +102,19 @@ export default function AuthPage() {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) {
           setErrorMsg(GENERIC_SERVER_ERROR);
+          return;
+        }
+
+        // Quand l'email a déjà un compte confirmé, Supabase ne renvoie pas
+        // d'erreur (protection anti-énumération intégrée à GoTrue) : il renvoie
+        // un utilisateur sans identité (identities: []). C'est le signal
+        // documenté par Supabase pour distinguer "compte déjà existant" de
+        // "nouveau compte créé", sans ajouter de nouvel endpoint qui
+        // permettrait de tester l'existence d'un email indépendamment d'un
+        // vrai essai d'inscription.
+        const identities = data.user?.identities ?? [];
+        if (data.user && identities.length === 0) {
+          setErrorMsg(ACCOUNT_EXISTS_ERROR);
           return;
         }
 

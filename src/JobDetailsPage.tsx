@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
@@ -145,47 +146,35 @@ function firstDate(job: JobRow) {
 }
 
 /**
- * Browser sanitizer:
- * - remove script/style/iframe/object/embed/link/meta
- * - remove on* attributes
- * - remove href/src dangerous schemes (javascript:, data:)
+ * Sanitizer pour le HTML de description d'offre, issu de sources scrapées
+ * externes non fiables. Remplace un sanitizer maison (retrait de
+ * script/style/iframe/on*/javascript:/data: uniquement, qui ne couvrait pas
+ * des vecteurs XSS connus comme style avec expression(), srcdoc, SVG/MathML,
+ * <base>, xlink:href ou les entités encodées) par DOMPurify, une librairie
+ * dédiée et maintenue. Liste blanche restreinte au balisage réellement utile
+ * pour une description de poste (texte, listes, tableaux, liens).
  */
 function sanitizeHtmlBasic(html: string): string {
+  const clean = DOMPurify.sanitize(html ?? "", {
+    ALLOWED_TAGS: [
+      "p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "span", "div",
+      "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table", "thead", "tbody",
+      "tr", "td", "th", "hr", "sub", "sup", "code", "pre",
+    ],
+    ALLOWED_ATTR: ["href", "class"],
+    ALLOW_DATA_ATTR: false,
+  });
+
   try {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(html ?? "", "text/html");
-
-    const badSelectors = "script,style,iframe,object,embed,link,meta";
-    doc.querySelectorAll(badSelectors).forEach((n) => n.remove());
-
-    const all = doc.body.querySelectorAll<HTMLElement>("*");
-    all.forEach((el) => {
-      [...el.attributes].forEach((attr) => {
-        const name = attr.name.toLowerCase();
-        const value = (attr.value ?? "").trim().toLowerCase();
-
-        if (name.startsWith("on")) {
-          el.removeAttribute(attr.name);
-          return;
-        }
-
-        if ((name === "href" || name === "src") && (value.startsWith("javascript:") || value.startsWith("data:"))) {
-          el.removeAttribute(attr.name);
-          return;
-        }
-      });
-
-      if (el.tagName.toLowerCase() === "a") {
-        el.setAttribute("rel", "noopener noreferrer");
-        el.setAttribute("target", "_blank");
-      }
+    const doc = parser.parseFromString(clean, "text/html");
+    doc.body.querySelectorAll("a").forEach((el) => {
+      el.setAttribute("rel", "noopener noreferrer");
+      el.setAttribute("target", "_blank");
     });
-
     return doc.body.innerHTML;
   } catch {
-    return (html ?? "")
-      .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "");
+    return clean;
   }
 }
 

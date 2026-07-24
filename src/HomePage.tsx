@@ -56,75 +56,90 @@ export default function HomePage() {
       setAppsLoading(true);
       setAlertsLoading(true);
 
-      const { data: prof, error: profErr } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, phone, location, headline")
-        .eq("user_id", userId)
-        .maybeSingle();
+      // Les 4 sections (profil, candidatures, alertes, CV) sont indépendantes
+      // les unes des autres : aucune n'a besoin du résultat d'une autre pour
+      // s'afficher. Seule l'étape "créer le profil s'il n'existe pas" dépend
+      // de la lecture du profil, donc elle reste séquentielle À L'INTÉRIEUR de
+      // loadProfile(). Les 4 fonctions tournent en parallèle via
+      // Promise.allSettled (pas Promise.all) pour qu'un échec sur l'une
+      // n'empêche pas les autres cartes de s'afficher normalement — chacune
+      // gère déjà son propre état de chargement/erreur.
 
-      if (profErr) {
-        setErrorMsg(GENERIC_SERVER_ERROR);
-        setProfileLoading(false);
-        setAppsLoading(false);
-        setAlertsLoading(false);
-        return;
-      }
-
-      if (!prof) {
-        const { data: created, error: upsertErr } = await supabase
+      const loadProfile = async () => {
+        const { data: prof, error: profErr } = await supabase
           .from("profiles")
-          .upsert(
-            { user_id: userId, full_name: null, phone: null, location: null, headline: null },
-            { onConflict: "user_id" },
-          )
           .select("user_id, full_name, phone, location, headline")
-          .single();
+          .eq("user_id", userId)
+          .maybeSingle();
 
-        if (upsertErr) {
-          setErrorMsg(GENERIC_SERVER_ERROR);
+        if (profErr) {
+          setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
           setProfileLoading(false);
-          setAppsLoading(false);
-          setAlertsLoading(false);
           return;
         }
 
-        setProfile(created as Profile);
-      } else {
-        setProfile(prof as Profile);
-      }
+        if (!prof) {
+          const { data: created, error: upsertErr } = await supabase
+            .from("profiles")
+            .upsert(
+              { user_id: userId, full_name: null, phone: null, location: null, headline: null },
+              { onConflict: "user_id" },
+            )
+            .select("user_id, full_name, phone, location, headline")
+            .single();
 
-      setProfileLoading(false);
+          if (upsertErr) {
+            setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
+            setProfileLoading(false);
+            return;
+          }
 
-      const { count: cApps, error: appsErr } = await supabase
-        .from("applications")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId);
-
-      if (appsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
-      setAppsCount(cApps ?? 0);
-      setAppsLoading(false);
-
-      const { count: cAlerts, error: alertsErr } = await supabase
-        .from("alerts")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", userId);
-
-      if (alertsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
-      setAlertsCount(cAlerts ?? 0);
-      setAlertsLoading(false);
-
-      try {
-        const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
-          body: { action: "get_active" },
-        });
-        if (cvErr) {
-          setHasCv(null);
+          setProfile(created as Profile);
         } else {
-          setHasCv(Boolean(cvData?.ok && cvData?.data));
+          setProfile(prof as Profile);
         }
-      } catch {
-        setHasCv(null);
-      }
+
+        setProfileLoading(false);
+      };
+
+      const loadApplications = async () => {
+        const { count: cApps, error: appsErr } = await supabase
+          .from("applications")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId);
+
+        if (appsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
+        setAppsCount(cApps ?? 0);
+        setAppsLoading(false);
+      };
+
+      const loadAlerts = async () => {
+        const { count: cAlerts, error: alertsErr } = await supabase
+          .from("alerts")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userId);
+
+        if (alertsErr) setErrorMsg((m) => m ?? GENERIC_SERVER_ERROR);
+        setAlertsCount(cAlerts ?? 0);
+        setAlertsLoading(false);
+      };
+
+      const loadCv = async () => {
+        try {
+          const { data: cvData, error: cvErr } = await supabase.functions.invoke("cv_save", {
+            body: { action: "get_active" },
+          });
+          if (cvErr) {
+            setHasCv(null);
+          } else {
+            setHasCv(Boolean(cvData?.ok && cvData?.data));
+          }
+        } catch {
+          setHasCv(null);
+        }
+      };
+
+      await Promise.allSettled([loadProfile(), loadApplications(), loadAlerts(), loadCv()]);
     }
 
     loadAll();
