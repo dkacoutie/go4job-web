@@ -10,6 +10,7 @@ import {
   trackPaymentConfirmed,
   trackPaymentFailed,
   trackPaymentPending,
+  trackPaymentRecoveredAfterReminder,
   trackPricingViewed,
   trackPurchase,
 } from "./lib/analytics";
@@ -371,6 +372,11 @@ export default function PricingPage() {
     const refFromUrl = params.get("reference") || params.get("trxref");
     const refFromStorage = sessionStorage.getItem("paystack_ref");
     const reference = refFromUrl || refFromStorage;
+    // Capturé avant le replaceState ci-dessous (qui vide la query string) :
+    // permet de savoir, une fois le paiement confirmé, si l'utilisateur
+    // revient depuis une relance email (Ajustement 8) plutôt que du retour
+    // Paystack normal.
+    const utmCampaign = params.get("utm_campaign") || "";
 
     if (!reference) return;
     if (lastVerifiedRef.current === reference) return;
@@ -447,6 +453,9 @@ export default function PricingPage() {
       if (data?.ok) {
         clearScheduledPoll();
         trackPaymentConfirmed({ path: "user_return" });
+        if (utmCampaign.startsWith("jobradar_payment_reminder")) {
+          trackPaymentRecoveredAfterReminder({});
+        }
         setInfoMsg(
           data?.status === "paid_test"
             ? "Ton pass est actif (test). Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes."
