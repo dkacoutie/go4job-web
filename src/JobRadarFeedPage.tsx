@@ -900,6 +900,17 @@ export default function JobRadarFeedPage() {
 
   const PAGE_SIZE = 30;
   const SEARCH_LIMIT = 80;
+  // Finalisation activation/paiement (24/07/2026) : la distinction
+  // gratuit/payant n'est aujourd'hui assurée QUE côté client (la RLS sur
+  // "jobs" autorise tout utilisateur authentifié, sans distinction
+  // d'abonnement — signalé séparément, correctif complet = RPC serveur
+  // dédiée, hors portée d'un changement le jour même sur un feed qui vient
+  // d'être stabilisé). En attendant, on réduit concrètement ce qu'un compte
+  // gratuit reçoit réellement du serveur (au lieu de tout récupérer puis de
+  // ne montrer que FEED_PREVIEW_LIMIT côté affichage) : ça réduit la fenêtre
+  // d'exposition (onglet réseau du navigateur) sans changer la logique de
+  // tri/score ni ajouter de requête.
+  const PREVIEW_FETCH_CAP = 16;
   const [pageFrom, setPageFrom] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1079,6 +1090,7 @@ export default function JobRadarFeedPage() {
   );
 
   const fetchJobsRange = useCallback(async (from: number, to: number) => {
+    const effectiveTo = isPreview ? Math.min(to, from + PREVIEW_FETCH_CAP - 1) : to;
     const { data, error } = await supabase
       .from("jobs")
       .select(JOB_SELECT_FIELDS)
@@ -1089,13 +1101,14 @@ export default function JobRadarFeedPage() {
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("scraped_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false })
-      .range(from, to);
+      .range(from, effectiveTo);
 
     if (error) throw error;
     return (data ?? []) as JobRow[];
-  }, []);
+  }, [isPreview]);
 
   const fetchJobsSearch = useCallback(async (rawQuery: string) => {
+    const effectiveSearchLimit = isPreview ? PREVIEW_FETCH_CAP : SEARCH_LIMIT;
     const countryCodes = countryFilters.filter((country) => country !== "REMOTE");
     const countryCode = countryCodes.length === 1 ? countryCodes[0] : resolveCountrySearchQuery(rawQuery);
     let query = supabase
@@ -1136,14 +1149,14 @@ export default function JobRadarFeedPage() {
             .order("published_at", { ascending: false, nullsFirst: false })
             .order("scraped_at", { ascending: false, nullsFirst: false })
             .order("created_at", { ascending: false, nullsFirst: false })
-            .limit(SEARCH_LIMIT);
+            .limit(effectiveSearchLimit);
           if (error) throw error;
           return (data ?? []) as JobRow[];
         })
       );
       const results = perTermResults.flat();
       const merged = mergeUniqueById([], results).filter(jobMatchesVisibleFilters);
-      const strict = merged.filter((job) => jobMatchesSearchQuery(job, rawQuery)).slice(0, SEARCH_LIMIT);
+      const strict = merged.filter((job) => jobMatchesSearchQuery(job, rawQuery)).slice(0, effectiveSearchLimit);
 
       // Ajustement 5 : on ne propose l'élargissement que quand la recherche
       // stricte (AND de tous les mots) ne remonte rien, mais que des offres
@@ -1162,10 +1175,10 @@ export default function JobRadarFeedPage() {
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("scraped_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false })
-      .limit(SEARCH_LIMIT);
+      .limit(effectiveSearchLimit);
     if (error) throw error;
     return ((data ?? []) as JobRow[]).filter((job) => jobMatchesSearchQuery(job, rawQuery)).filter(jobMatchesVisibleFilters);
-  }, [countryFilters, jobMatchesVisibleFilters]);
+  }, [countryFilters, jobMatchesVisibleFilters, isPreview]);
   const fetchJobsSearchRef = useRef(fetchJobsSearch);
 
   useEffect(() => {
