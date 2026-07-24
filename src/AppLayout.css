@@ -138,6 +138,14 @@
   border-radius: var(--radius-sm);
 }
 
+.site-footer__linkButton{
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* =========================
    Social icons (4 networks)
    ========================= */

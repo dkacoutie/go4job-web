@@ -24,6 +24,8 @@
 // - Toute erreur d'un appel gtag est avalée : Analytics ne doit jamais faire
 //   planter l'application.
 
+import { hasAnalyticsConsent } from "./consent";
+
 const GA_MEASUREMENT_ID = "G-EET5B96SX7";
 const GA_SCRIPT_ID = "google-analytics";
 
@@ -67,8 +69,11 @@ function analyticsEnabled(): boolean {
   // import.meta.env.PROD est false en dev (`npm run dev`) et true pour tout
   // build de production — y compris un éventuel déploiement de preview sur
   // un autre nom de domaine, d'où la vérification supplémentaire du hostname
-  // réel pour distinguer prod / dev / tests internes.
-  return Boolean(import.meta.env?.PROD) && isProductionHost();
+  // réel pour distinguer prod / dev / tests internes. hasAnalyticsConsent()
+  // vérifie en plus que l'utilisateur a explicitement accepté la mesure
+  // d'audience dans le bandeau cookies (voir consent.ts / ConsentBanner) —
+  // sans ça, ni le script gtag.js ni le moindre événement ne part jamais.
+  return Boolean(import.meta.env?.PROD) && isProductionHost() && hasAnalyticsConsent();
 }
 
 function ensureGtagStub() {

@@ -1,3 +1,5 @@
+import { hasAnalyticsConsent } from "./consent";
+
 const DEFAULT_META_PIXEL_ID = "1476894420492038";
 const META_PIXEL_SCRIPT_ID = "meta-pixel";
 
@@ -38,6 +40,13 @@ function getMetaPixelId() {
 
 function hasMetaPixelId() {
   return Boolean(getMetaPixelId());
+}
+
+// Aucun script Meta Pixel, aucune init, aucun événement (page_view compris)
+// tant que l'utilisateur n'a pas explicitement accepté la mesure d'audience
+// dans le bandeau cookies (voir consent.ts / ConsentBanner).
+function metaPixelEnabled() {
+  return hasMetaPixelId() && hasAnalyticsConsent();
 }
 
 function getMetaWindow() {
@@ -88,7 +97,7 @@ function flushPendingMetaEvents() {
 }
 
 function queueMetaEvent(method: MetaPixelTrackMethod, eventName: string, eventParams?: MetaPixelParams) {
-  if (!hasMetaPixelId()) return;
+  if (!metaPixelEnabled()) return;
 
   const win = getMetaWindow();
 
@@ -108,6 +117,7 @@ function queueMetaEvent(method: MetaPixelTrackMethod, eventName: string, eventPa
 export function initMetaPixel(pixelId = getMetaPixelId()) {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   if (!pixelId) return;
+  if (!hasAnalyticsConsent()) return;
 
   const win = getMetaWindow();
   if (win.__jrMetaPixelInitialized) return;
@@ -134,7 +144,7 @@ export function initMetaPixel(pixelId = getMetaPixelId()) {
 }
 
 export function trackMetaPageView(pathname: string, search: string) {
-  if (typeof window === "undefined" || !hasMetaPixelId()) return;
+  if (typeof window === "undefined" || !metaPixelEnabled()) return;
 
   const pageKey = `${pathname}${search}`;
   const win = getMetaWindow();

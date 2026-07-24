@@ -59,16 +59,20 @@ export default function PrivacyPage() {
 
       <h2>6. Cookies et mesure d'audience</h2>
       <p>
-        Le site peut utiliser des cookies nécessaires au fonctionnement du service, notamment pour la
-        session, la sécurité et les préférences. JobRadar peut aussi utiliser des outils de mesure ou
-        de suivi publicitaire, comme Meta Pixel, afin de comprendre l'efficacité de ses campagnes et
-        d'améliorer ses pages publiques.
+        Le site utilise des cookies et technologies similaires strictement nécessaires au fonctionnement
+        du service, notamment pour la session, la sécurité et les préférences. Ceux-ci ne nécessitent pas
+        votre consentement.
       </p>
       <p>
-        Ces outils peuvent traiter des informations techniques limitées, comme les pages consultées,
-        le navigateur, l'appareil ou des événements de conversion. JobRadar ne promet pas encore de
-        centre de préférences cookies dans l'interface ; les réglages disponibles dépendent donc aussi
-        de votre navigateur et des plateformes tierces concernées.
+        JobRadar utilise aussi, uniquement avec votre accord préalable, des outils de mesure d'audience
+        et de suivi publicitaire (Google Analytics, Meta Pixel) afin de comprendre l'usage du site et
+        l'efficacité de ses campagnes. Ces outils peuvent traiter des informations techniques limitées,
+        comme les pages consultées, le navigateur, l'appareil ou des événements de conversion.
+      </p>
+      <p>
+        Un bandeau de consentement vous permet d'accepter ou de refuser ces outils dès votre première
+        visite, les deux choix étant proposés au même niveau. Vous pouvez modifier votre choix à tout
+        moment via le lien « Gérer les cookies » dans le pied de page du site.
       </p>
 
       <h2>7. Droits utilisateurs</h2>

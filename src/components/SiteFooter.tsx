@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { requestOpenConsentBanner } from "../lib/consent";
 
 type Social = {
   label: string;
@@ -205,6 +206,15 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                 <Link className="site-footer__link" to="/contact">
                   Contact
                 </Link>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className="site-footer__link site-footer__linkButton"
+                  onClick={() => requestOpenConsentBanner()}
+                >
+                  Gérer les cookies
+                </button>
               </li>
             </ul>
           </nav>

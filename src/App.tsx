@@ -19,6 +19,7 @@ import { PassProvider } from "./lib/usePass";
 
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import MetaPixelTracker from "./components/MetaPixelTracker";
+import ConsentBanner from "./components/ConsentBanner";
 
 const AuthPage = lazy(() => import("./AuthPage"));
 const HomePage = lazy(() => import("./HomePage"));
@@ -161,6 +162,7 @@ export default function App() {
           <PartnerReferralProvider>
             <AnalyticsTracker />
             <MetaPixelTracker />
+            <ConsentBanner />
             <Routes>
               <Route element={<PublicLayout />}>
                 <Route path="/auth" element={<AuthGate />} />
