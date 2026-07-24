@@ -189,6 +189,11 @@ const ALLOWED_PARAM_KEYS = new Set([
   "page_type",
   "source",
   "step",
+  "exact_match",
+  "results_offered",
+  "confirmation_path",
+  "reminder_step",
+  "hours_since_pending",
 ]);
 
 // Seuls les champs de texte réellement libres (saisis par l'utilisateur)
@@ -425,4 +430,96 @@ export function trackPricingViewed() {
 
 export function trackPaymentFailed(params: { reason?: string; planId?: string }) {
   sendEvent("payment_failed", { reason: params.reason, plan_id: params.planId });
+}
+
+// ---------------------------------------------------------------------
+// Ajustement 9 (instrumentation du nouveau funnel, spec du 24/07/2026) :
+// liste des événements demandés, sans aucune donnée personnelle (pas
+// d'email, de téléphone, de texte libre sensible, ni de référence de
+// paiement brute — transaction_id existe déjà, réservé à la dédup de
+// purchase, jamais exposé comme identifiant utilisateur).
+//
+// "onboarding_started" et "checkout_started" / "pass_selected" (partie
+// paiement) réutilisent des événements déjà câblés ailleurs
+// (trackTutorialBegin, trackBeginCheckout) plutôt que d'en dupliquer un
+// nouveau au nom identique.
+//
+// Les événements liés au cycle de vie du paiement
+// (payment_pending / confirmed_* / reminder_sent /
+// payment_recovered_after_reminder / pass_activated) sont définis ici,
+// prêts à l'emploi, mais pas encore appelés nulle part : les mécanismes
+// correspondants (Ajustements 6, 7, 8 — rapprochement Paystack, écran
+// d'attente, relances) ne sont pas encore implémentés au moment de cet
+// ajout. Même chose pour les 3 événements liés à l'élargissement de
+// recherche (Ajustement 5).
+// ---------------------------------------------------------------------
+
+export function trackPreferencesValidated(params: { skipped: boolean }) {
+  sendEvent("preferences_validated", { reason: params.skipped ? "skipped" : "filled" });
+}
+
+export function trackAlertConsentGiven() {
+  sendEvent("alert_consent_given");
+}
+
+export function trackPreviewShown(params: { exactMatch: boolean; resultsCount: number }) {
+  sendEvent("preview_shown", {
+    exact_match: params.exactMatch,
+    results_count: params.resultsCount,
+  });
+}
+
+export function trackPreviewNoExactMatch(params: { resultsCount: number }) {
+  sendEvent("preview_no_exact_match", { results_count: params.resultsCount });
+}
+
+export function trackUpgradeScreenShown() {
+  sendEvent("upgrade_screen_shown");
+}
+
+export function trackContinuedFree() {
+  sendEvent("continued_free");
+}
+
+export function trackPassSelected(params: { planId: string; planName: string }) {
+  sendEvent("pass_selected", { plan_id: params.planId, plan_name: params.planName });
+}
+
+// Élargissement de recherche (Ajustement 5, pas encore implémenté) — les
+// résultats élargis ne doivent jamais remplacer silencieusement les
+// critères de l'alerte ; ces événements mesureront à quel point les
+// utilisateurs acceptent réellement l'élargissement proposé.
+export function trackWidenedResultsOffered(params: { resultsOffered: number }) {
+  sendEvent("widened_results_offered", { results_offered: params.resultsOffered });
+}
+
+export function trackWidenedResultsAccepted() {
+  sendEvent("widened_results_accepted");
+}
+
+export function trackWidenedResultsDeclined() {
+  sendEvent("widened_results_declined");
+}
+
+// Cycle de vie du paiement (Ajustements 6/7/8, pas encore implémentés).
+export function trackPaymentPending(params: { planId?: string }) {
+  sendEvent("payment_pending", { plan_id: params.planId });
+}
+
+export type PaymentConfirmationPath = "webhook" | "user_return" | "scheduled_reconciliation";
+
+export function trackPaymentConfirmed(params: { path: PaymentConfirmationPath; planId?: string }) {
+  sendEvent("payment_confirmed", { confirmation_path: params.path, plan_id: params.planId });
+}
+
+export function trackReminderSent(params: { step: "first" | "second" }) {
+  sendEvent("reminder_sent", { reminder_step: params.step });
+}
+
+export function trackPaymentRecoveredAfterReminder(params: { hoursSincePending?: number }) {
+  sendEvent("payment_recovered_after_reminder", { hours_since_pending: params.hoursSincePending });
+}
+
+export function trackPassActivated(params: { planId?: string }) {
+  sendEvent("pass_activated", { plan_id: params.planId });
 }

@@ -6,6 +6,7 @@ import { supabase } from "./lib/supabaseClient";
 import { trackMetaEvent } from "./lib/metaPixel";
 import {
   trackBeginCheckout,
+  trackPassSelected,
   trackPaymentFailed,
   trackPricingViewed,
   trackPurchase,
@@ -450,6 +451,7 @@ export default function PricingPage() {
   };
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
+    trackPassSelected({ planId: plan.code, planName: plan.name });
     if (!session?.user) {
       navigate("/auth", { state: { from: "/pricing" } });
       return;

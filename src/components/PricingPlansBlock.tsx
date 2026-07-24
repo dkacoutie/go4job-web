@@ -5,6 +5,7 @@ import { clearPartnerReferral, readPartnerReferral } from "../lib/partnerReferra
 import { usePaymentMarket } from "../lib/paymentMarket";
 import { supabase } from "../lib/supabaseClient";
 import { trackMetaEvent } from "../lib/metaPixel";
+import { trackBeginCheckout, trackPassSelected } from "../lib/analytics";
 import { useSession } from "../lib/useSession";
 import { buildJobRadarOnboardingHref } from "../lib/jobradarOnboarding";
 import { useJobRadarOnboarding } from "../lib/useJobRadarOnboarding";
@@ -228,6 +229,7 @@ export default function PricingPlansBlock({
   };
 
   const onBuy = async (plan: BillingPlan, price: BillingPlanPrice | null) => {
+    trackPassSelected({ planId: plan.code, planName: plan.name });
     if (!session?.user) {
       navigate("/auth", { state: { from: location.pathname } });
       return;
@@ -273,6 +275,16 @@ export default function PricingPlansBlock({
         currency: price.currency,
         content_name: plan.name,
         content_ids: [plan.code],
+      });
+      // Ajustement 9 : ce composant est un second point d'entree vers le
+      // checkout (en plus de PricingPage.tsx) qui n'envoyait jusqu'ici que
+      // l'evenement Meta, jamais begin_checkout GA4 — trou de mesure comble
+      // ici pour que le funnel soit complet quel que soit l'ecran d'origine.
+      trackBeginCheckout({
+        planId: plan.code,
+        planName: plan.name,
+        value: price.currency === "XOF" || price.currency === "XAF" ? price.amount_minor : price.amount_minor / 100,
+        currency: price.currency,
       });
 
       const { data, error } = await supabase.functions.invoke("paystack_initialize", {

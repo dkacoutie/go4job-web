@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import OnboardingStepper from "./components/OnboardingStepper";
@@ -7,7 +7,17 @@ import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { canonicalizeText } from "./lib/taxonomy";
 import { buildGeoPreferences, computeJobMatchScore, type MatchScoreResult } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
-import { trackTutorialBegin, trackTutorialComplete, trackAlertCreated } from "./lib/analytics";
+import {
+  trackTutorialBegin,
+  trackTutorialComplete,
+  trackAlertCreated,
+  trackPreferencesValidated,
+  trackAlertConsentGiven,
+  trackPreviewShown,
+  trackPreviewNoExactMatch,
+  trackUpgradeScreenShown,
+  trackContinuedFree,
+} from "./lib/analytics";
 import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { activateOnboardingAlert } from "./lib/onboardingAlert";
 import {
@@ -549,6 +559,17 @@ export default function JobRadarOnboardingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const upgradeScreenTrackedRef = useRef(false);
+  useEffect(() => {
+    if (currentStep !== "unlock") {
+      upgradeScreenTrackedRef.current = false;
+      return;
+    }
+    if (upgradeScreenTrackedRef.current) return;
+    upgradeScreenTrackedRef.current = true;
+    trackUpgradeScreenShown();
+  }, [currentStep]);
+
   const [desiredRole, setDesiredRole] = useState("");
   const [countryCodes, setCountryCodes] = useState<string[]>([]);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("");
@@ -696,6 +717,10 @@ export default function JobRadarOnboardingPage() {
 
         setPreviewMode(picked.mode);
         setPreviewCards(ranked);
+        trackPreviewShown({ exactMatch: picked.mode === "match", resultsCount: ranked.length });
+        if (picked.mode !== "match") {
+          trackPreviewNoExactMatch({ resultsCount: ranked.length });
+        }
       } catch (error) {
         if (!active) return;
         console.error("Failed to load JobRadar preview teasers", error);
@@ -824,6 +849,11 @@ export default function JobRadarOnboardingPage() {
   }
 
   async function savePreferences(skipped = false) {
+    trackPreferencesValidated({ skipped });
+    // Le clic qui mène ici est celui qui disclose la création de l'alerte
+    // gratuite (Ajustement 1) : c'est donc bien le moment du consentement,
+    // que la création réussisse ou non ensuite.
+    trackAlertConsentGiven();
     await onboarding.saveOnboarding({
       currentStep: "preview",
       preferences: {
@@ -1276,7 +1306,14 @@ export default function JobRadarOnboardingPage() {
           <button className="btn btnPrimary" type="button" onClick={() => navigate("/pricing")}>
             Choisir mon Pass JobRadar
           </button>
-          <button className="btn btnGhost" type="button" onClick={() => navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole))}>
+          <button
+            className="btn btnGhost"
+            type="button"
+            onClick={() => {
+              trackContinuedFree();
+              navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole));
+            }}
+          >
             Continuer avec mon alerte gratuite
           </button>
         </div>
