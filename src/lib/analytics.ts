@@ -187,6 +187,8 @@ const ALLOWED_PARAM_KEYS = new Set([
   "frequency",
   "channel",
   "page_type",
+  "source",
+  "step",
 ]);
 
 // Seuls les champs de texte réellement libres (saisis par l'utilisateur)
@@ -387,10 +389,16 @@ export function trackProfileCompleted() {
   sendEvent("profile_completed");
 }
 
-export function trackAlertCreated(params: { hasCountryFilter: boolean; frequency?: string; channel?: string }) {
+export function trackAlertCreated(params: {
+  hasCountryFilter: boolean;
+  frequency?: string;
+  channel?: string;
+  source?: "manual" | "onboarding";
+}) {
   sendEvent("alert_created", {
     has_country_filter: params.hasCountryFilter,
     frequency: params.frequency,
+    source: params.source ?? "manual",
     channel: params.channel,
   });
 }

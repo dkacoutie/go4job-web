@@ -7,8 +7,9 @@ import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { canonicalizeText } from "./lib/taxonomy";
 import { buildGeoPreferences, computeJobMatchScore, type MatchScoreResult } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
-import { trackTutorialBegin, trackTutorialComplete } from "./lib/analytics";
+import { trackTutorialBegin, trackTutorialComplete, trackAlertCreated } from "./lib/analytics";
 import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
+import { activateOnboardingAlert } from "./lib/onboardingAlert";
 import {
   ALL_COUNTRIES_CODE,
   buildCountrySelectionLabel,
@@ -835,6 +836,29 @@ export default function JobRadarOnboardingPage() {
         completedAt: new Date().toISOString(),
       },
     });
+
+    // Ajustement 1 (consentement explicite) : le clic sur le bouton qui
+    // amene ici — quel que soit le libelle exact — a ete accompagne du
+    // texte disclosant qu'une premiere alerte gratuite serait activee.
+    // La creation elle-meme est idempotente cote base (voir migration
+    // 20260724100000 et jobradar_upsert_onboarding_alert) : ce n'est donc
+    // jamais cet appel qui pourrait dupliquer une alerte, meme rappele
+    // plusieurs fois (double clic, retour en arriere puis renvoi).
+    const created = await activateOnboardingAlert({
+      desiredRole,
+      countryCodes,
+      alertDrafts,
+    });
+    if (created) {
+      trackAlertCreated({
+        hasCountryFilter: Boolean(created.countries && created.countries.length > 0),
+        frequency: created.frequency,
+        channel: "email",
+        source: "onboarding",
+      });
+      await onboarding.refresh();
+    }
+
     setSearchParams({ step: "preview" });
   }
 
@@ -929,7 +953,7 @@ export default function JobRadarOnboardingPage() {
       <JobRadarAdvisor
         {...preferencesAdvisor}
         cta={{
-          label: preferencesAdvisor.ctaLabel ?? "Voir mes offres",
+          label: "Voir mes offres et activer mon alerte gratuite",
           onClick: () => void savePreferences(false),
         }}
       />
@@ -1125,6 +1149,12 @@ export default function JobRadarOnboardingPage() {
         </div>
       ) : (
         <div className="jrOnbPreviewSection">
+          {onboarding.alertsCount > 0 && (
+            <div className="jrOnbValuePanel jrOnbValuePanel--soft">
+              <h2>Ton alerte est active.</h2>
+              <p>Tu recevras par email les offres qui correspondent à ces critères, gratuitement, dès maintenant.</p>
+            </div>
+          )}
           <JobRadarAdvisor
             {...previewAdvisor}
             variant="compact"
@@ -1206,7 +1236,7 @@ export default function JobRadarOnboardingPage() {
       )}
       <div className="jrOnbActions">
         <button className="btn btnPrimary" type="button" onClick={() => void savePreviewSeen()} disabled={onboarding.saving}>
-          Débloquer toutes les offres
+          Voir les pass JobRadar
         </button>
         <button className="btn btnGhost" type="button" onClick={() => setSearchParams({ step: "preferences" })}>
           Ajuster mes critères
@@ -1216,18 +1246,24 @@ export default function JobRadarOnboardingPage() {
   );
   const unlockStep = (
     <Panel>
+      {onboarding.alertsCount > 0 && (
+        <div className="jrOnbValuePanel jrOnbValuePanel--soft">
+          <h2>Ton alerte gratuite est déjà active.</h2>
+          <p>Tu reçois déjà par email les offres qui correspondent à tes critères. Ce qui suit est une amélioration, pas une condition pour continuer à en profiter.</p>
+        </div>
+      )}
       <div className="jrOnbBenefitGrid">
         <div className="jrOnbBenefitCard">
-          <strong>Accès complet aux offres</strong>
-          <span>Plus d'offres, mieux classées, plus vite exploitables.</span>
+          <strong>Jusqu'à 3 alertes actives</strong>
+          <span>Ta première alerte est gratuite. Un pass permet d'en garder jusqu'à 3 en même temps, pour couvrir plusieurs métiers ou villes.</span>
         </div>
         <div className="jrOnbBenefitCard">
-          <strong>Alertes ciblées</strong>
-          <span>Des alertes déjà préparées pour passer plus vite de la découverte à l'action.</span>
+          <strong>Détails complets et candidature</strong>
+          <span>Ouvre chaque offre en entier et postule directement depuis JobRadar, sans repasser par le site d'origine.</span>
         </div>
         <div className="jrOnbBenefitCard">
-          <strong>Sélection plus précise</strong>
-          <span>Profil, CV et critères permettent une sélection plus précise.</span>
+          <strong>Plus de résultats dans ton fil</strong>
+          <span>Charge davantage d'offres au-delà de la première sélection.</span>
         </div>
       </div>
       <div className="jrOnbValuePanel">
@@ -1239,6 +1275,9 @@ export default function JobRadarOnboardingPage() {
         <div className="jrOnbActions">
           <button className="btn btnPrimary" type="button" onClick={() => navigate("/pricing")}>
             Choisir mon Pass JobRadar
+          </button>
+          <button className="btn btnGhost" type="button" onClick={() => navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole))}>
+            Continuer avec mon alerte gratuite
           </button>
         </div>
       </div>
@@ -1337,9 +1376,14 @@ export default function JobRadarOnboardingPage() {
           <>
             {preferencesStep}
             {alertDraftsBlock}
+            <p className="jrOnbConsentNote">
+              En continuant, une première alerte gratuite est activée avec ces critères : tu recevras par email
+              les offres qui correspondent. Tu pourras la modifier ou la désactiver à tout moment depuis la page
+              Alertes.
+            </p>
             <div className="jrOnbActions jrOnbActions--standalone">
               <button className="btn btnPrimary" type="button" onClick={() => void savePreferences(false)} disabled={onboarding.saving}>
-                Voir mes offres
+                Voir mes offres et activer mon alerte gratuite
               </button>
               <button className="btn btnGhost" type="button" onClick={() => void savePreferences(true)} disabled={onboarding.saving}>
                 Passer pour l'instant

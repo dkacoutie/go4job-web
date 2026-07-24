@@ -58,7 +58,16 @@ function computeNextStep(params: {
   if (!hasPrePurchaseProfileCompleted(params.onboarding)) return "profile" as const;
   if (!hasPreferencesCompleted(params.onboarding)) return "preferences" as const;
   if (!params.onboarding.previewSeenAt) return "preview" as const;
-  if (!params.hasActivePass) return "unlock" as const;
+  if (!params.hasActivePass) {
+    // Ajustement 1 (consentement explicite) : l'alerte gratuite issue de
+    // l'etape Preferences existe deja a ce stade dans la quasi-totalite des
+    // cas. Un utilisateur gratuit qui l'a deja ne doit plus etre bloque a
+    // "unlock" : le pass est desormais une amelioration optionnelle, pas
+    // une condition pour continuer a utiliser JobRadar. S'il n'a vraiment
+    // aucune alerte (echec ponctuel de creation), on le laisse a "unlock"
+    // ou l'action "Continuer avec mon alerte gratuite" permet de reessayer.
+    return params.alertsCount > 0 ? ("done" as const) : ("unlock" as const);
+  }
   if (!params.profileCompletionReady) return "complete-profile" as const;
   if (!params.hasCv) return "cv" as const;
   if (params.alertsCount === 0) return "alerts" as const;
@@ -79,18 +88,33 @@ export function useJobRadarOnboarding() {
     }
 
     const userId = session.user.id;
-    const [{ data: profileData, error: profileError }, { count: alertsCount }, { count: applicationsCount }] =
-      await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
-            "user_id, full_name, phone, location, headline, experience_years, cv_file_path, cv_filename, cv_updated_at, jobradar_onboarding, jobradar_onboarding_completed_at"
-          )
-          .eq("user_id", userId)
-          .maybeSingle(),
-        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("user_id", userId),
-        supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", userId),
-      ]);
+    const [
+      { data: profileData, error: profileError },
+      { count: alertsCount },
+      { count: legacyAlertsCount },
+      { count: applicationsCount },
+    ] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select(
+          "user_id, full_name, phone, location, headline, experience_years, cv_file_path, cv_filename, cv_updated_at, jobradar_onboarding, jobradar_onboarding_completed_at"
+        )
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase.from("alerts").select("id", { count: "exact", head: true }).eq("user_id", userId),
+      // Ajustement 1 : l'alerte gratuite creee depuis le consentement de
+      // l'onboarding (source='onboarding') ne doit pas, a elle seule,
+      // marquer l'utilisateur comme "deja onboarde" (cf legacyReady
+      // ci-dessous) : sinon l'ecran Preview/Unlock serait court-circuite
+      // des la creation de cette alerte. On compte ici uniquement les
+      // alertes qui temoignent d'un usage anterieur/manuel du produit.
+      supabase
+        .from("alerts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .neq("source", "onboarding"),
+      supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    ]);
 
     let profile = (profileData as JobRadarProfileRecord | null) ?? null;
     if (!profile && !profileError) {
@@ -109,7 +133,7 @@ export function useJobRadarOnboarding() {
     const profileCompletionReady = hasPostPurchaseProfileCompleted(profile);
     const explicitCompleted =
       Boolean(profile?.jobradar_onboarding_completed_at) || Boolean(onboarding.completedAt);
-    const legacyReady = Boolean(hasActivePass || (alertsCount ?? 0) > 0 || (applicationsCount ?? 0) > 0);
+    const legacyReady = Boolean(hasActivePass || (legacyAlertsCount ?? 0) > 0 || (applicationsCount ?? 0) > 0);
     const isOnboarded = explicitCompleted || legacyReady;
     const nextStep = computeNextStep({
       onboarding,

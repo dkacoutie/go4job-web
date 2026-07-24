@@ -608,6 +608,15 @@
   margin: 0 auto;
 }
 
+.jrOnbConsentNote {
+  width: min(100%, 980px);
+  margin: 4px auto 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 @media (min-width: 980px) {
   .jrOnbFormGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
