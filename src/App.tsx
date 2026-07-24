@@ -31,6 +31,7 @@ const ContactPage = lazy(() => import("./ContactPage"));
 const LegalPage = lazy(() => import("./LegalPage"));
 const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
 const LandingPage = lazy(() => import("./LandingPage"));
+const PublicOffersPreviewPage = lazy(() => import("./PublicOffersPreviewPage"));
 const CvAtsLandingPage = lazy(() => import("./CvAtsLandingPage"));
 const CvAtsThankYouPage = lazy(() => import("./CvAtsThankYouPage"));
 const ResetPasswordPage = lazy(() => import("./ResetPasswordPage"));
@@ -243,6 +244,14 @@ export default function App() {
                   element={
                     <LazyRoute>
                       <LandingPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres"
+                  element={
+                    <LazyRoute>
+                      <PublicOffersPreviewPage />
                     </LazyRoute>
                   }
                 />

@@ -4,6 +4,7 @@ import { useSession } from "../lib/useSession";
 import "./PublicHeader.css";
 
 const PUBLIC_NAV_ITEMS = [
+  { label: "Offres", to: "/offres" },
   { label: "Tarifs", to: "/pricing" },
   { label: "Contact", to: "/contact" },
 ] as const;

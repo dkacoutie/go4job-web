@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "./lib/supabaseClient";
+import { fetchPublicJobsCount } from "./lib/publicJobsPreview";
 import "./LandingPage.css";
 
 export default function LandingPage() {
@@ -10,14 +10,13 @@ export default function LandingPage() {
 
   useEffect(() => {
     let cancelled = false;
-    supabase
-      .from("jobs")
-      .select("*", { count: "exact", head: true })
-      .eq("is_active", true)
-      .eq("is_expired", false)
-      .then(({ count }) => {
-        if (!cancelled && typeof count === "number") setJobCount(count);
-      });
+    // Compteur public : jobs n'accorde aucun droit SELECT à anon (voir
+    // supabase/migrations/20260724060000_jobradar_public_offers_preview_rpc.sql),
+    // donc une requête directe sur la table échoue silencieusement pour un
+    // visiteur non connecté. On passe par la RPC dédiée, sûre pour anon.
+    fetchPublicJobsCount().then((count) => {
+      if (!cancelled && count !== null) setJobCount(count);
+    });
     return () => {
       cancelled = true;
     };
