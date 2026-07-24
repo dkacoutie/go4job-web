@@ -236,7 +236,7 @@ export function buildJobRadarShadowUi(meta: JobRadarShadowMeta | null, topCount:
 
   return {
     profileMode: meta.profile_mode,
-      heroTitle: "Priorité aux meilleures opportunités",
+      heroTitle: "Les meilleures opportunités, sélectionnées pour toi",
     heroDescription: "JobRadar surveille les offres pour toi et met en avant celles qui correspondent à ton profil.",
     showStrictTab: true,
     showOnlyVeryRelevantToggle: true,
