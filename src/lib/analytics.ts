@@ -134,6 +134,10 @@ export function initGoogleAnalytics(measurementId = GA_MEASUREMENT_ID) {
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const PHONE_RE = /(\+?\d[\d\s().-]{6,}\d)/;
 const MAX_STRING_LEN = 80;
+// page_location est une URL complète (avec query string) : peut légitimement
+// dépasser 80 caractères sans que ce soit du texte libre à risque.
+const MAX_URL_PARAM_LEN = 300;
+const LONG_PARAM_KEYS = new Set(["page_location"]);
 
 function looksLikePii(value: string): boolean {
   return EMAIL_RE.test(value) || PHONE_RE.test(value);
@@ -180,6 +184,17 @@ const ALLOWED_PARAM_KEYS = new Set([
   "page_type",
 ]);
 
+// Seuls les champs de texte réellement libres (saisis par l'utilisateur)
+// passent par le filtre complet email + téléphone. Les identifiants
+// structurés (UUID d'offre, référence de transaction Paystack, chemin
+// d'URL...) contiennent souvent de longues suites de chiffres séparées par
+// des tirets ou des points qui déclenchaient à tort le motif "téléphone" —
+// un premier test sur le vrai domaine a confirmé le problème (page_path,
+// page_location et item_id disparaissaient des événements réels). Ces
+// champs structurés ne sont filtrés que sur le motif email, qui ne peut pas
+// avoir de faux positif sur un UUID ou une URL interne.
+const FREE_TEXT_PARAM_KEYS = new Set(["search_term"]);
+
 function sanitizeParams(params?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!params) return undefined;
 
@@ -190,8 +205,10 @@ function sanitizeParams(params?: Record<string, unknown>): Record<string, unknow
 
     if (typeof value === "string") {
       if (!value) continue;
-      if (looksLikePii(value)) continue; // on retire ce champ précis, pas tout l'événement
-      out[key] = value.slice(0, MAX_STRING_LEN);
+      const isPii = FREE_TEXT_PARAM_KEYS.has(key) ? looksLikePii(value) : EMAIL_RE.test(value);
+      if (isPii) continue; // on retire ce champ précis, pas tout l'événement
+      const maxLen = LONG_PARAM_KEYS.has(key) ? MAX_URL_PARAM_LEN : MAX_STRING_LEN;
+      out[key] = value.slice(0, maxLen);
     } else if (typeof value === "number" || typeof value === "boolean") {
       out[key] = value;
     }
