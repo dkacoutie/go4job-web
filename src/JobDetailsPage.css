@@ -170,7 +170,110 @@
 .jd-desc {
   color: var(--jd-text);
   line-height: 1.6;
+  max-width: 74ch;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Fallback ultime : aucune structure n'a pu être reconstruite, on affiche le
+   texte brut en préservant au moins les retours à la ligne réels. */
+.jd-descPlain {
   white-space: pre-wrap;
+}
+
+/* Rendu éditorial du HTML (fourni par la source ou reconstruit à partir du
+   texte brut). Les deux passent par le même sanitizer et partagent donc le
+   même rendu. */
+.jd-html p {
+  margin: 0 0 14px;
+}
+
+.jd-html p:last-child {
+  margin-bottom: 0;
+}
+
+.jd-html .jd-desc-heading {
+  margin: 22px 0 8px;
+  font-weight: 700;
+  color: var(--jd-text);
+}
+
+.jd-html .jd-desc-heading:first-child {
+  margin-top: 0;
+}
+
+.jd-html h1,
+.jd-html h2,
+.jd-html h3,
+.jd-html h4,
+.jd-html h5,
+.jd-html h6 {
+  margin: 22px 0 8px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--jd-text);
+}
+
+.jd-html h1:first-child,
+.jd-html h2:first-child,
+.jd-html h3:first-child,
+.jd-html h4:first-child,
+.jd-html h5:first-child,
+.jd-html h6:first-child {
+  margin-top: 0;
+}
+
+.jd-html ul,
+.jd-html ol {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+}
+
+.jd-html li {
+  line-height: 1.55;
+}
+
+.jd-html a {
+  color: var(--brand-700, var(--jd-text));
+  text-decoration: underline;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.jd-html blockquote {
+  margin: 0 0 14px;
+  padding: 4px 14px;
+  border-left: 3px solid var(--jd-border);
+  color: var(--jd-muted);
+}
+
+.jd-html hr {
+  margin: 18px 0;
+  border: none;
+  border-top: 1px solid var(--jd-border);
+}
+
+.jd-html table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 14px;
+}
+
+.jd-html td,
+.jd-html th {
+  border: 1px solid var(--jd-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.jd-html pre,
+.jd-html code {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .jd-descMeta {

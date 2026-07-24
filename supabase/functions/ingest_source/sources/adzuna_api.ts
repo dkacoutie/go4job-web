@@ -157,16 +157,30 @@ function uniqueStrings(values: Array<string | null | undefined>) {
   return out;
 }
 
+/**
+ * Nettoie le texte d'une description tout en préservant les retours à la
+ * ligne réels. A la différence de safeStr() (utilisée pour titre/entreprise/
+ * lieu, où aplatir les espaces est correct), un `.replace(/\s+/g, " ")`
+ * appliqué à la description détruit la structure (paragraphes, listes)
+ * quand la source en fournit une. On ne collapse ici que les
+ * espaces/tabulations répétés, jamais les retours à la ligne.
+ */
 function stripHtmlLikeText(value: unknown) {
-  const text = safeStr(value);
-  if (!text) return null;
+  if (value === null || value === undefined) return null;
+  const raw = typeof value === "string" ? value : safeStr(value);
+  if (!raw) return null;
 
-  return text
+  const text = raw
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<\/?[^>]+(>|$)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim() || null;
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return text || null;
 }
 
 function normalizeCountryCode(value: unknown): string | null {

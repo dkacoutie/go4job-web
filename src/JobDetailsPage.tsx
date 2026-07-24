@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import DOMPurify from "dompurify";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { trackApplicationStarted } from "./lib/analytics";
+import { formatPlainDescriptionToHtml, sanitizeHtmlBasic, stripHtmlToText } from "./lib/jobDescriptionFormat";
 import "./JobDetailsPage.css";
 
 type ApplicationStatus =
@@ -156,45 +156,6 @@ function firstDate(job: JobRow) {
  * dédiée et maintenue. Liste blanche restreinte au balisage réellement utile
  * pour une description de poste (texte, listes, tableaux, liens).
  */
-function sanitizeHtmlBasic(html: string): string {
-  const clean = DOMPurify.sanitize(html ?? "", {
-    ALLOWED_TAGS: [
-      "p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "a", "span", "div",
-      "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table", "thead", "tbody",
-      "tr", "td", "th", "hr", "sub", "sup", "code", "pre",
-    ],
-    ALLOWED_ATTR: ["href", "class"],
-    ALLOW_DATA_ATTR: false,
-  });
-
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(clean, "text/html");
-    doc.body.querySelectorAll("a").forEach((el) => {
-      el.setAttribute("rel", "noopener noreferrer");
-      el.setAttribute("target", "_blank");
-    });
-    return doc.body.innerHTML;
-  } catch {
-    return clean;
-  }
-}
-
-function stripHtmlToText(html: string): string {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html ?? "", "text/html");
-    return (doc.body.textContent ?? "").replace(/\s+/g, " ").trim();
-  } catch {
-    return (html ?? "")
-      .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
-      .replace(/<\/?[^>]+(>|$)/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-}
-
 function pickFirstString(value: unknown, keys: string[]): string | null {
   if (!value || typeof value !== "object") return null;
   const obj = value as Record<string, unknown>;
@@ -390,11 +351,17 @@ export default function JobDetailsPage() {
     const aiText = (job?.ai_description ?? "").trim();
     const aiOk = job?.ai_description_status === "ok" && aiText.length > 0;
 
+    // Le HTML fourni par la source prime toujours (déjà structuré, on ne le
+    // retouche pas). A défaut, on reconstruit une structure sûre à partir du
+    // texte brut, sans jamais inventer de contenu absent du texte source.
+    const formattedFromText = !html && baseText ? formatPlainDescriptionToHtml(baseText) : "";
+
     return {
       scrapedOk,
       aiOk,
       baseText,
       html,
+      formattedFromText,
       aiText,
       baseLen,
     };
@@ -640,8 +607,10 @@ export default function JobDetailsPage() {
                 {desc.scrapedOk ? (
                   desc.html ? (
                     <div className="jd-html" dangerouslySetInnerHTML={{ __html: desc.html }} />
+                  ) : desc.formattedFromText ? (
+                    <div className="jd-html" dangerouslySetInnerHTML={{ __html: desc.formattedFromText }} />
                   ) : (
-                    <div style={{ whiteSpace: "pre-wrap" }}>{desc.baseText}</div>
+                    <div className="jd-descPlain">{desc.baseText}</div>
                   )
                 ) : desc.aiOk ? (
                   <div style={{ whiteSpace: "pre-wrap" }}>{desc.aiText}</div>

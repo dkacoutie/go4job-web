@@ -82,16 +82,32 @@ function normalizeCountry(rawCountry: string | null) {
   return rawCountry;
 }
 
+/**
+ * Nettoie le texte d'une description tout en préservant les retours à la
+ * ligne réels (paragraphes, listes à puces "- ..." ligne par ligne). A la
+ * différence de safeStr() (utilisée pour titre/entreprise/lieu, où aplatir
+ * les espaces est correct), la description perd toute sa structure si on la
+ * fait passer par un simple `.replace(/\s+/g, " ")` : c'est exactement ce
+ * qui rendait les offres France Travail illisibles (missions et profil
+ * fusionnés en un seul bloc). On ne collapse ici que les espaces/tabulations
+ * répétés, jamais les retours à la ligne.
+ */
 function stripHtmlLikeText(value: unknown) {
-  const text = safeStr(value);
-  if (!text) return null;
+  if (value === null || value === undefined) return null;
+  const raw = typeof value === "string" ? value : safeStr(value);
+  if (!raw) return null;
 
-  return text
+  const text = raw
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<\/?[^>]+(>|$)/g, " ")
-    .replace(/\s+/g, " ")
-    .trim() || null;
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return text || null;
 }
 
 function normalizeSearchParams(input: Record<string, unknown> | null | undefined) {
