@@ -393,7 +393,7 @@ export function trackAlertCreated(params: {
   hasCountryFilter: boolean;
   frequency?: string;
   channel?: string;
-  source?: "manual" | "onboarding";
+  source?: "manual" | "onboarding" | "reactivation_banner";
 }) {
   sendEvent("alert_created", {
     has_country_filter: params.hasCountryFilter,
@@ -401,6 +401,18 @@ export function trackAlertCreated(params: {
     source: params.source ?? "manual",
     channel: params.channel,
   });
+}
+
+// Ajustement 3 (comptes existants sans alerte) : mesure du taux de clic et
+// du taux d'activation de la bannière d'invitation non bloquante, séparément
+// de l'événement alert_created générique ci-dessus (qui, lui, confirme la
+// création effective — utile pour calculer le taux de clic -> activation).
+export function trackAlertReactivationBannerShown() {
+  sendEvent("alert_reactivation_banner_shown");
+}
+
+export function trackAlertReactivationBannerClicked() {
+  sendEvent("alert_reactivation_banner_clicked");
 }
 
 export function trackApplicationStarted(params: { jobId: string }) {

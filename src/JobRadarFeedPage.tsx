@@ -33,6 +33,7 @@ import { usePass } from "./lib/usePass";
 import { usePaymentMarket } from "./lib/paymentMarket";
 import { getStartingPremiumLabel } from "./lib/premiumPricing";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import OnboardingAlertInviteBanner from "./components/OnboardingAlertInviteBanner";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { useToast } from "./components/ToastCenter";
@@ -2075,6 +2076,8 @@ export default function JobRadarFeedPage() {
   return (
     <div className="jr-shell">
       <main className="jr-main">
+        <OnboardingAlertInviteBanner />
+
         <section className="jr-hero">
           <div className="jr-heroTop">
             <div>
