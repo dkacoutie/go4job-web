@@ -251,16 +251,16 @@ export default function JobDetailsPage() {
     setErrorMsg(null);
 
     try {
-      const { data: jData, error: jErr } = await supabase
-        .from("jobs")
-        .select(
-          `
-          id,
-          title,
-          company_name,
-          location,
-          country,
-          remote_type,
+      // Finalisation activation/paiement (24/07/2026) : ces champs (lien de
+      // candidature, description complète, IA) sont la valeur réservée au
+      // pass. Avant ce correctif, ils étaient TOUJOURS récupérés du serveur
+      // pour n'importe quel compte, y compris gratuit, et seul l'affichage
+      // (allowPremium ? ... : ...) les cachait — un compte gratuit pouvait
+      // les lire directement dans l'onglet réseau du navigateur. On ne
+      // demande plus ces champs au serveur du tout pour un compte sans pass
+      // actif, plutôt que de les recevoir et de juste ne pas les afficher.
+      const premiumFields = allowPremium
+        ? `,
           apply_url,
           source_url,
           description_text,
@@ -276,13 +276,24 @@ export default function JobDetailsPage() {
           ai_description_quality,
           ai_description_status,
           ai_description_error,
-          job_json,
+          job_json`
+        : "";
+      const { data: jData, error: jErr } = await supabase
+        .from("jobs")
+        .select(
+          `
+          id,
+          title,
+          company_name,
+          location,
+          country,
+          remote_type,
           sort_at,
           published_at,
           posted_at,
           scraped_at,
           created_at,
-          updated_at
+          updated_at${premiumFields}
         `
         )
         .eq("id", id)
@@ -312,14 +323,18 @@ export default function JobDetailsPage() {
   };
 
   useEffect(() => {
-    if (loading || !id) return;
+    // On attend que le statut du pass soit connu avant de charger l'offre :
+    // le select ci-dessus dépend de allowPremium pour décider quels champs
+    // demander au serveur, un chargement prématuré donnerait la version
+    // gratuite même à un compte payant le temps que isLoadingPass se résolve.
+    if (loading || !id || isLoadingPass) return;
     let active = true;
     load(() => active);
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, id, userId]);
+  }, [loading, id, userId, isLoadingPass, allowPremium]);
 
   const date = useMemo(() => (job ? firstDate(job) : null), [job]);
 
