@@ -647,6 +647,56 @@
   background: var(--bg);
 }
 
+/* Ajustement 5 (24/07/2026) : offre d'élargissement de recherche, opt-in et
+   non permanente — n'altère jamais les critères enregistrés d'une alerte. */
+.jr-widenOffer {
+  margin-top: 14px;
+  border-radius: var(--jr-radius);
+  border: 1px dashed var(--jr-border);
+  background: var(--jr-surface);
+  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.jr-widenOfferText {
+  color: var(--jr-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.jr-widenOfferActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jr-widenResults {
+  margin-top: 18px;
+}
+
+.jr-widenResultsLabel {
+  color: var(--jr-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+}
+
+.jr-card--widened {
+  border-style: dashed;
+}
+
+.jr-scoreWidened {
+  border-color: var(--jr-border);
+  color: var(--jr-muted);
+  background: var(--bg);
+}
+
 .jr-scoreWrap {
   display: flex;
   align-items: center;

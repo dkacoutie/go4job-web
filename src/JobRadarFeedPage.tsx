@@ -27,7 +27,13 @@ import {
   type SkillsQualityBreakdown,
 } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
-import { trackSearch, trackSelectContent } from "./lib/analytics";
+import {
+  trackSearch,
+  trackSelectContent,
+  trackWidenedResultsAccepted,
+  trackWidenedResultsDeclined,
+  trackWidenedResultsOffered,
+} from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { usePaymentMarket } from "./lib/paymentMarket";
@@ -841,6 +847,17 @@ export default function JobRadarFeedPage() {
 
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
+  // Ajustement 5 (24/07/2026) : élargissement de recherche opt-in et non
+  // permanent. Quand une recherche texte ne remonte aucun résultat strict,
+  // on garde en mémoire les résultats plus larges déjà récupérés côté
+  // serveur (mêmes requêtes, sans le filtre AND-de-tous-les-mots côté
+  // client) pour les proposer explicitement. Rien de tout cela ne modifie
+  // les critères de l'alerte de l'utilisateur : c'est un affichage
+  // temporaire, réinitialisé à chaque nouvelle recherche.
+  const [widenedCandidates, setWidenedCandidates] = useState<JobRow[]>([]);
+  const [widenedAccepted, setWidenedAccepted] = useState(false);
+  const [widenedDismissed, setWidenedDismissed] = useState(false);
+  const widenedOfferedTrackedKeyRef = useRef<string | null>(null);
   const [cvSkills, setCvSkills] = useState<string[]>([]);
   const [cvExp, setCvExp] = useState<{ min: number | null; max: number | null } | null>(null);
   const [profileExp, setProfileExp] = useState<number | null>(null);
@@ -1097,7 +1114,10 @@ export default function JobRadarFeedPage() {
 
     if (!countryCodes.length && !countryCode && normalizeSearchText(rawQuery).length >= TEXT_SEARCH_MIN_LENGTH) {
       const safeTerm = sanitizeJobSearchTerm(rawQuery);
-      if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) return [] as JobRow[];
+      if (safeTerm.length < TEXT_SEARCH_MIN_LENGTH) {
+        setWidenedCandidates([]);
+        return [] as JobRow[];
+      }
       const serverTerms = buildServerSearchTerms(rawQuery);
 
       // Run all term queries in parallel instead of sequentially: with a trigram
@@ -1122,13 +1142,22 @@ export default function JobRadarFeedPage() {
         })
       );
       const results = perTermResults.flat();
+      const merged = mergeUniqueById([], results).filter(jobMatchesVisibleFilters);
+      const strict = merged.filter((job) => jobMatchesSearchQuery(job, rawQuery)).slice(0, SEARCH_LIMIT);
 
-      return mergeUniqueById([], results)
-        .filter((job) => jobMatchesSearchQuery(job, rawQuery))
-        .filter(jobMatchesVisibleFilters)
-        .slice(0, SEARCH_LIMIT);
+      // Ajustement 5 : on ne propose l'élargissement que quand la recherche
+      // stricte (AND de tous les mots) ne remonte rien, mais que des offres
+      // partiellement pertinentes existent (au moins un mot / un champ en
+      // commun, déjà filtrées sur l'activité et la qualité). Jamais montré
+      // silencieusement mélangé aux résultats stricts.
+      const strictIds = new Set(strict.map((job) => job.id));
+      const widenedExtra = strict.length === 0 ? merged.filter((job) => !strictIds.has(job.id)).slice(0, 6) : [];
+      setWidenedCandidates(widenedExtra);
+
+      return strict;
     }
 
+    setWidenedCandidates([]);
     const { data, error } = await query
       .order("published_at", { ascending: false, nullsFirst: false })
       .order("scraped_at", { ascending: false, nullsFirst: false })
@@ -1286,6 +1315,8 @@ export default function JobRadarFeedPage() {
 
     setBusy(true);
     setErrorMsg(null);
+    setWidenedAccepted(false);
+    setWidenedDismissed(false);
     firstCardsLoggedRef.current = false;
     logFeedPerf("load start");
 
@@ -1489,6 +1520,10 @@ export default function JobRadarFeedPage() {
       loadRunIdRef.current = searchRunId;
       setErrorMsg(null);
       setSearchBusy(Boolean(normalizedQuery || countryFilters.length || contractFilter || workModeFilter));
+      // Ajustement 5 : chaque nouvelle recherche repart sans élargissement —
+      // on ne garde jamais un élargissement accepté d'une recherche précédente.
+      setWidenedAccepted(false);
+      setWidenedDismissed(false);
 
       try {
         const searchStartedAt = typeof performance !== "undefined" ? performance.now() : 0;
@@ -2050,6 +2085,27 @@ export default function JobRadarFeedPage() {
     navigate(`/jobradar/jobs/${jobId}`);
   };
 
+  // Ajustement 5 : on notifie une seule fois par recherche distincte qu'un
+  // élargissement est disponible (déduplication via lastServerSearchQueryRef,
+  // qui change à chaque nouvelle recherche/filtre appliqué).
+  useEffect(() => {
+    if (!widenedCandidates.length) return;
+    const key = lastServerSearchQueryRef.current;
+    if (!key || widenedOfferedTrackedKeyRef.current === key) return;
+    widenedOfferedTrackedKeyRef.current = key;
+    trackWidenedResultsOffered({ resultsOffered: widenedCandidates.length });
+  }, [widenedCandidates]);
+
+  const acceptWidenedResults = () => {
+    setWidenedAccepted(true);
+    trackWidenedResultsAccepted();
+  };
+
+  const declineWidenedResults = () => {
+    setWidenedDismissed(true);
+    trackWidenedResultsDeclined();
+  };
+
   const buildMatchEventPayload = useCallback(
     (row: FeedDisplayRow) => {
       const details = row.why.details;
@@ -2437,21 +2493,81 @@ export default function JobRadarFeedPage() {
           />
         ) : displayed.length === 0 ? (
           showNoSearchResultsState ? (
-            <EmptyState
-              title="Aucune offre trouvée pour cette recherche"
-              description="Essaie un autre mot-clé, un autre pays, ou efface les critères pour revenir à toutes les offres."
-              primaryAction={{
-                label: "Effacer les critères",
-                onClick: () => {
-                  setQ("");
-                  setCountryFilter("");
-                  setContractFilter("");
-                  setWorkModeFilter("");
-                },
-              }}
-              secondaryAction={{ label: "Recharger les offres", onClick: () => load() }}
-              tone="info"
-            />
+            <>
+              <EmptyState
+                title="Aucune offre trouvée pour cette recherche"
+                description="Essaie un autre mot-clé, un autre pays, ou efface les critères pour revenir à toutes les offres."
+                primaryAction={{
+                  label: "Effacer les critères",
+                  onClick: () => {
+                    setQ("");
+                    setCountryFilter("");
+                    setContractFilter("");
+                    setWorkModeFilter("");
+                  },
+                }}
+                secondaryAction={{ label: "Recharger les offres", onClick: () => load() }}
+                tone="info"
+              />
+
+              {/* Ajustement 5 : élargissement opt-in, non permanent — ne
+                  touche jamais aux critères enregistrés de l'alerte. */}
+              {widenedCandidates.length > 0 && !widenedAccepted && !widenedDismissed && (
+                <div className="jr-widenOffer" role="group" aria-label="Élargir la recherche">
+                  <div className="jr-widenOfferText">
+                    {widenedCandidates.length} offre{widenedCandidates.length > 1 ? "s" : ""} correspondent
+                    partiellement à ta recherche. Les voir quand même&nbsp;?
+                  </div>
+                  <div className="jr-widenOfferActions">
+                    <button type="button" className="jrBtn jrBtnPrimary" onClick={acceptWidenedResults}>
+                      Voir ces résultats élargis
+                    </button>
+                    <button type="button" className="jrBtn jrBtnGhost" onClick={declineWidenedResults}>
+                      Non merci
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {widenedAccepted && widenedCandidates.length > 0 && (
+                <div className="jr-widenResults" aria-label="Résultats élargis">
+                  <div className="jr-widenResultsLabel">
+                    Résultats élargis — en dehors de tes critères stricts, non enregistrés dans ton alerte
+                  </div>
+                  <div className="jr-grid">
+                    {widenedCandidates.map((job, index) => {
+                      const locationLabel = [job.location ?? job.country, job.remote_type].filter(Boolean).join(" · ");
+                      return (
+                        <div
+                          className="jr-card jr-card--enter jr-card--widened"
+                          style={{ ["--sk-delay" as any]: `${Math.min(index, 7) * 25}ms` }}
+                          key={job.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openJob(job.id, job.title, { job_id: job.id, source: "widened_search" })}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openJob(job.id, job.title, { job_id: job.id, source: "widened_search" });
+                            }
+                          }}
+                        >
+                          <div className="jr-cardTop">
+                            <div className="jr-title">{job.title ?? "—"}</div>
+                            <span className="jr-score jr-scoreWidened">Résultat élargi</span>
+                          </div>
+                          <div className="jr-meta">
+                            <span className="jr-company">{job.company_name ?? "—"}</span>
+                            <span className="jr-metaSep">•</span>
+                            <span className="jr-location">{locationLabel || "—"}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           ) : showNoPreciseMatchState ? (
             <EmptyState
               title="Aucune offre très proche de tes critères pour l’instant"
