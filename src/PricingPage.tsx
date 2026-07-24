@@ -7,7 +7,9 @@ import { trackMetaEvent } from "./lib/metaPixel";
 import {
   trackBeginCheckout,
   trackPassSelected,
+  trackPaymentConfirmed,
   trackPaymentFailed,
+  trackPaymentPending,
   trackPricingViewed,
   trackPurchase,
 } from "./lib/analytics";
@@ -72,6 +74,24 @@ type PaymentRow = {
 const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
 const GENERIC_PAYMENT_ERROR =
   "Le paiement n’a pas pu être finalisé. Aucun montant n’a été débité. Réessaie ou contacte le support.";
+// Ajustement 7 (écran d'attente) : un statut "pending"/"ongoing" renvoyé par
+// paystack_verify ne veut pas dire que le paiement a échoué — fréquent en
+// mobile money, où la confirmation se fait sur le téléphone et peut prendre
+// un moment. Avant ce correctif, ce cas déclenchait le même message
+// d'échec générique que ci-dessus (potentiellement faux) et effaçait la
+// référence de session, rendant toute reprise automatique impossible.
+const STILL_RESOLVING_STATUSES = new Set(["pending", "ongoing", "queued"]);
+const PENDING_MESSAGE =
+  "Ton paiement est en cours de confirmation (fréquent en mobile money : confirme sur ton téléphone si ce n'est pas déjà fait). Nous vérifions automatiquement — tu peux aussi fermer cette page, l'activation se fera dès la confirmation.";
+const PENDING_TIMEOUT_MESSAGE =
+  "Ton paiement est toujours en cours de confirmation. Rien n'a échoué : reviens sur cette page dans quelques minutes, la vérification reprendra automatiquement.";
+// Bornes du polling actif pendant que l'utilisateur reste sur la page :
+// ~8 tentatives espacées de 8s (~1min) avant de laisser reposer, suspendu
+// pendant que l'onglet n'est pas visible, et jamais au-delà de 5 minutes
+// d'horloge murale même si l'onglet reste visible en continu.
+const POLL_DELAY_MS = 8000;
+const MAX_POLL_ATTEMPTS = 8;
+const MAX_POLL_WALL_CLOCK_MS = 5 * 60 * 1000;
 
 const PLAN_CARD_DETAILS: Record<string, { benefit: string; bullets: string[] }> = {
   pass_7d: {
@@ -360,9 +380,53 @@ export default function PricingPage() {
       window.history.replaceState({}, "", window.location.pathname);
     }
 
-    const runVerify = async () => {
+    let cancelled = false;
+    let pollTimeoutId: number | null = null;
+    const startedAt = Date.now();
+    let pendingTracked = false;
+
+    const clearScheduledPoll = () => {
+      if (pollTimeoutId !== null) {
+        window.clearTimeout(pollTimeoutId);
+        pollTimeoutId = null;
+      }
+    };
+
+    // Ajustement 7 : un statut encore en attente n'est ni un succès ni un
+    // échec. On reprogramme une nouvelle vérification tant qu'on est dans
+    // les bornes (nombre de tentatives, durée totale, onglet visible), sans
+    // jamais effacer la référence de session — c'est justement ce qui
+    // permettait, avant ce correctif, de perdre toute possibilité de reprise
+    // dès que paystack_verify répondait autre chose qu'un succès immédiat.
+    const scheduleNextPoll = (attempt: number) => {
+      const elapsed = Date.now() - startedAt;
+      if (cancelled || attempt >= MAX_POLL_ATTEMPTS || elapsed >= MAX_POLL_WALL_CLOCK_MS) {
+        setIsVerifying(false);
+        setInfoMsg(PENDING_TIMEOUT_MESSAGE);
+        return;
+      }
+      const schedule = () => {
+        if (cancelled) return;
+        pollTimeoutId = window.setTimeout(() => void runVerify(attempt + 1), POLL_DELAY_MS);
+      };
+      if (document.visibilityState === "visible") {
+        schedule();
+      } else {
+        // Onglet masqué : on attend qu'il redevienne visible plutôt que de
+        // consommer une tentative dans le vide.
+        const onVisible = () => {
+          if (document.visibilityState !== "visible") return;
+          document.removeEventListener("visibilitychange", onVisible);
+          schedule();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+      }
+    };
+
+    const runVerify = async (attempt = 1) => {
+      if (cancelled) return;
       setIsVerifying(true);
-      setInfoMsg("Vérification du paiement en cours...");
+      setInfoMsg(attempt === 1 ? "Vérification du paiement en cours..." : PENDING_MESSAGE);
       setErrorMsg(null);
       setShowPostCheckout(false);
 
@@ -370,10 +434,19 @@ export default function PricingPage() {
         body: { reference },
       });
 
+      if (cancelled) return;
+
       if (error) {
-        setErrorMsg(GENERIC_PAYMENT_ERROR);
-        trackPaymentFailed({ reason: "verify_invoke_error" });
-      } else if (data?.ok) {
+        // Erreur d'appel (réseau, timeout...) : pas une confirmation
+        // d'échec du paiement lui-même — on retente dans les mêmes bornes
+        // plutôt que d'afficher un faux échec et d'effacer la référence.
+        scheduleNextPoll(attempt);
+        return;
+      }
+
+      if (data?.ok) {
+        clearScheduledPoll();
+        trackPaymentConfirmed({ path: "user_return" });
         setInfoMsg(
           data?.status === "paid_test"
             ? "Ton pass est actif (test). Ton accès JobRadar est maintenant activé. Tu peux consulter les offres recommandées et configurer tes alertes."
@@ -407,16 +480,39 @@ export default function PricingPage() {
             testMode: data?.status === "paid_test",
           });
         }
-      } else {
-        setErrorMsg(GENERIC_PAYMENT_ERROR);
-        trackPaymentFailed({ reason: typeof data?.status === "string" ? data.status : "verify_not_ok" });
+
+        setIsVerifying(false);
+        sessionStorage.removeItem("paystack_ref");
+        return;
       }
 
+      const status = typeof data?.status === "string" ? data.status : "";
+      if (STILL_RESOLVING_STATUSES.has(status)) {
+        if (!pendingTracked) {
+          pendingTracked = true;
+          trackPaymentPending({});
+        }
+        // Toujours en attente : on NE touche PAS à sessionStorage.paystack_ref
+        // ici. Le filet serveur (paystack_reconcile_pending, Ajustement 6)
+        // prendra le relais même si l'utilisateur quitte la page avant que
+        // le polling ci-dessous n'aboutisse.
+        scheduleNextPoll(attempt);
+        return;
+      }
+
+      // Statut réellement négatif (failed, abandoned, cancelled, mismatch...).
+      setErrorMsg(GENERIC_PAYMENT_ERROR);
+      trackPaymentFailed({ reason: status || "verify_not_ok" });
       setIsVerifying(false);
       sessionStorage.removeItem("paystack_ref");
     };
 
-    runVerify();
+    void runVerify();
+
+    return () => {
+      cancelled = true;
+      clearScheduledPoll();
+    };
   }, [session?.user?.id, loadAccountData, refreshPass]);
 
   const paymentsEnabled = settings?.payments_enabled !== false;
