@@ -4,6 +4,12 @@ import { clearPartnerReferral, readPartnerReferral } from "./lib/partnerReferral
 import { usePaymentMarket } from "./lib/paymentMarket";
 import { supabase } from "./lib/supabaseClient";
 import { trackMetaEvent } from "./lib/metaPixel";
+import {
+  trackBeginCheckout,
+  trackPaymentFailed,
+  trackPricingViewed,
+  trackPurchase,
+} from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { buildJobRadarOnboardingHref } from "./lib/jobradarOnboarding";
 import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
@@ -321,6 +327,10 @@ export default function PricingPage() {
   }, [session?.user]);
 
   useEffect(() => {
+    trackPricingViewed();
+  }, []);
+
+  useEffect(() => {
     queueMicrotask(() => {
       setErrorMsg(null);
       void loadPricingData();
@@ -361,6 +371,7 @@ export default function PricingPage() {
 
       if (error) {
         setErrorMsg(GENERIC_PAYMENT_ERROR);
+        trackPaymentFailed({ reason: "verify_invoke_error" });
       } else if (data?.ok) {
         setInfoMsg(
           data?.status === "paid_test"
@@ -371,8 +382,33 @@ export default function PricingPage() {
         clearPartnerReferral();
         await loadAccountData();
         await refreshPass();
+
+        // purchase n'est envoyé qu'ici, après confirmation serveur réelle du
+        // paiement par paystack_verify (jamais depuis la simple présence du
+        // paramètre ?reference= dans l'URL). Dédupliqué par référence dans
+        // trackPurchase, donc un rafraîchissement de page ou un second appel
+        // sur la même référence ne compte jamais deux fois.
+        const { data: paidRow } = await supabase
+          .from("billing_payments")
+          .select("id, amount_minor, currency, plan:billing_plans(code, name)")
+          .eq("provider_payment_id", reference)
+          .maybeSingle();
+
+        if (paidRow) {
+          const planRow = paidRow.plan as { code?: string; name?: string } | null;
+          const isXof = paidRow.currency === "XOF" || paidRow.currency === "XAF";
+          trackPurchase({
+            transactionId: reference,
+            planId: planRow?.code ?? "unknown",
+            planName: planRow?.name ?? "unknown",
+            value: isXof ? paidRow.amount_minor : paidRow.amount_minor / 100,
+            currency: paidRow.currency,
+            testMode: data?.status === "paid_test",
+          });
+        }
       } else {
         setErrorMsg(GENERIC_PAYMENT_ERROR);
+        trackPaymentFailed({ reason: typeof data?.status === "string" ? data.status : "verify_not_ok" });
       }
 
       setIsVerifying(false);
@@ -464,6 +500,12 @@ export default function PricingPage() {
         content_name: plan.name,
         content_ids: [plan.code],
       });
+      trackBeginCheckout({
+        planId: plan.code,
+        planName: plan.name,
+        value: price.currency === "XOF" || price.currency === "XAF" ? price.amount_minor : price.amount_minor / 100,
+        currency: price.currency,
+      });
 
       const { data, error } = await supabase.functions.invoke("paystack_initialize", {
         body: {
@@ -478,6 +520,7 @@ export default function PricingPage() {
 
       if (error) {
         setErrorMsg(GENERIC_PAYMENT_ERROR);
+        trackPaymentFailed({ reason: "initialize_invoke_error", planId: plan.code });
       } else if (data?.ok && data?.authorization_url) {
         if (data?.reference) {
           sessionStorage.setItem("paystack_ref", data.reference as string);
@@ -486,6 +529,7 @@ export default function PricingPage() {
         window.location.assign(data.authorization_url as string);
       } else {
         setErrorMsg(GENERIC_PAYMENT_ERROR);
+        trackPaymentFailed({ reason: "initialize_not_ok", planId: plan.code });
       }
     } finally {
       setBusyCode(null);

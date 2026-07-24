@@ -17,7 +17,7 @@ import { ToastProvider } from "./components/ToastCenter";
 import { PartnerReferralProvider } from "./lib/usePartnerReferral";
 import { PassProvider } from "./lib/usePass";
 
-import LandingAnalyticsTracker from "./components/LandingAnalyticsTracker";
+import AnalyticsTracker from "./components/AnalyticsTracker";
 import MetaPixelTracker from "./components/MetaPixelTracker";
 
 const AuthPage = lazy(() => import("./AuthPage"));
@@ -159,7 +159,7 @@ export default function App() {
       <PassProvider>
         <BrowserRouter>
           <PartnerReferralProvider>
-            <LandingAnalyticsTracker />
+            <AnalyticsTracker />
             <MetaPixelTracker />
             <Routes>
               <Route element={<PublicLayout />}>

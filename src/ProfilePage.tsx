@@ -2,6 +2,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import OnboardingStepper from "./components/OnboardingStepper";
 import { supabase } from "./lib/supabaseClient";
+import { trackProfileCompleted } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
@@ -117,6 +118,10 @@ export default function ProfilePage() {
   const [cvFilename, setCvFilename] = useState<string | null>(null);
   const [cvUpdatedAt, setCvUpdatedAt] = useState<string | null>(null);
   const cvInputRef = useRef<HTMLInputElement | null>(null);
+  // Complétude du profil telle que chargée depuis la base, pour ne déclencher
+  // profile_completed que sur une vraie transition incomplet -> complet, pas
+  // à chaque enregistrement d'un profil déjà complet.
+  const wasCompleteOnLoadRef = useRef<boolean | null>(null);
 
   const selectedCountry = useMemo(
     () => COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0],
@@ -171,6 +176,13 @@ export default function ProfilePage() {
       setCvFilePath(p?.cv_file_path ?? null);
       setCvFilename(p?.cv_filename ?? null);
       setCvUpdatedAt(p?.cv_updated_at ?? null);
+
+      const loadedExpMissing = !(
+        typeof p?.experience_years === "number" && Number.isFinite(p.experience_years)
+      ) && !p?.cv_file_path;
+      wasCompleteOnLoadRef.current = Boolean(
+        p?.full_name?.trim() && loc.city.trim() && parseSkills(p?.headline ?? null).length > 0 && !loadedExpMissing
+      );
 
       setPageLoading(false);
     }
@@ -396,6 +408,12 @@ export default function ProfilePage() {
 
     const expMissing = !experienceYears.trim() && !cvFilePath;
     const incomplete = !fullName.trim() || !city.trim() || skills.length === 0 || expMissing;
+
+    if (!incomplete && wasCompleteOnLoadRef.current === false) {
+      trackProfileCompleted();
+    }
+    wasCompleteOnLoadRef.current = !incomplete;
+
     if (incomplete) {
       setNextStep({
         title: onboardingFlow ? "Encore un petit effort sur le profil" : "Profil enregistré (incomplet)",

@@ -2,6 +2,7 @@
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
+import { trackAlertCreated } from "./lib/analytics";
 import { resolveCountrySearchQuery } from "./lib/jobMatching";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
@@ -608,6 +609,11 @@ export default function AlertsPage() {
       message: "Tu recevras des offres plus ciblées selon cette alerte.",
     });
     setCreatedHint(true);
+    trackAlertCreated({
+      hasCountryFilter: !allCountries,
+      frequency,
+      channel: channels[0],
+    });
 
     setName("");
     setKeywordsText("");

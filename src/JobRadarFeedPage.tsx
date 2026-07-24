@@ -27,6 +27,7 @@ import {
   type SkillsQualityBreakdown,
 } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
+import { trackSearch, trackSelectContent } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { usePaymentMarket } from "./lib/paymentMarket";
@@ -1505,6 +1506,18 @@ export default function JobRadarFeedPage() {
         setPageFrom(nextJobs.length);
         setHasMore(normalizedQuery || countryFilters.length || contractFilter || workModeFilter ? false : nextJobs.length === PAGE_SIZE);
         lastServerSearchQueryRef.current = criteriaKey;
+
+        // Uniquement quand une vraie recherche/filtre a été appliqué (pas le
+        // chargement par défaut du feed sans critère).
+        if (normalizedQuery || countryFilters.length || contractFilter || workModeFilter) {
+          trackSearch({
+            searchTerm: rawQuery,
+            country: countryFilters[0] ?? null,
+            contractType: contractFilter || null,
+            workMode: workModeFilter || null,
+            resultsCount: nextJobs.length,
+          });
+        }
         scheduleDeferredFeedTask(() => {
           if (loadRunIdRef.current !== searchRunId) return;
           void hydrateJobDescriptions(nextJobs.map((job) => job.id), searchRunId, "search");
@@ -2023,6 +2036,7 @@ export default function JobRadarFeedPage() {
   const openJob = (jobId: string, jobTitle?: string | null, payload?: Record<string, unknown>) => {
     if (openOfferUnlockGate(jobTitle, payload)) return;
     if (payload) trackJobRadarEvent("job_open", payload);
+    trackSelectContent({ itemId: jobId });
     navigate(`/jobradar/jobs/${jobId}`);
   };
 

@@ -7,6 +7,7 @@ import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { canonicalizeText } from "./lib/taxonomy";
 import { buildGeoPreferences, computeJobMatchScore, type MatchScoreResult } from "./lib/jobMatching";
 import { supabase } from "./lib/supabaseClient";
+import { trackTutorialBegin, trackTutorialComplete } from "./lib/analytics";
 import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import {
   ALL_COUNTRIES_CODE,
@@ -537,6 +538,15 @@ export default function JobRadarOnboardingPage() {
     }
     return onboarding.nextStep === "done" ? "alerts" : (onboarding.nextStep as Exclude<JobRadarOnboardingStep, "done">);
   }, [stepParam, onboarding.nextStep]);
+
+  useEffect(() => {
+    // Ne compte comme un vrai "début" que si l'utilisateur arrive sur la
+    // toute première étape — pas à chaque fois qu'il revient sur un
+    // onboarding déjà en cours, pour ne pas gonfler artificiellement le
+    // nombre de tutorial_begin.
+    if (currentStep === "profile") trackTutorialBegin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [desiredRole, setDesiredRole] = useState("");
   const [countryCodes, setCountryCodes] = useState<string[]>([]);
@@ -1298,7 +1308,7 @@ export default function JobRadarOnboardingPage() {
           {onboarding.alertsCount > 0 ? "Gérer mes alertes" : "Activer mes alertes"}
         </button>
         {onboarding.alertsCount > 0 && (
-          <button className="btn btnGhost" type="button" onClick={() => { void onboarding.markOnboardingComplete().then(() => navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole))); }}>
+          <button className="btn btnGhost" type="button" onClick={() => { trackTutorialComplete(); void onboarding.markOnboardingComplete().then(() => navigate(buildOnboardingFeedHref(desiredRole || onboarding.onboarding.profile?.desiredRole))); }}>
             Ouvrir mes offres
           </button>
         )}

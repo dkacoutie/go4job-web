@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
+import { trackLogin, trackSignUp } from "./lib/analytics";
 import go4jobLogo from "./assets/go4job-logo.png";
 import "./AuthPage.css";
 
@@ -69,6 +70,13 @@ export default function AuthPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
+  // Empêche l'effet ci-dessous (déclenché par toute apparition de session) de
+  // retracker un sign_up/login déjà suivi explicitement dans handleSubmit()
+  // pour le parcours email. Reste à false pour le parcours Google OAuth, qui
+  // quitte la page puis revient sur un nouveau montage du composant — cet
+  // effet est alors le seul point où on peut détecter la connexion.
+  const hasTrackedAuthRef = useRef(false);
+
   const redirectTo = useMemo(() => {
     const st = (location.state ?? {}) as AuthLocationState;
     if (isSafeInternalPath(st.from)) return st.from;
@@ -81,6 +89,39 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (!loading && session) {
+      if (!hasTrackedAuthRef.current) {
+        hasTrackedAuthRef.current = true;
+
+        // Ne tracker que si cette apparition de session vient réellement d'un
+        // retour Google OAuth (marqueur ?code= ou #access_token= dans l'URL,
+        // ajoutés par le fournisseur/Supabase au retour). Sans ce garde, un
+        // utilisateur déjà connecté qui atterrit simplement sur /auth (lien
+        // direct, retour arrière...) déclencherait à tort un événement
+        // login/sign_up alors qu'aucune authentification n'a eu lieu ici.
+        const cameFromOAuthRedirect =
+          window.location.hash.includes("access_token") || new URLSearchParams(window.location.search).has("code");
+
+        if (cameFromOAuthRedirect) {
+          // Pas de point d'appel explicite comme pour le formulaire email
+          // (signInWithOAuth ne fait que rediriger vers Google) : on
+          // distingue sign_up de login via l'écart entre la date de création
+          // du compte et celle de cette connexion — un écart de quelques
+          // secondes signale un compte tout juste créé.
+          const createdAt = session.user.created_at ? new Date(session.user.created_at).getTime() : null;
+          const lastSignInAt = session.user.last_sign_in_at
+            ? new Date(session.user.last_sign_in_at).getTime()
+            : null;
+          const isBrandNew =
+            createdAt !== null && lastSignInAt !== null && Math.abs(lastSignInAt - createdAt) < 15_000;
+
+          if (isBrandNew) {
+            trackSignUp({ method: "google" });
+          } else {
+            trackLogin({ method: "google" });
+          }
+        }
+      }
+
       clearStoredRedirect();
       navigate(redirectTo, { replace: true });
     }
@@ -118,6 +159,12 @@ export default function AuthPage() {
           return;
         }
 
+        // Compte réellement créé (identities non vide) : on tracke ici, et on
+        // marque le ref pour que l'effet de redirection ci-dessus ne retracke
+        // pas une seconde fois quand la session apparaît juste après.
+        hasTrackedAuthRef.current = true;
+        trackSignUp({ method: "email" });
+
         if (!data.session) {
           setInfoMsg("Compte créé ✅ Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.");
           return;
@@ -131,6 +178,9 @@ export default function AuthPage() {
         setErrorMsg(AUTH_CREDENTIALS_ERROR);
         return;
       }
+
+      hasTrackedAuthRef.current = true;
+      trackLogin({ method: "email" });
     } finally {
       setBusy(false);
     }

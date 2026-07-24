@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
+import { trackApplicationStarted } from "./lib/analytics";
 import "./JobDetailsPage.css";
 
 type ApplicationStatus =
@@ -147,9 +148,10 @@ function firstDate(job: JobRow) {
 
 /**
  * Sanitizer pour le HTML de description d'offre, issu de sources scrapées
- * externes non fiables. Remplace un sanitizer maison (retrait de
- * script/style/iframe/on*/javascript:/data: uniquement, qui ne couvrait pas
- * des vecteurs XSS connus comme style avec expression(), srcdoc, SVG/MathML,
+ * externes non fiables. Remplace un sanitizer maison (retrait de balises
+ * script/style/iframe, attributs "on..." et schémas javascript:/data:
+ * uniquement, qui ne couvrait pas des vecteurs XSS connus comme style avec
+ * expression(), srcdoc, SVG/MathML,
  * <base>, xlink:href ou les entités encodées) par DOMPurify, une librairie
  * dédiée et maintenue. Liste blanche restreinte au balisage réellement utile
  * pour une description de poste (texte, listes, tableaux, liens).
@@ -429,6 +431,7 @@ export default function JobDetailsPage() {
 
       if (error) throw error;
 
+      trackApplicationStarted({ jobId: id });
       window.open(applyLink, "_blank", "noopener,noreferrer");
       await load();
     } catch {
