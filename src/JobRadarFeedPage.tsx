@@ -681,6 +681,23 @@ function buildJobSearchTokens(rawQuery: string) {
   return uniq(normalized.split(" ").filter((token) => token.length >= 2 && !JOB_SEARCH_STOPWORDS.has(token))).slice(0, 6);
 }
 
+// Bug trouvé le 24/07/2026 (confirmé via les logs Supabase : la recherche
+// par terme renvoyait systématiquement une 500 sur /rest/v1/jobs) : deux
+// appels .or() chaînés sur le même query builder PostgREST produisent deux
+// paramètres "or=" distincts dans l'URL, ce que PostgREST ne sait pas
+// combiner (il attend un seul groupe logique par requête) — d'où l'échec
+// serveur systématique dès qu'un terme de recherche était saisi. Corrigé en
+// exprimant "(champ ilike terme) ET (quality_status ok OU null)" comme un
+// seul groupe or=(...) imbriqué (distribution OU-de-ET), au lieu de deux
+// or() séparés.
+function buildJobSearchTextAndQualityFilter(term: string) {
+  const fields = ["title", "company_name", "location", "country"];
+  const qualityBranches = ["quality_status.eq.ok", "quality_status.is.null"];
+  return fields
+    .flatMap((field) => qualityBranches.map((quality) => `and(${field}.ilike.%${term}%,${quality})`))
+    .join(",");
+}
+
 function buildServerSearchTerms(rawQuery: string) {
   const safeTerm = sanitizeJobSearchTerm(rawQuery);
   const tokens = buildJobSearchTokens(rawQuery);
@@ -1095,15 +1112,7 @@ export default function JobRadarFeedPage() {
             .eq("is_active", true)
             .eq("is_expired", false)
             .in("job_status", ["active", "stale"])
-            .or("quality_status.eq.ok,quality_status.is.null")
-            .or(
-              [
-                `title.ilike.%${term}%`,
-                `company_name.ilike.%${term}%`,
-                `location.ilike.%${term}%`,
-                `country.ilike.%${term}%`,
-              ].join(",")
-            )
+            .or(buildJobSearchTextAndQualityFilter(term))
             .order("published_at", { ascending: false, nullsFirst: false })
             .order("scraped_at", { ascending: false, nullsFirst: false })
             .order("created_at", { ascending: false, nullsFirst: false })
