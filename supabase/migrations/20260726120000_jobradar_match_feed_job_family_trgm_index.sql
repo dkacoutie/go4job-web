@@ -1,0 +1,52 @@
+-- Corrige la cause racine reelle des echecs systematiques de
+-- jobradar_match_feed (500, "canceling statement due to statement timeout",
+-- confirme en production le 26/07/2026 via l'instrumentation stage_timings_ms
+-- ajoutee a l'edge function : le blocage se produit dans generateCandidates,
+-- avant meme d'atteindre scoreJob).
+--
+-- Cause racine identifiee par EXPLAIN ANALYZE de la requete exacte executee
+-- par fetchJobsTitleOrFamilyTerms (supabase/functions/_shared/jobradar_match_core.ts) :
+--
+--   select ... from jobs
+--   where is_active = true and job_status in ('active','stale')
+--     and (title ilike '%<terme>%' or job_family ilike '%<terme>%')
+--   order by published_at desc nulls last, scraped_at desc nulls last, created_at desc nulls last
+--   limit 50;
+--
+-- Un index trigram existe sur jobs.title (jobs_title_trgm_idx) mais aucun
+-- index trigram n'existait sur jobs.job_family. Le planificateur ne peut pas
+-- combiner un index trigram (pour title) avec un index sans trigram (pour
+-- job_family) dans un OR : il retombe sur l'index partiel
+-- jobs_match_feed_sort_idx (is_active, job_status), qui ne filtre pas du
+-- tout sur le texte, puis balaie ~372 000 lignes actives ligne par ligne
+-- pour appliquer le filtre ILIKE. Mesure avant correctif : 14 645 ms
+-- d'execution reelle pour le terme "accountant" (Bitmap Heap Scan,
+-- Rows Removed by Filter: 267021).
+--
+-- Ce test a ete reproduit avec les termes reels generes pour un profil de
+-- test (desired_role "Comptable" -> terme normalise "accountant" via la
+-- taxonomie), au-dela du statement_timeout effectif de la connexion
+-- PostgREST (heritee du role authenticator, 8s), d'ou l'echec systematique
+-- observe par les utilisateurs reels ("Erreur : Une erreur temporaire est
+-- survenue" / feed jamais affiche), quel que soit le compte (gratuit ou
+-- payant) des qu'un role/poste cible etait renseigne.
+--
+-- Correctif : ajouter un index trigram sur job_family, symetrique a celui
+-- deja present sur title. Verifie apres application (meme requete,
+-- EXPLAIN ANALYZE) : le planificateur choisit desormais un BitmapOr entre
+-- jobs_title_trgm_idx et jobs_job_family_trgm_idx, execution passee de
+-- 14 645 ms a 264 ms. Reteste ensuite en conditions reelles via l'edge
+-- function jobradar_match_feed (compte de test, terme "Comptable") :
+-- passage de 500/timeout (~10.8s) a 200 OK.
+--
+-- CREATE INDEX CONCURRENTLY ne peut pas s'executer dans une transaction
+-- explicite (begin/commit) : cette migration deroge donc volontairement a
+-- la regle habituelle d'encapsulation transactionnelle du projet, pour ne
+-- jamais bloquer les ecritures concurrentes sur la table jobs (1.2M lignes,
+-- alimentee en continu par les crons d'ingestion).
+--
+-- Non destructif. Aucune donnee modifiee, aucun index existant supprime.
+-- Reversible via : drop index concurrently if exists public.jobs_job_family_trgm_idx;
+
+create index concurrently if not exists jobs_job_family_trgm_idx
+  on public.jobs using gin (job_family gin_trgm_ops);

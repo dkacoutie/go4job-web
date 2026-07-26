@@ -129,6 +129,15 @@ serve(async (req) => {
     return jsonResponse(405, { ok: false, error: "Method not allowed" }, corsHeaders);
   }
 
+  // Instrumentation temporaire (diagnostic uniquement) : declaree en dehors
+  // du try pour rester lisible meme si une etape leve une exception.
+  // A retirer une fois la cause des echecs par timeout confirmee et corrigee.
+  const stageTimingsMs: Record<string, number> = {};
+  const stageStart = () => performance.now();
+  const stageEnd = (name: string, t0: number) => {
+    stageTimingsMs[name] = Math.round(performance.now() - t0);
+  };
+
   try {
     const supabaseUrl = clean(Deno.env.get("SUPABASE_URL"));
     const anonKey = clean(Deno.env.get("SUPABASE_ANON_KEY"));
@@ -164,7 +173,11 @@ serve(async (req) => {
       auth: { persistSession: false },
     });
 
+    let t = stageStart();
     const context = await loadUserMatchingContext(admin, caller.userId);
+    stageEnd("loadUserMatchingContext", t);
+
+    t = stageStart();
     const builtProfile = await buildMatchingProfile({
       userId: caller.userId,
       profile: context.profile,
@@ -172,20 +185,31 @@ serve(async (req) => {
       cv: context.cv,
       previousProfile: context.previous_matching_profile,
     });
+    stageEnd("buildMatchingProfile", t);
 
+    t = stageStart();
     const persistedProfile = await persistMatchingProfile(admin, builtProfile);
+    stageEnd("persistMatchingProfile", t);
+
     const profileStrategy = classifyMatchingProfile(persistedProfile);
+
+    t = stageStart();
     const candidateResult = await generateCandidates({
       supabase: admin,
       profile: persistedProfile,
     });
+    stageEnd("generateCandidates", t);
 
+    t = stageStart();
     const scoredJobs = candidateResult.candidates.map((candidate) =>
       scoreJob({
         profile: persistedProfile,
         candidate,
       })
     );
+    stageEnd("scoreJob_all", t);
+
+    console.log("[jobradar_match_feed] stage_timings_ms", JSON.stringify(stageTimingsMs));
 
     const appliedJobIds = buildAppliedJobIdSet(context.applications);
     const dismissedJobIds = buildDismissedJobIdSet(context.feedback);
@@ -224,18 +248,30 @@ serve(async (req) => {
               top_match_count: buckets.top_match.length,
               for_you_count: buckets.for_you.length,
               explore_count: buckets.explore.length,
+              stage_timings_ms: stageTimingsMs,
             }
           : undefined,
       },
       corsHeaders,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : (() => {
+            try {
+              return JSON.stringify(error);
+            } catch {
+              return String(error);
+            }
+          })();
+    console.error("[jobradar_match_feed] failed", message, "stage_timings_ms", JSON.stringify(stageTimingsMs), error);
     return jsonResponse(
       500,
       {
         ok: false,
         error: message,
+        stage_timings_ms: stageTimingsMs,
       },
       corsHeaders,
     );
