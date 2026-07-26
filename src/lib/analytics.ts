@@ -41,6 +41,7 @@ type Gtag = {
   (command: "js", date: Date): void;
   (command: "config", targetId: string, config?: Record<string, unknown>): void;
   (command: "event", eventName: string, eventParams?: Record<string, unknown>): void;
+  (command: "consent", action: "default" | "update", consentParams: Record<string, "granted" | "denied">): void;
 };
 
 type PendingGaEvent = {
@@ -118,6 +119,30 @@ export function initGoogleAnalytics(measurementId = GA_MEASUREMENT_ID) {
       script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
       document.head.appendChild(script);
     }
+
+    // Google Consent Mode (obligatoire pour gtag.js, distinct de notre propre
+    // bandeau cookies ci-dessus) : sans un premier signal explicite via
+    // gtag('consent', ...), gtag.js reste en état "non configuré" et ne
+    // transmet jamais aucun hit, silencieusement (confirmé le 26/07/2026 via
+    // Google Tag Assistant : balise détectée, dataLayer alimenté, mais "Aucun
+    // hit n'a été envoyé" / consentement "non configuré", alors même que
+    // notre bandeau à nous avait déjà été accepté par l'utilisateur).
+    // initGoogleAnalytics() n'est de toute façon appelée qu'après acceptation
+    // du bandeau (voir analyticsEnabled() plus haut), donc le passage direct
+    // en "granted" ci-dessous est cohérent : on ne fait qu'informer gtag.js
+    // d'une décision déjà prise, jamais l'inverse.
+    win.gtag?.("consent", "default", {
+      ad_storage: "denied",
+      analytics_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+    win.gtag?.("consent", "update", {
+      ad_storage: "granted",
+      analytics_storage: "granted",
+      ad_user_data: "granted",
+      ad_personalization: "granted",
+    });
 
     win.gtag?.("js", new Date());
     // send_page_view: false — le page_view initial et tous les suivants sont
