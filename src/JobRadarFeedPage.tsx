@@ -890,6 +890,7 @@ export default function JobRadarFeedPage() {
 
   const [appStatusByJobId, setAppStatusByJobId] = useState<Map<string, ApplicationStatus>>(new Map());
   const [addingJobId, setAddingJobId] = useState<string | null>(null);
+  const savingJobIdsRef = useRef<Set<string>>(new Set());
   const [savedHint, setSavedHint] = useState(false);
   const [showTip, setShowTip] = useState(true);
 
@@ -1622,39 +1623,52 @@ export default function JobRadarFeedPage() {
       navigate("/auth", { replace: true });
       return;
     }
-    if (!allowPremium) {
-      pushToast({ kind: "error", title: "Accès requis", message: STANDARD_GATE_MESSAGE });
-      return;
-    }
-    if (appStatusByJobId.has(jobId)) return;
-
-    setAddingJobId(jobId);
-    setErrorMsg(null);
+    // Verrou synchrone (ref, pas state) contre le double-clic : un state
+    // (addingJobId) ne se répercute qu'au prochain rendu, donc deux clics
+    // rapprochés peuvent tous les deux passer avant que le bouton ne soit
+    // désactivé, et déclencher chacun leur propre toast (ex: "Accès requis"
+    // en double pour un compte gratuit). Le ref, lui, est à jour
+    // immédiatement, dès le premier appel.
+    if (savingJobIdsRef.current.has(jobId)) return;
+    savingJobIdsRef.current.add(jobId);
 
     try {
-      const { data, error } = await supabase.rpc("save_job", { p_job_id: jobId });
-      if (error) throw error;
+      if (!allowPremium) {
+        pushToast({ kind: "error", title: "Accès requis", message: STANDARD_GATE_MESSAGE });
+        return;
+      }
+      if (appStatusByJobId.has(jobId)) return;
 
-      const returnedStatus =
-        (data?.status as ApplicationStatus | undefined) ?? ("saved" as ApplicationStatus);
+      setAddingJobId(jobId);
+      setErrorMsg(null);
 
-      setAppStatusByJobId((prev) => {
-        const next = new Map(prev);
-        next.set(jobId, returnedStatus);
-        return next;
-      });
-      pushToast({
-        kind: "success",
-        title: "Offre sauvegardée",
-        message: "Retrouve-la dans ta liste “À postuler”.",
-      });
-      setSavedHint(true);
-    } catch (e: unknown) {
-      const msg = GENERIC_SERVER_ERROR;
-      setErrorMsg(msg);
-      pushToast({ kind: "error", title: "Impossible de sauvegarder l’offre", message: msg });
+      try {
+        const { data, error } = await supabase.rpc("save_job", { p_job_id: jobId });
+        if (error) throw error;
+
+        const returnedStatus =
+          (data?.status as ApplicationStatus | undefined) ?? ("saved" as ApplicationStatus);
+
+        setAppStatusByJobId((prev) => {
+          const next = new Map(prev);
+          next.set(jobId, returnedStatus);
+          return next;
+        });
+        pushToast({
+          kind: "success",
+          title: "Offre sauvegardée",
+          message: "Retrouve-la dans ta liste “À postuler”.",
+        });
+        setSavedHint(true);
+      } catch (e: unknown) {
+        const msg = GENERIC_SERVER_ERROR;
+        setErrorMsg(msg);
+        pushToast({ kind: "error", title: "Impossible de sauvegarder l’offre", message: msg });
+      } finally {
+        setAddingJobId(null);
+      }
     } finally {
-      setAddingJobId(null);
+      savingJobIdsRef.current.delete(jobId);
     }
   }
 
