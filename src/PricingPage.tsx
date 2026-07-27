@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { clearPartnerReferral, readPartnerReferral } from "./lib/partnerReferral";
 import { usePaymentMarket } from "./lib/paymentMarket";
 import { supabase } from "./lib/supabaseClient";
-import { trackMetaEvent } from "./lib/metaPixel";
+import { trackMetaEvent, trackMetaPurchase } from "./lib/metaPixel";
 import {
   trackBeginCheckout,
   trackPassSelected,
@@ -558,14 +558,30 @@ export default function PricingPage() {
         if (paidRow) {
           const planRow = paidRow.plan as { code?: string; name?: string } | null;
           const isXof = paidRow.currency === "XOF" || paidRow.currency === "XAF";
+          const purchaseValue = isXof ? paidRow.amount_minor : paidRow.amount_minor / 100;
           trackPurchase({
             transactionId: reference,
             planId: planRow?.code ?? "unknown",
             planName: planRow?.name ?? "unknown",
-            value: isXof ? paidRow.amount_minor : paidRow.amount_minor / 100,
+            value: purchaseValue,
             currency: paidRow.currency,
             testMode: data?.status === "paid_test",
           });
+          // Ajout du 27/07/2026 (préparation Meta Ads) : jusqu'ici seul GA4
+          // recevait la confirmation d'achat réelle, jamais Meta — la
+          // campagne ne pouvait donc pas optimiser sur un vrai paiement
+          // confirmé, seulement sur "Subscribe" (simple clic sur
+          // "Souscrire", envoyé plus haut, avant paiement). Même point
+          // d'appel, même garde-fou (jamais en mode test), dédup séparée.
+          if (data?.status !== "paid_test") {
+            trackMetaPurchase({
+              transactionId: reference,
+              planId: planRow?.code ?? "unknown",
+              planName: planRow?.name ?? "unknown",
+              value: purchaseValue,
+              currency: paidRow.currency,
+            });
+          }
         }
 
         setIsVerifying(false);

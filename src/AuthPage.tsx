@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { trackLogin, trackSignUp } from "./lib/analytics";
+import { trackMetaEvent } from "./lib/metaPixel";
 import go4jobLogo from "./assets/go4job-logo.png";
 import "./AuthPage.css";
 
@@ -116,6 +117,7 @@ export default function AuthPage() {
 
           if (isBrandNew) {
             trackSignUp({ method: "google" });
+            trackMetaEvent("CompleteRegistration", { content_name: "google" });
           } else {
             trackLogin({ method: "google" });
           }
@@ -164,6 +166,7 @@ export default function AuthPage() {
         // pas une seconde fois quand la session apparaît juste après.
         hasTrackedAuthRef.current = true;
         trackSignUp({ method: "email" });
+        trackMetaEvent("CompleteRegistration", { content_name: "email" });
 
         if (!data.session) {
           setInfoMsg("Compte créé ✅ Vérifie ta boîte mail pour confirmer ton adresse, puis connecte-toi.");

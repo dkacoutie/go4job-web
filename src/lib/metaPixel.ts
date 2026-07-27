@@ -162,3 +162,62 @@ export function trackMetaEvent(eventName: string, eventParams?: MetaPixelParams)
 export function trackMetaCustomEvent(eventName: string, eventParams?: MetaPixelParams) {
   queueMetaEvent("trackCustom", eventName, eventParams);
 }
+
+// ---------------------------------------------------------------------
+// Purchase (Meta) — même principe de déduplication persistante que
+// trackPurchase côté GA4 (analytics.ts) : le bloc appelant peut se
+// ré-exécuter après un rafraîchissement de page pour la même référence de
+// paiement (paystack_verify peut être rappelé), donc sans ce garde-fou
+// l'événement partirait en double vers Meta à chaque F5 post-paiement.
+// ---------------------------------------------------------------------
+
+const META_PURCHASE_DEDUPE_STORAGE_KEY = "jr_meta_tracked_purchases";
+const META_PURCHASE_DEDUPE_MAX = 50;
+
+function readMetaIdSet(): Set<string> {
+  try {
+    const raw = localStorage.getItem(META_PURCHASE_DEDUPE_STORAGE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeMetaIdSet(ids: Set<string>) {
+  try {
+    const arr = Array.from(ids).slice(-META_PURCHASE_DEDUPE_MAX);
+    localStorage.setItem(META_PURCHASE_DEDUPE_STORAGE_KEY, JSON.stringify(arr));
+  } catch {
+    // stockage indisponible (navigation privée, quota...) : pas bloquant
+  }
+}
+
+/**
+ * À appeler uniquement après confirmation serveur réelle du paiement (même
+ * point d'appel que trackPurchase côté GA4), jamais depuis la simple
+ * présence d'un paramètre d'URL. Déduplique par transactionId (référence
+ * Paystack), indépendamment de la déduplication GA4 (stockage séparé).
+ */
+export function trackMetaPurchase(params: {
+  transactionId: string;
+  planId: string;
+  planName: string;
+  value: number;
+  currency: string;
+}) {
+  if (!params.transactionId) return;
+
+  const tracked = readMetaIdSet();
+  if (tracked.has(params.transactionId)) return;
+  tracked.add(params.transactionId);
+  writeMetaIdSet(tracked);
+
+  queueMetaEvent("track", "Purchase", {
+    value: params.value,
+    currency: params.currency,
+    content_name: params.planName,
+    content_ids: [params.planId],
+  });
+}
