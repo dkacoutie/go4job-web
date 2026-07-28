@@ -11,6 +11,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Reliquats de build : le dossier dist verrouille est renomme de cote au lieu
+# d'etre supprime (fichier tenu par le serveur de preview, l'antivirus ou
+# l'indexeur Windows). Purement regenerable, ne doit jamais etre suivi.
+dist.trash.*
 
 # Local env files (IMPORTANT)
 .env
