@@ -39,6 +39,11 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 30;
 const DEFAULT_MAX_AGE_HOURS = 48;
 const MAX_AGE_HOURS_CEILING = 24 * 14; // 14 jours, garde-fou dur même si mal configuré
+// Rattrapage ponctuel : des paiements restés non finaux bien au-delà de la
+// fenêtre habituelle (23 dossiers de mars 2026 découverts le 28/07) ne sont
+// structurellement pas atteignables par le cron. Ce plafond élargi n'est
+// utilisable qu'avec allow_backfill explicite, jamais par défaut.
+const MAX_AGE_HOURS_BACKFILL_CEILING = 24 * 200;
 const DEFAULT_MAX_ATTEMPTS = 10;
 const NON_FINAL_STATUSES = ["pending", "ongoing"];
 
@@ -47,6 +52,15 @@ type Body = {
   limit?: number | null;
   max_age_hours?: number | null;
   max_attempts?: number | null;
+  /**
+   * Interroge Paystack pour chaque candidat et rapporte le statut distant
+   * SANS rien écrire. Sert à décider en connaissance de cause avant une
+   * réconciliation réelle : on veut savoir combien de personnes ont payé
+   * sans recevoir leur pass avant de toucher à la facturation.
+   */
+  probe?: boolean | null;
+  /** Autorise la fenêtre élargie. Sans ce drapeau, le plafond reste à 14 jours. */
+  allow_backfill?: boolean | null;
 };
 
 type PaymentRow = {
@@ -138,9 +152,16 @@ serve(async (req) => {
     body = {};
   }
 
-  const dryRun = body.dry_run !== false;
+  const probe = body.probe === true;
+  // Un probe n'écrit jamais, quel que soit dry_run.
+  const dryRun = probe ? true : body.dry_run !== false;
   const limit = clamp(body.limit, DEFAULT_LIMIT, MAX_LIMIT);
-  const maxAgeHours = clamp(body.max_age_hours, DEFAULT_MAX_AGE_HOURS, MAX_AGE_HOURS_CEILING);
+  const allowBackfill = body.allow_backfill === true;
+  const maxAgeHours = clamp(
+    body.max_age_hours,
+    DEFAULT_MAX_AGE_HOURS,
+    allowBackfill ? MAX_AGE_HOURS_BACKFILL_CEILING : MAX_AGE_HOURS_CEILING,
+  );
   const maxAttempts = clamp(body.max_attempts, DEFAULT_MAX_ATTEMPTS, 50);
 
   const paystackSecret = cleanSecret(Deno.env.get("PAYSTACK_SECRET_KEY"));
@@ -187,6 +208,73 @@ serve(async (req) => {
     })
     .slice(0, limit);
   const cappedCount = allCandidates.length - candidates.length;
+
+  if (probe) {
+    // Lecture seule stricte : on interroge Paystack sur chaque référence et
+    // on rapporte le statut distant. Aucun appel à billing_apply_payment_update
+    // ni à activate_pass_from_payment.
+    const findings: Array<Record<string, unknown>> = [];
+    let remoteSuccess = 0;
+    let remoteFailed = 0;
+    let remoteStillPending = 0;
+    let remoteUnreadable = 0;
+
+    for (const payment of candidates) {
+      let paystackStatus = "unreadable";
+      let paidAt: string | null = null;
+      let remoteAmount: number | null = null;
+
+      try {
+        const resp = await fetch(
+          `https://api.paystack.co/transaction/verify/${encodeURIComponent(payment.provider_payment_id)}`,
+          { headers: { Authorization: `Bearer ${paystackSecret}` } },
+        );
+        const verifyData = await resp.json().catch(() => ({} as any));
+        if (resp.ok && verifyData?.status) {
+          const tx = verifyData?.data ?? {};
+          paystackStatus = normalizeStatus(tx?.status);
+          paidAt = tx?.paid_at ?? null;
+          remoteAmount = typeof tx?.amount === "number" ? tx.amount : null;
+        }
+      } catch {
+        paystackStatus = "unreadable";
+      }
+
+      if (paystackStatus === "success") remoteSuccess += 1;
+      else if (paystackStatus === "unreadable") remoteUnreadable += 1;
+      else if (["pending", "ongoing", "queued"].includes(paystackStatus)) remoteStillPending += 1;
+      else remoteFailed += 1;
+
+      findings.push({
+        payment_id: payment.id,
+        created_at: payment.created_at,
+        local_status: payment.status,
+        paystack_status: paystackStatus,
+        paid_at: paidAt,
+        amount_minor: payment.amount_minor,
+        currency: payment.currency,
+        remote_amount: remoteAmount,
+      });
+    }
+
+    return json(200, {
+      ok: true,
+      probe: true,
+      dry_run: true,
+      wrote_nothing: true,
+      candidates_found: allCandidates.length,
+      checked_count: candidates.length,
+      capped_no_resolution: cappedCount,
+      remote_success: remoteSuccess,
+      remote_failed: remoteFailed,
+      remote_still_pending: remoteStillPending,
+      remote_unreadable: remoteUnreadable,
+      max_age_hours: maxAgeHours,
+      allow_backfill: allowBackfill,
+      limit,
+      findings,
+    });
+  }
 
   if (dryRun) {
     return json(200, {
