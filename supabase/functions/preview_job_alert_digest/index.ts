@@ -7,6 +7,7 @@ import {
   baseDiagnostics,
   buildBlocks,
   buildCriteria,
+  buildRelevanceOrFilter,
   buildPreheader,
   buildSubject,
   cleanString,
@@ -306,8 +307,46 @@ serve(async (req) => {
     const dismissedIds = new Set(
       (feedbackRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
     );
+    // Vivier complémentaire ciblé sur les critères, aligné sur
+    // send_job_alert_digest_v2 pour que l'aperçu reflète l'envoi réel.
+    const relevanceFilter = buildRelevanceOrFilter(criteria);
+    const candidateJobs: JobRow[] = [...(jobsRes.data ?? [])];
+    if (relevanceFilter) {
+      const targetedRes = await supabase
+        .from("jobs")
+        .select(`
+          id, title, company_name, location, country, remote_type, contract_type, seniority,
+          published_at, posted_at, scraped_at, created_at, updated_at, last_seen_at,
+          description_text, official_desc, tags, job_skills, required_skills, optional_skills,
+          job_family, source_url, apply_url, external_id, is_active, is_expired, job_status
+        `)
+        .eq("is_active", true)
+        .or("is_expired.eq.false,is_expired.is.null")
+        .in("job_status", ["active", "stale"])
+        .or(relevanceFilter)
+        .order("published_at", { ascending: false, nullsFirst: false })
+        .limit(300)
+        .returns<JobRow[]>();
+
+      if (targetedRes.error) {
+        diagnostics.notes.push(`targeted_jobs_lookup_failed: ${targetedRes.error.message}`);
+      } else {
+        const seen = new Set(candidateJobs.map((job) => job.id));
+        let added = 0;
+        for (const job of targetedRes.data ?? []) {
+          if (seen.has(job.id)) continue;
+          seen.add(job.id);
+          candidateJobs.push(job);
+          added += 1;
+        }
+        diagnostics.notes.push(
+          `targeted_pool: +${added} offres pertinentes ajoutees au vivier (${candidateJobs.length} au total)`,
+        );
+      }
+    }
+
     const selectedJobs = selectRelevantJobs({
-      jobs: jobsRes.data ?? [],
+      jobs: candidateJobs,
       criteria,
       savedOrAppliedIds,
       dismissedIds,

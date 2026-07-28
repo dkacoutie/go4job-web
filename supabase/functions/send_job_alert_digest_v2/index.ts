@@ -24,6 +24,15 @@ import {
   type ProfileRow,
   type SelectedJob,
 } from "../preview_job_alert_digest/_lib.ts";
+import { buildRelevanceOrFilter } from "../preview_job_alert_digest/_lib.ts";
+
+/** Colonnes du vivier d'offres. Partagées par la requête récente et la requête ciblée. */
+const JOB_SELECT_COLUMNS = `
+  id, title, company_name, location, country, remote_type, contract_type, seniority,
+  published_at, posted_at, scraped_at, created_at, updated_at, last_seen_at,
+  description_text, official_desc, tags, job_skills, required_skills, optional_skills,
+  job_family, source_url, apply_url, external_id, is_active, is_expired, job_status
+`;
 
 type SendJobAlertDigestV2Body = PreviewJobAlertBody & {
   allow_send?: boolean | null;
@@ -438,12 +447,7 @@ serve(async (req) => {
       findDuplicateLog(supabase, email, digestDate),
       supabase
         .from("jobs")
-        .select(`
-          id, title, company_name, location, country, remote_type, contract_type, seniority,
-          published_at, posted_at, scraped_at, created_at, updated_at, last_seen_at,
-          description_text, official_desc, tags, job_skills, required_skills, optional_skills,
-          job_family, source_url, apply_url, external_id, is_active, is_expired, job_status
-        `)
+        .select(JOB_SELECT_COLUMNS)
         .eq("is_active", true)
         .or("is_expired.eq.false,is_expired.is.null")
         .in("job_status", ["active", "stale"])
@@ -489,8 +493,42 @@ serve(async (req) => {
       const dismissedIds = new Set(
         (feedbackRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
       );
+      // Vivier complémentaire : les offres du catalogue qui correspondent
+      // vraiment aux critères, cherchées en base au lieu d'être espérées dans
+      // les 240 dernières publiées. Purement additif, aucun candidat retiré.
+      const relevanceFilter = buildRelevanceOrFilter(criteria);
+      const candidateJobs: JobRow[] = [...(jobsRes.data ?? [])];
+      if (relevanceFilter) {
+        const targetedRes = await supabase
+          .from("jobs")
+          .select(JOB_SELECT_COLUMNS)
+          .eq("is_active", true)
+          .or("is_expired.eq.false,is_expired.is.null")
+          .in("job_status", ["active", "stale"])
+          .or(relevanceFilter)
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .limit(300)
+          .returns<JobRow[]>();
+
+        if (targetedRes.error) {
+          diagnostics.notes.push(`targeted_jobs_lookup_failed: ${targetedRes.error.message}`);
+        } else {
+          const seen = new Set(candidateJobs.map((job) => job.id));
+          let added = 0;
+          for (const job of targetedRes.data ?? []) {
+            if (seen.has(job.id)) continue;
+            seen.add(job.id);
+            candidateJobs.push(job);
+            added += 1;
+          }
+          diagnostics.notes.push(
+            `targeted_pool: +${added} offres pertinentes ajoutees au vivier (${candidateJobs.length} au total)`,
+          );
+        }
+      }
+
       selectedJobs = selectRelevantJobs({
-        jobs: jobsRes.data ?? [],
+        jobs: candidateJobs,
         criteria,
         savedOrAppliedIds,
         dismissedIds,

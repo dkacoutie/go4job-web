@@ -367,6 +367,63 @@ function readOnboarding(profile: ProfileRow | null) {
   };
 }
 
+/**
+ * Construit un filtre PostgREST `or` à partir des termes discriminants des
+ * critères, pour aller chercher des offres pertinentes directement en base.
+ *
+ * Pourquoi : le vivier de candidats était constitué des ~240 offres les plus
+ * récentes du catalogue entier, puis filtré en mémoire. À 19 000 offres
+ * ingérées par jour, cela représente une vingtaine de minutes de collecte,
+ * donc un échantillon quasi aléatoire au regard du métier recherché.
+ *
+ * Constaté le 28/07/2026 sur une alerte « Chef de projet finance » : sur les
+ * 240 offres du vivier, 3 seulement franchissaient le seuil de qualité, alors
+ * que le minimum requis pour envoyer est de 5. Le digest était donc retenu
+ * faute de quantité, alors que le catalogue contenait 767 postes de chef de
+ * projet publiés dans les sept derniers jours.
+ *
+ * Ce filtre ne remplace pas le vivier récent, il le complète : on ne retire
+ * aucun candidat, on en ajoute des pertinents. Le barème, les seuils et la
+ * déduplication restent inchangés en aval.
+ *
+ * Retourne null si aucun terme n'est assez discriminant pour valoir une
+ * requête (auquel cas on s'en tient au comportement historique).
+ */
+export function buildRelevanceOrFilter(criteria: Criteria): string | null {
+  const MAX_TERMS = 12;
+
+  // PostgREST interprète la virgule, les parenthèses et les guillemets dans la
+  // syntaxe `or`. On les retire plutôt que de tenter de les échapper.
+  const sanitize = (value: string) =>
+    normalizeText(value)
+      .replace(/[,().*%"']/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const candidates = [criteria.desiredRole ?? "", ...criteria.keywords]
+    .map(sanitize)
+    .filter((term) => {
+      if (!term) return false;
+      // Un terme isolé trop court ou trop générique ramènerait la moitié du
+      // catalogue : « job », « chef », « projet » ne discriminent rien seuls.
+      if (WEAK_MATCH_TERMS.has(term)) return false;
+      const isPhrase = term.includes(" ");
+      return isPhrase || term.length >= 5;
+    });
+
+  // Les expressions de plusieurs mots d'abord : ce sont les plus sélectives.
+  const ordered = uniq(candidates).sort((a, b) => {
+    const aPhrase = a.includes(" ") ? 0 : 1;
+    const bPhrase = b.includes(" ") ? 0 : 1;
+    if (aPhrase !== bPhrase) return aPhrase - bPhrase;
+    return b.length - a.length;
+  }).slice(0, MAX_TERMS);
+
+  if (ordered.length === 0) return null;
+
+  return ordered.map((term) => `title.ilike.*${term}*`).join(",");
+}
+
 export function buildCriteria(profile: ProfileRow | null, alerts: AlertRow[]): Criteria {
   const onboarding = readOnboarding(profile);
   const activeAlerts = alerts.filter((alert) => alert.is_active !== false);
