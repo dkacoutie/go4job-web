@@ -3914,11 +3914,23 @@ Deno.serve(async (req) => {
         1,
         Math.min(500, toPositiveInt(ingestConfig.upsert_batch_size) ?? 250),
       );
+      // Curseur de pagination par segment, persiste entre deux executions.
+      // Auparavant chaque run repartait de l'offset 0, donc les memes offres
+      // de tete etaient relues en boucle et le fond du catalogue n'etait
+      // jamais rafraichi.
+      const franceTravailSegmentOffsets = asPlainObject(
+        runtimeState.segment_offsets,
+      );
+      const franceTravailStartOffset = Math.max(
+        0,
+        toPositiveInt(franceTravailSegmentOffsets[segmentKey ?? "default"]) ?? 0,
+      );
       const franceTravailMetaBase = {
         requested_limit: requestedLimit,
         range_step: rangeStep,
         max_pages: maxPages,
         effective_limit: maxItems,
+        start_offset: franceTravailStartOffset,
         segment_key: segmentKey,
         segment_label: segmentLabel,
         next_segment_key: nextSegmentKey,
@@ -3945,6 +3957,7 @@ Deno.serve(async (req) => {
         maxPages,
         rangeStep,
         searchParams,
+        startOffset: franceTravailStartOffset,
       });
       const skippedDuplicates = countDuplicateExternalIds(data.items);
       const expiredAtBirth = countExpiredAtBirth(data.items);
@@ -4144,6 +4157,11 @@ Deno.serve(async (req) => {
             last_updated: updated,
             last_effective_limit: maxItems,
             last_success_at: finishedAt,
+            last_start_offset: franceTravailStartOffset,
+            segment_offsets: {
+              ...franceTravailSegmentOffsets,
+              [segmentKey ?? "default"]: data.next_offset ?? 0,
+            },
           },
         },
         ...(jobSource.is_active === true && !jobSource.activated_at

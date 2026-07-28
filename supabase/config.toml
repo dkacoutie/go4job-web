@@ -424,6 +424,18 @@ entrypoint = "./functions/ingest_remotive/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/ingest_remotive/*.html" ]
+# ingest_source etait deploye sans declaration ici, donc sa valeur de
+# verify_jwt dependait du defaut de la CLI. On la fige explicitement sur la
+# valeur reellement en production (true, version 208) : les crons appellent
+# la fonction avec la service_role_key dans l'en-tete Authorization, donc la
+# verification JWT passe. Sans cette declaration, un futur deploiement avec
+# un defaut different couperait toute l'ingestion.
+[functions.ingest_source]
+enabled = true
+verify_jwt = true
+import_map = "./functions/ingest_source/deno.json"
+entrypoint = "./functions/ingest_source/index.ts"
+
 [functions.send_digest]
 verify_jwt = false
 

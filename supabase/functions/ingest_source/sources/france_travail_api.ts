@@ -26,7 +26,26 @@ type FetchFranceTravailItemsOptions = {
   maxPages?: number;
   rangeStep?: number;
   searchParams?: Record<string, unknown> | null;
+  /**
+   * Offset de depart dans le jeu de resultats du segment courant.
+   * Persiste entre deux executions dans
+   * ingest_config.runtime_state.segment_offsets[segment_key].
+   *
+   * Sans cet offset, chaque execution repartait de 0 et relisait indefiniment
+   * la tete de liste de chaque segment. Le catalogue France Travail compte
+   * ~147 000 offres pour ~11 000 revues par jour : tout ce qui se trouvait
+   * au-dela des premiers milliers de resultats n'etait jamais rafraichi et
+   * finissait par sortir du catalogue.
+   */
+  startOffset?: number;
 };
+
+/**
+ * L'API France Travail refuse les plages au-dela de 3149 (limite documentee
+ * du parametre `range`). Au-dela, le curseur revient a 0 et le segment est
+ * relu depuis le debut.
+ */
+const FRANCE_TRAVAIL_RANGE_CEILING = 3149;
 
 function safeStr(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -299,14 +318,30 @@ export async function fetchFranceTravailItems(options: FetchFranceTravailItemsOp
   );
 
   const items: FranceTravailApiItem[] = [];
-  let currentOffset = 0;
+  const requestedStartOffset = Math.max(0, Math.trunc(options.startOffset ?? 0));
+  const startOffset = requestedStartOffset > FRANCE_TRAVAIL_RANGE_CEILING
+    ? 0
+    : requestedStartOffset;
+  let currentOffset = startOffset;
   let totalAvailable: number | null = null;
   let lastUrl = searchUrl;
   let lastContentRange: string | null = null;
+  let exhausted = false;
 
   for (let page = 0; page < maxPages && items.length < totalLimit; page += 1) {
+    // L'API rejette toute plage dont la borne haute depasse le plafond.
+    // On arrete la boucle plutot que d'emettre une requete vouee a echouer.
+    if (currentOffset > FRANCE_TRAVAIL_RANGE_CEILING) {
+      exhausted = true;
+      break;
+    }
+
     const remaining = totalLimit - items.length;
-    const pageSize = Math.max(1, Math.min(rangeStep, remaining));
+    const roomToCeiling = FRANCE_TRAVAIL_RANGE_CEILING - currentOffset + 1;
+    const pageSize = Math.max(
+      1,
+      Math.min(rangeStep, remaining, roomToCeiling),
+    );
     const url = new URL(searchUrl);
 
     for (const [key, value] of searchParams.entries()) {
@@ -319,7 +354,10 @@ export async function fetchFranceTravailItems(options: FetchFranceTravailItemsOp
     lastContentRange = contentRange;
     const pageItems = extractItems(payload);
 
-    if (!pageItems.length) break;
+    if (!pageItems.length) {
+      exhausted = true;
+      break;
+    }
 
     for (const entry of pageItems) {
       const mapped = mapFranceTravailItem(entry);
@@ -332,9 +370,28 @@ export async function fetchFranceTravailItems(options: FetchFranceTravailItemsOp
     totalAvailable = parseTotalFromContentRange(contentRange) ?? totalAvailable;
     currentOffset += pageItems.length;
 
-    if (pageItems.length < pageSize) break;
-    if (totalAvailable !== null && currentOffset >= totalAvailable) break;
+    if (pageItems.length < pageSize) {
+      exhausted = true;
+      break;
+    }
+    if (totalAvailable !== null && currentOffset >= totalAvailable) {
+      exhausted = true;
+      break;
+    }
+    if (currentOffset > FRANCE_TRAVAIL_RANGE_CEILING) {
+      exhausted = true;
+      break;
+    }
   }
+
+  // Curseur pour l'execution suivante. On repart de 0 des que le segment est
+  // epuise ou que le plafond de pagination de l'API est atteint, pour balayer
+  // le segment en boucle au lieu de rester colle a une seule fenetre.
+  const nextOffset = exhausted ||
+      currentOffset > FRANCE_TRAVAIL_RANGE_CEILING ||
+      (totalAvailable !== null && currentOffset >= totalAvailable)
+    ? 0
+    : currentOffset;
 
   return {
     list_url: lastUrl,
@@ -342,5 +399,7 @@ export async function fetchFranceTravailItems(options: FetchFranceTravailItemsOp
     items,
     total_available: totalAvailable,
     content_range: lastContentRange,
+    start_offset: startOffset,
+    next_offset: nextOffset,
   };
 }

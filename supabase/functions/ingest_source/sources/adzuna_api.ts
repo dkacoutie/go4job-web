@@ -473,6 +473,12 @@ function mapAdzunaItem(
   };
 }
 
+/**
+ * Derniere page interrogeable chez Adzuna. Au-dela, le curseur de rotation
+ * doit revenir a 1 : le borner sur place le fige definitivement.
+ */
+const ADZUNA_PAGE_CEILING = 999;
+
 async function fetchSearchPage(url: string) {
   const res = await fetch(url, {
     headers: {
@@ -506,10 +512,20 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
     1,
     Math.min(Math.trunc(options.resultsPerPage ?? 10), 50),
   );
-  const startPage = Math.max(
-    1,
-    Math.min(Math.trunc(options.startPage ?? 1), 999),
-  );
+  // Plafond de pagination Adzuna. Le curseur de rotation est persiste dans
+  // ingest_config.runtime_state.segment_pages[*].next_page.
+  //
+  // Bug corrige : ce plafond etait applique avec un Math.min(), donc un curseur
+  // arrive a 1000 etait ramene a 999 a chaque execution. La page 999 renvoyant
+  // un lot complet (total_available ~64 800 pour 50 resultats par page), la
+  // condition de fin n'etait jamais atteinte et next_page etait re-enregistre
+  // a 1000. Resultat : la meme page relue indefiniment, et le reste du
+  // catalogue jamais visite. On boucle desormais sur la page 1 au lieu de
+  // rester colle au plafond.
+  const requestedStartPage = Math.max(1, Math.trunc(options.startPage ?? 1));
+  const startPage = requestedStartPage > ADZUNA_PAGE_CEILING
+    ? 1
+    : requestedStartPage;
   const normalizedDefaultParams = normalizeDefaultParams(options.defaultParams);
   const failures: string[] = [];
 
@@ -600,6 +616,14 @@ export async function fetchAdzunaItems(options: FetchAdzunaItemsOptions) {
         candidateNextPage = page + 1;
 
         if (pageItems.length < currentPageSize) {
+          exhausted = true;
+          candidateNextPage = 1;
+          break;
+        }
+
+        // Fin du catalogue interrogeable : on repart du debut au lieu de
+        // stagner sur la derniere page.
+        if (page >= ADZUNA_PAGE_CEILING) {
           exhausted = true;
           candidateNextPage = 1;
           break;
