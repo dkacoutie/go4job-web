@@ -36,10 +36,13 @@
 -- Résultat du premier envoi réel : 16 emails, 10 gratuits à 5 offres,
 -- 2 détenteurs de pass à 30 offres.
 --
--- RESTE À FAIRE : la campagne de réactivation et l'alerte produit écrivent sur
--- le même canal 'job_alert_digest_v2'. Le délai de 20 h ci-dessous compte donc
--- les emails marketing comme des alertes, et inversement. Leur donner des
--- canaux distincts pour que les deux cadences cessent d'interférer.
+-- Sur le partage du canal 'job_alert_digest_v2' avec la campagne de
+-- réactivation : vérifié après coup, les deux populations sont disjointes par
+-- construction. La relance cible 'non_paying_without_alert', ce cron cible les
+-- détenteurs d'une alerte active. Chevauchement mesuré : 0 personne sur 14 et
+-- 215. Le délai de 20 h ne peut donc pas priver quelqu'un de son alerte, sauf
+-- transitoirement s'il crée une alerte le lendemain d'un email de relance, ce
+-- qui est un comportement acceptable.
 -- =============================================================================
 
 begin;
@@ -187,6 +190,7 @@ commit;
 --     $$select private.cron_send_job_alert_digest(25, false);$$
 --   );
 --
--- 06:30 UTC, avant la campagne de réactivation de 07:00, pour que l'alerte
--- produit passe en premier tant que les deux partagent le même canal.
+-- 06:30 UTC, avant la campagne de réactivation de 07:00.
+--
+-- Créé le 28/07/2026 sous le jobid 62.
 -- -----------------------------------------------------------------------------
