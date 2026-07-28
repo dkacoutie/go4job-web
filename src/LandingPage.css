@@ -238,17 +238,29 @@
   color: rgba(255,255,255,0.62);
 }
 
-.landing-cta-final .btnPrimary{
+/* Bouton inverse : fond blanc sur le bloc bleu fonce.
+   AppLayout.css applique un filet de securite `.app-shell .btnPrimary` qui
+   force color ET -webkit-text-fill-color a blanc, pour garantir des CTA
+   lisibles partout. Il a la meme specificite que `.landing-cta-final
+   .btnPrimary`, donc l'ordre de chargement tranchait, et sur Chrome comme
+   Edge le text-fill blanc l'emportait : texte blanc sur bouton blanc.
+   On prefixe par .app-shell pour passer devant sans !important, et on
+   redefinit explicitement le text-fill, que `color` seul ne suffit pas a
+   annuler. */
+.app-shell .landing-cta-final .btnPrimary{
   height: 48px;
   padding: 0 20px;
   font-size: 14.5px;
   background: #fff;
-  color: var(--brand-800);
+  color: var(--brand-800, #0b2a5c);
+  -webkit-text-fill-color: var(--brand-800, #0b2a5c);
   border-color: #fff;
 }
 
-.landing-cta-final .btnPrimary:hover{
+.app-shell .landing-cta-final .btnPrimary:hover{
   background: rgba(255,255,255,0.9);
+  color: var(--brand-800, #0b2a5c);
+  -webkit-text-fill-color: var(--brand-800, #0b2a5c);
 }
 
 .landing-footer{
