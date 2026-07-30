@@ -26,6 +26,7 @@ type AejPageDiagnostic = {
   page: number;
   url: string;
   status: number;
+  attempt_count: number;
   content_type: string;
   body_length: number;
   parser_mode: string | null;
@@ -39,6 +40,7 @@ type AejPageDiagnostic = {
   total: number | null;
   next_page_url: string | null;
   error?: string;
+  errors?: string[];
 };
 
 export type AejFetchResult = {
@@ -78,6 +80,9 @@ export type AejFetchResult = {
     component: string | null;
     current_page: number | null;
     last_next_page_url: string | null;
+    interrupted: boolean;
+    list_fetch_error_count: number;
+    detail_fetch_error_count: number;
   };
 };
 
@@ -86,6 +91,9 @@ const AEJ_CANONICAL_LIST_URL = `${AEJ_BASE_URL}/offres-emploi?show_all=1`;
 const USER_AGENT =
   "Mozilla/5.0 (compatible; JobRadarBot/1.0; +https://go4job.org)";
 const PAGE_TIMEOUT_MS = 20000;
+const LIST_FETCH_ATTEMPTS = 3;
+const DETAIL_FETCH_ATTEMPTS = 2;
+const FETCH_RETRY_DELAY_MS = 1000;
 const DEFAULT_MAX_PAGES = 2;
 const MAX_PAGES_CAP = 20;
 const DEFAULT_LIMIT = 30;
@@ -260,41 +268,94 @@ function fallbackNextPageUrl(currentPage: number | null, lastPage: number | null
   return pageUrl(AEJ_CANONICAL_LIST_URL, currentPage + 1);
 }
 
-async function fetchHtml(url: string) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort("aej_page_timeout"),
-    PAGE_TIMEOUT_MS,
-  );
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "user-agent": USER_AGENT,
-        accept:
-          "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-      },
-      redirect: "follow",
-      signal: controller.signal,
-    });
-    return {
-      ok: response.ok,
-      status: response.status,
-      contentType: response.headers.get("content-type") ?? "",
-      finalUrl: response.url,
-      text: await response.text(),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      contentType: "",
-      finalUrl: url,
-      text: "",
-      error: String(error),
-    };
-  } finally {
-    clearTimeout(timeoutId);
+function shouldRetryFetch(status: number) {
+  return status === 0 || status === 408 || status === 429 ||
+    status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function fetchHtml(
+  url: string,
+  attemptsInput = 1,
+  retryDelayMs = FETCH_RETRY_DELAY_MS,
+) {
+  const attempts = Math.max(1, Math.trunc(attemptsInput));
+  const errors: string[] = [];
+  let lastResult: {
+    ok: boolean;
+    status: number;
+    contentType: string;
+    finalUrl: string;
+    text: string;
+    error?: string;
+    attemptCount: number;
+    errors: string[];
+  } | null = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort("aej_page_timeout"),
+      PAGE_TIMEOUT_MS,
+    );
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": USER_AGENT,
+          accept:
+            "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        },
+        redirect: "follow",
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      lastResult = {
+        ok: response.ok,
+        status: response.status,
+        contentType: response.headers.get("content-type") ?? "",
+        finalUrl: response.url,
+        text,
+        error: response.ok ? undefined : `http_${response.status}`,
+        attemptCount: attempt,
+        errors: [...errors],
+      };
+      if (response.ok) return lastResult;
+    } catch (error) {
+      const message = String(error);
+      errors.push(message);
+      lastResult = {
+        ok: false,
+        status: 0,
+        contentType: "",
+        finalUrl: url,
+        text: "",
+        error: message,
+        attemptCount: attempt,
+        errors: [...errors],
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (
+      attempt < attempts &&
+      shouldRetryFetch(lastResult?.status ?? 0)
+    ) {
+      await sleep(retryDelayMs);
+      continue;
+    }
+    if (lastResult) return lastResult;
   }
+
+  return lastResult ?? {
+    ok: false,
+    status: 0,
+    contentType: "",
+    finalUrl: url,
+    text: "",
+    error: "aej_fetch_failed",
+    attemptCount: attempts,
+    errors: errors.length ? errors : ["aej_fetch_failed"],
+  };
 }
 
 function parseInertiaPage(html: string): Record<string, unknown> | null {
@@ -473,16 +534,20 @@ export async function fetchAejItems(
   let lastNextPageUrl: string | null = null;
   let parserMode: string | null = null;
   let lastComponent: string | null = null;
+  let interrupted = false;
+  let listFetchErrorCount = 0;
+  let detailFetchErrorCount = 0;
   let nextListUrl: string | null = pageUrl(listUrl, startPage);
 
   for (let pageOffset = 0; pageOffset < maxPages; pageOffset++) {
     const page = startPage + pageOffset;
     const url = nextListUrl ?? pageUrl(listUrl, page);
-    const response = await fetchHtml(url);
+    const response = await fetchHtml(url, LIST_FETCH_ATTEMPTS);
     const diagnostic: AejPageDiagnostic = {
       page,
       url: response.finalUrl,
       status: response.status,
+      attempt_count: response.attemptCount,
       content_type: response.contentType,
       body_length: response.text.length,
       parser_mode: null,
@@ -496,13 +561,22 @@ export async function fetchAejItems(
       total: null,
       next_page_url: null,
       error: response.error,
+      errors: response.errors.length ? response.errors : undefined,
     };
 
     if (!response.ok) {
       diagnostic.error = response.error ?? `http_${response.status}`;
       diagnostics.push(diagnostic);
-      stoppedReason = response.status === 0 ? "fetch_failed" : "page_not_ok";
-      warnings.push("aej_list_page_fetch_failed");
+      interrupted = items.length > 0;
+      listFetchErrorCount++;
+      stoppedReason = response.status === 0
+        ? interrupted ? "partial_fetch_failed" : "fetch_failed"
+        : interrupted ? "partial_page_not_ok" : "page_not_ok";
+      warnings.push(
+        interrupted
+          ? "aej_list_page_fetch_failed_after_partial_results"
+          : "aej_list_page_fetch_failed",
+      );
       break;
     }
 
@@ -580,13 +654,17 @@ export async function fetchAejItems(
       let detail: AejRawOffer | null = null;
       if (items.length < maxItems) {
         if (detailPagesFetched > 0 && delayMs > 0) await sleep(delayMs);
-        const detailResponse = await fetchHtml(sourceUrl);
+        const detailResponse = await fetchHtml(
+          sourceUrl,
+          DETAIL_FETCH_ATTEMPTS,
+        );
         if (detailResponse.ok) {
           detailPagesFetched++;
           detail = detailOfferPayload(
             propsObject(parseInertiaPage(detailResponse.text)),
           );
         } else {
+          detailFetchErrorCount++;
           warnings.push("aej_detail_fetch_failed");
         }
       }
@@ -633,7 +711,7 @@ export async function fetchAejItems(
   }
 
   return {
-    ok: items.length > 0,
+    ok: items.length > 0 && !interrupted,
     source_code: "aej_ci",
     source_family: "aej_html_v2",
     dry_run: true,
@@ -669,6 +747,9 @@ export async function fetchAejItems(
       component: lastComponent,
       current_page: currentPageDetected,
       last_next_page_url: lastNextPageUrl,
+      interrupted,
+      list_fetch_error_count: listFetchErrorCount,
+      detail_fetch_error_count: detailFetchErrorCount,
     },
   };
 }

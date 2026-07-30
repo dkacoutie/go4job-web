@@ -430,6 +430,122 @@ function buildCiRunMeta(params: {
   };
 }
 
+function aejFetchInterrupted(data: Record<string, unknown>) {
+  const meta = asPlainObject(data.meta);
+  const stoppedReason = String(data.stopped_reason ?? "");
+  return meta.interrupted === true ||
+    stoppedReason === "partial_fetch_failed" ||
+    stoppedReason === "partial_page_not_ok";
+}
+
+function buildAejRunMeta(params: {
+  requestedLimit: number;
+  effectiveLimit: number;
+  writeMode: "dry_run" | "import";
+  insertedCount: number;
+  updatedCount: number;
+  data: Record<string, unknown>;
+  runtimeRotation?: boolean;
+  nextStartPage?: number | null;
+}) {
+  const meta = asPlainObject(params.data.meta);
+  return {
+    aej: {
+      source_code: "aej_ci",
+      requested_limit: params.requestedLimit,
+      effective_limit: params.effectiveLimit,
+      start_page: meta.start_page_used ?? null,
+      first_page_fetched: meta.first_page_fetched ?? null,
+      last_page_fetched: meta.last_page_fetched ?? null,
+      max_pages: meta.max_pages_used ?? null,
+      max_items: meta.max_items_used ?? null,
+      pages_fetched: params.data.pages_fetched ?? null,
+      detail_pages_fetched: params.data.detail_pages_fetched ?? null,
+      fetched_count: params.data.fetched_count ?? null,
+      parsed_count: params.data.parsed ?? null,
+      skipped_quality_count: params.data.skipped_quality_count ?? null,
+      duplicate_count: params.data.duplicate_count ?? null,
+      stopped_reason: params.data.stopped_reason ?? null,
+      warnings: Array.isArray(params.data.warnings) ? params.data.warnings : [],
+      interrupted: meta.interrupted === true,
+      total_available: meta.total_available ?? null,
+      last_page_detected: meta.last_page_detected ?? null,
+      list_fetch_error_count: meta.list_fetch_error_count ?? null,
+      detail_fetch_error_count: meta.detail_fetch_error_count ?? null,
+      parser_mode: meta.parser_mode ?? null,
+      component: meta.component ?? null,
+      runtime_rotation: params.runtimeRotation === true,
+      next_start_page: params.nextStartPage ?? null,
+      diagnostics: Array.isArray(meta.diagnostics) ? meta.diagnostics : [],
+    },
+    write_mode: params.writeMode,
+    inserted_count: params.insertedCount,
+    updated_count: params.updatedCount,
+  };
+}
+
+function getAejRuntimeRotationState(ingestConfig: Record<string, unknown>) {
+  return asPlainObject(asPlainObject(ingestConfig.runtime_state).aej_deep_rotation);
+}
+
+function getAejRuntimeStartPage(ingestConfig: Record<string, unknown>) {
+  return toBoundedInt(
+    getAejRuntimeRotationState(ingestConfig).next_start_page,
+    1,
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+}
+
+function buildNextAejRuntimeState(params: {
+  ingestConfig: Record<string, unknown>;
+  data: Record<string, unknown>;
+  finishedAt: string;
+  startPage: number;
+  maxPages: number;
+  maxItems: number;
+  fetchedCount: number;
+  insertedCount: number;
+  updatedCount: number;
+}) {
+  const runtimeState = asPlainObject(params.ingestConfig.runtime_state);
+  const meta = asPlainObject(params.data.meta);
+  const interrupted = aejFetchInterrupted(params.data);
+  const lastPageDetected = toPositiveInt(meta.last_page_detected);
+  const lastPageFetched = toPositiveInt(meta.last_page_fetched);
+  let nextStartPage = params.startPage;
+
+  if (!interrupted) {
+    if (
+      lastPageDetected && lastPageFetched &&
+      lastPageFetched < lastPageDetected
+    ) {
+      nextStartPage = lastPageFetched + 1;
+    } else {
+      nextStartPage = 1;
+    }
+  }
+
+  return {
+    ...runtimeState,
+    aej_deep_rotation: {
+      last_success_at: interrupted ? null : params.finishedAt,
+      last_checked_at: params.finishedAt,
+      last_start_page: params.startPage,
+      next_start_page: nextStartPage,
+      last_page_fetched: lastPageFetched,
+      last_page_detected: lastPageDetected,
+      max_pages: params.maxPages,
+      max_items: params.maxItems,
+      fetched_count: params.fetchedCount,
+      inserted_count: params.insertedCount,
+      updated_count: params.updatedCount,
+      stopped_reason: params.data.stopped_reason ?? null,
+      interrupted,
+    },
+  };
+}
+
 function edgeErrorCode(error: unknown) {
   const code = error && typeof error === "object"
     ? (error as { code?: unknown }).code
@@ -3398,16 +3514,27 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "job_source_inactive" }, 400);
       }
 
-      const listUrl = typeof jobSource.ingest_config?.list_url === "string"
-        ? jobSource.ingest_config.list_url
+      const aejIngestConfig = asPlainObject(jobSource.ingest_config);
+      const aejRuntimeRotation =
+        body?.use_runtime_rotation === true ||
+        body?.rotation === "deep" ||
+        body?.run_kind === "deep_rotation";
+      const hasExplicitAejStart = hasOwnKey(asPlainObject(body), "start_page") ||
+        hasOwnKey(asPlainObject(body), "startPage");
+      const listUrl = typeof aejIngestConfig.list_url === "string"
+        ? aejIngestConfig.list_url
         : "https://agenceemploijeunes.ci/offres-emploi";
       const startPage = toBoundedInt(
-        body?.start_page ?? body?.startPage ?? jobSource.ingest_config?.start_page,
+        hasExplicitAejStart
+          ? body?.start_page ?? body?.startPage
+          : aejRuntimeRotation
+          ? getAejRuntimeStartPage(aejIngestConfig)
+          : aejIngestConfig.start_page,
         1,
         1,
         Number.MAX_SAFE_INTEGER,
       );
-      const maxPages = toBoundedInt(body?.max_pages ?? jobSource.ingest_config?.max_pages, 2, 1, 20);
+      const maxPages = toBoundedInt(body?.max_pages ?? aejIngestConfig.max_pages, 2, 1, 20);
       const requestedAejLimit = toBoundedInt(
         body?.limit ?? limit,
         30,
@@ -3415,13 +3542,13 @@ Deno.serve(async (req) => {
         AEJ_MAX_ITEMS_PER_RUN,
       );
       const configuredAejLimit = toBoundedInt(
-        jobSource.ingest_config?.limit,
+        aejIngestConfig.limit,
         30,
         1,
         AEJ_MAX_ITEMS_PER_RUN,
       );
       const maxItems = Math.min(requestedAejLimit, configuredAejLimit);
-      const delayMs = toBoundedInt(body?.delay_ms ?? jobSource.ingest_config?.delay_ms, 800, 0, 5000);
+      const delayMs = toBoundedInt(body?.delay_ms ?? aejIngestConfig.delay_ms, 800, 0, 5000);
 
       if (!aejDryRun && (body?.allow_import !== true || body?.confirm !== "IMPORT_AEJ_CI_V2")) {
         return json({
@@ -3434,19 +3561,25 @@ Deno.serve(async (req) => {
       }
 
       const data = await fetchAejItems(listUrl, maxPages, maxItems, delayMs, startPage);
+      const aejData = data as unknown as Record<string, unknown>;
+      const interrupted = aejFetchInterrupted(aejData);
 
       if (aejDryRun) {
         const emptyStatus = data.items.length === 0
           ? data.stopped_reason === "fetch_failed" || data.stopped_reason === "page_not_ok"
             ? 502
             : 422
+          : interrupted
+          ? 206
           : 200;
         return json({
-          ok: data.items.length > 0,
+          ok: data.ok,
           source_code,
           limit: maxItems,
           dry_run: true,
-          status: data.items.length > 0 ? "dry_run_parsed" : "dry_run_empty",
+          status: data.items.length > 0
+            ? interrupted ? "dry_run_partial" : "dry_run_parsed"
+            : "dry_run_empty",
           list_url: data.list_url,
           parsed: data.parsed,
           parsed_count: data.parsed_count,
@@ -3472,6 +3605,46 @@ Deno.serve(async (req) => {
       );
       currentRunId = runId;
 
+      if (interrupted) {
+        const finishedAt = new Date().toISOString();
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: finishedAt,
+          status: "partial_fetch_failed",
+          ok: false,
+          error: `aej_partial_fetch_failed: ${data.stopped_reason}`,
+          fetched_count: data.items.length,
+          inserted_count: 0,
+          updated_count: 0,
+          meta: buildAejRunMeta({
+            requestedLimit: requestedAejLimit,
+            effectiveLimit: maxItems,
+            writeMode: "import",
+            insertedCount: 0,
+            updatedCount: 0,
+            data: aejData,
+            runtimeRotation: aejRuntimeRotation,
+            nextStartPage: startPage,
+          }),
+        });
+        await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+          last_checked_at: finishedAt,
+          ingest_status: "error",
+        });
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "aej_partial_fetch_failed",
+          fetched_count: data.fetched_count,
+          parsed: data.parsed,
+          start_page: startPage,
+          pages_fetched: data.pages_fetched,
+          stopped_reason: data.stopped_reason,
+          warnings: data.warnings,
+          meta: data.meta,
+        }, 502);
+      }
+
       if (data.items.length === 0) {
         const finishedAt = new Date().toISOString();
         await finishRun(supabaseUrl, serviceKey, currentRunId, {
@@ -3482,6 +3655,16 @@ Deno.serve(async (req) => {
           fetched_count: 0,
           inserted_count: 0,
           updated_count: 0,
+          meta: buildAejRunMeta({
+            requestedLimit: requestedAejLimit,
+            effectiveLimit: maxItems,
+            writeMode: "import",
+            insertedCount: 0,
+            updatedCount: 0,
+            data: aejData,
+            runtimeRotation: aejRuntimeRotation,
+            nextStartPage: aejRuntimeRotation ? startPage : null,
+          }),
         });
         await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
           last_checked_at: finishedAt,
@@ -3591,6 +3774,27 @@ Deno.serve(async (req) => {
       }
 
       const finishedAt = new Date().toISOString();
+      const nextAejRuntimeState = aejRuntimeRotation
+        ? buildNextAejRuntimeState({
+          ingestConfig: aejIngestConfig,
+          data: aejData,
+          finishedAt,
+          startPage,
+          maxPages,
+          maxItems,
+          fetchedCount: data.fetched_count,
+          insertedCount: inserted,
+          updatedCount: updated,
+        })
+        : null;
+      const nextAejStartPage = nextAejRuntimeState
+        ? toBoundedInt(
+          asPlainObject(nextAejRuntimeState.aej_deep_rotation).next_start_page,
+          1,
+          1,
+          Number.MAX_SAFE_INTEGER,
+        )
+        : null;
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
         finished_at: finishedAt,
         status: "success",
@@ -3598,13 +3802,30 @@ Deno.serve(async (req) => {
         fetched_count: rows.length,
         inserted_count: inserted,
         updated_count: updated,
+        meta: buildAejRunMeta({
+          requestedLimit: requestedAejLimit,
+          effectiveLimit: maxItems,
+          writeMode: "import",
+          insertedCount: inserted,
+          updatedCount: updated,
+          data: aejData,
+          runtimeRotation: aejRuntimeRotation,
+          nextStartPage: nextAejStartPage,
+        }),
       });
-      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+      const aejSourcePatch: Record<string, unknown> = {
         last_checked_at: finishedAt,
         last_ingested_at: finishedAt,
         last_success_at: finishedAt,
         ingest_status: "ready",
-      });
+      };
+      if (nextAejRuntimeState) {
+        aejSourcePatch.ingest_config = {
+          ...aejIngestConfig,
+          runtime_state: nextAejRuntimeState,
+        };
+      }
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, aejSourcePatch);
 
       return json({
         ok: true,
@@ -3622,6 +3843,7 @@ Deno.serve(async (req) => {
         inserted,
         updated,
         upserted: rows.length,
+        next_start_page: nextAejStartPage,
         meta: data.meta,
       });
     }
