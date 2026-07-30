@@ -147,7 +147,17 @@ async function finishRun(
     }`;
     await sbPatch(url, serviceKey, patch);
   } catch {
-    // best effort only
+    if (!("meta" in patch)) return;
+    try {
+      const fallbackPatch = { ...patch };
+      delete fallbackPatch.meta;
+      const url = `${supabaseUrl}/rest/v1/job_source_runs?id=eq.${
+        encodeURIComponent(runId)
+      }`;
+      await sbPatch(url, serviceKey, fallbackPatch);
+    } catch {
+      // best effort only
+    }
   }
 }
 
@@ -404,6 +414,10 @@ function buildCiRunMeta(params: {
     page_stats: pageStats,
   };
 
+  if (params.data.diagnostics && typeof params.data.diagnostics === "object") {
+    pagination.diagnostics = params.data.diagnostics;
+  }
+
   if (typeof params.data.skipped_quality_count === "number") {
     pagination.skipped_quality_count = params.data.skipped_quality_count;
   }
@@ -414,6 +428,13 @@ function buildCiRunMeta(params: {
     inserted_count: params.insertedCount,
     updated_count: params.updatedCount,
   };
+}
+
+function edgeErrorCode(error: unknown) {
+  const code = error && typeof error === "object"
+    ? (error as { code?: unknown }).code
+    : null;
+  return typeof code === "string" && code.trim() ? code.trim() : "ingest_failed";
 }
 
 const CI_PAGINATION_ROTATION_CONFIG: Record<
@@ -518,8 +539,9 @@ async function fetchKnownJobValues(
   values: string[],
 ) {
   const known = new Set<string>();
-  for (let i = 0; i < values.length; i += 500) {
-    const chunk = values.slice(i, i + 500);
+  const chunkSize = column === "source_url" ? 40 : 150;
+  for (let i = 0; i < values.length; i += chunkSize) {
+    const chunk = values.slice(i, i + chunkSize);
     const { data, error } = await supabase
       .from("jobs")
       .select(column)
@@ -813,7 +835,7 @@ async function upsertJobsWithStats(
     Math.min(fallbackBatchSize, requestedBatchSize ?? fallbackBatchSize),
   );
 
-  let existingIds = new Set<string>();
+  const existingIds = new Set<string>();
   if (externalIds.length > 0) {
     for (let i = 0; i < externalIds.length; i += batchSize) {
       const idChunk = externalIds.slice(i, i + batchSize);
@@ -2809,7 +2831,14 @@ Deno.serve(async (req) => {
       if (!jobSource) {
         return json({ ok: false, error: "job_source_not_found" }, 404);
       }
-      if (!dry_run && hasDiagnosticPaginationParams(asPlainObject(body))) {
+      const emploiCiBody = asPlainObject(body);
+      const controlledFullImport = !dry_run &&
+        emploiCiBody.allow_import === true &&
+        emploiCiBody.confirm === "IMPORT_EMPLOI_CI_FULL_SCAN";
+      if (
+        !dry_run && hasDiagnosticPaginationParams(emploiCiBody) &&
+        !controlledFullImport
+      ) {
         return json({
           ok: false,
           source_code,
@@ -2835,15 +2864,27 @@ Deno.serve(async (req) => {
           1,
           1000,
         );
+        const diagnosticLimit = hasRequestedLimit
+          ? toBoundedInt(limit, 10000, 1, 10000)
+          : 10000;
         const diagnosticMaxPages = toBoundedInt(
           body?.max_pages ?? body?.maxPages,
-          31,
+          75,
           1,
-          31,
+          100,
         );
-        const data = await fetchEmploiCiItems(limit, {
+        const diagnosticMaxConsecutivePagesWithoutNewIds = toBoundedInt(
+          body?.max_consecutive_pages_without_new_ids ??
+            body?.maxConsecutivePagesWithoutNewIds,
+          2,
+          1,
+          10,
+        );
+        const data = await fetchEmploiCiItems(diagnosticLimit, {
           startPage: diagnosticStartPage,
           maxPages: diagnosticMaxPages,
+          maxConsecutivePagesWithoutNewIds:
+            diagnosticMaxConsecutivePagesWithoutNewIds,
         });
         const dbComparison = await compareDryRunCandidatesWithDb(
           supabaseUrl,
@@ -2852,63 +2893,88 @@ Deno.serve(async (req) => {
           data.items,
         );
 
-        await finishRun(supabaseUrl, serviceKey, currentRunId, {
-          finished_at: new Date().toISOString(),
-          status: "success",
-          ok: true,
-          fetched_count: data.items.length,
-          inserted_count: 0,
-          updated_count: 0,
-        });
         return json({
           ok: true,
           source_code,
-          limit,
+          limit: diagnosticLimit,
           dry_run: true,
-          status: "dry_run_parsed",
+          status: data.items.length > 0 ? "dry_run_parsed" : "empty_valid_source",
           list_url: data.list_url,
           effective_start_page: data.effective_start_page,
           effective_max_pages: data.effective_max_pages,
+          detected_max_pages: data.detected_max_pages,
           pages_fetched: data.pages_fetched,
+          pages_requested: data.pages_requested,
+          pages_valid: data.valid_pages,
           page_stats: data.page_stats,
           parsed_count_by_page: data.parsed_count_by_page,
           parsed: data.parsed,
           stopped_reason: data.stopped_reason,
+          diagnostics: data.diagnostics,
           sample_source_urls: data.items.slice(0, 20).map((item) =>
             item.source_url
           ),
           sample_external_ids: data.items.slice(0, 20).map((item) =>
             item.external_id
           ),
+          sample_offers: data.items.slice(0, 20).map((item) => ({
+            external_id: item.external_id,
+            title: item.title,
+            company_name: item.company_name,
+            location: item.location,
+            published_at: item.published_at,
+            source_url: item.source_url,
+          })),
           ...dbComparison,
           sample: data.sample,
         });
       }
 
       const emploiCiIngestConfig = asPlainObject(jobSource?.ingest_config);
-      const ciRotation = getCiPaginationRotation(source_code, emploiCiIngestConfig);
-      const data = await fetchEmploiCiItems(limit, {
-        startPage: ciRotation.startPage,
-        maxPages: ciRotation.maxPages,
-      });
+      const ciRotation = controlledFullImport
+        ? null
+        : getCiPaginationRotation(source_code, emploiCiIngestConfig);
+      const importLimit = controlledFullImport
+        ? toBoundedInt(limit, 10000, 1, 10000)
+        : limit;
+      const emploiCiFetchOptions = controlledFullImport
+        ? {
+          startPage: toBoundedInt(
+            body?.start_page ?? body?.startPage,
+            1,
+            1,
+            1000,
+          ),
+          maxPages: toBoundedInt(
+            body?.max_pages ?? body?.maxPages,
+            75,
+            1,
+            100,
+          ),
+          maxConsecutivePagesWithoutNewIds: toBoundedInt(
+            body?.max_consecutive_pages_without_new_ids ??
+              body?.maxConsecutivePagesWithoutNewIds,
+            2,
+            1,
+            10,
+          ),
+        }
+        : {
+          startPage: ciRotation!.startPage,
+          maxPages: ciRotation!.maxPages,
+          maxConsecutivePagesWithoutNewIds: 2,
+        };
+      const data = await fetchEmploiCiItems(importLimit, emploiCiFetchOptions);
 
       // job_source_id (fixed seed for this source)
       const now = new Date().toISOString();
-      const jobsBase = `${supabaseUrl}/rest/v1/jobs`;
+      const supabase = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false },
+      });
+      const preparedRows = [];
 
-      let inserted = 0;
-      let updated = 0;
-
-      // Upsert manually: check -> insert or patch
       for (const it of data.items) {
         const external_id = it.external_id;
-
-        const checkUrl =
-          `${jobsBase}?select=id&job_source_id=eq.${job_source_id}` +
-          `&external_id=eq.${encodeURIComponent(external_id)}&limit=1`;
-
-        const found = await sbGet<Array<{ id: string }>>(checkUrl, serviceKey);
-        const exists = found?.length ? found[0].id : null;
         const identity = await buildCrossSourceJobIdentity({
           title: it.title,
           companyName: it.company_name,
@@ -2954,30 +3020,57 @@ Deno.serve(async (req) => {
             original_url: it.source_url,
           },
         };
+        preparedRows.push(baseRow);
+      }
 
-        if (!exists) {
-          const row = {
-            ...baseRow,
-            scraped_at: now,
-            created_at: now,
-          };
+      const knownExternalIds = await fetchKnownJobValues(
+        supabase,
+        job_source_id,
+        "external_id",
+        preparedRows.map((row) => row.external_id),
+      );
+      const insertRows = preparedRows
+        .filter((row) => !knownExternalIds.has(row.external_id))
+        .map((row) => ({
+          ...row,
+          scraped_at: now,
+          created_at: now,
+        }));
+      const updateRows = preparedRows.filter((row) =>
+        knownExternalIds.has(row.external_id)
+      );
 
-          await sbInsertOne(jobsBase, serviceKey, row);
-          inserted++;
-        } else {
-          const patchUrl = `${jobsBase}?job_source_id=eq.${job_source_id}` +
-            `&external_id=eq.${encodeURIComponent(external_id)}`;
-
-          await sbPatch(patchUrl, serviceKey, baseRow);
-          updated++;
+      for (let i = 0; i < insertRows.length; i += 100) {
+        const chunk = insertRows.slice(i, i + 100);
+        const { error } = await supabase.from("jobs").insert(chunk);
+        if (error) {
+          throw new Error(`emploi_ci_insert_failed:${error.message}`);
         }
       }
 
+      for (let i = 0; i < updateRows.length; i += 100) {
+        const chunk = updateRows.slice(i, i + 100);
+        const { error } = await supabase
+          .from("jobs")
+          .upsert(chunk, { onConflict: "external_id" });
+        if (error) {
+          throw new Error(`emploi_ci_update_failed:${error.message}`);
+        }
+      }
+
+      const inserted = insertRows.length;
+      const updated = updateRows.length;
       const finishedAt = new Date().toISOString();
+      const runStatus = data.items.length > 0 ? "success" : "empty_valid_source";
+      const runOk = data.items.length > 0;
+      const runError = runOk
+        ? null
+        : "empty_valid_source:emploi_ci valid page returned zero offers";
       await finishRun(supabaseUrl, serviceKey, currentRunId, {
         finished_at: finishedAt,
-        status: "success",
-        ok: true,
+        status: runStatus,
+        ok: runOk,
+        error: runError,
         fetched_count: data.items.length,
         inserted_count: inserted,
         updated_count: updated,
@@ -2989,41 +3082,57 @@ Deno.serve(async (req) => {
           insertedCount: inserted,
           updatedCount: updated,
           data: data as Record<string, unknown>,
-          rotation: ciRotation,
+          rotation: ciRotation ?? undefined,
         }),
       });
-      await patchJobSourceMetadata(supabaseUrl, serviceKey, job_source_id, {
+      const nextRuntimeState = ciRotation
+        ? buildNextCiRuntimeState({
+          ingestConfig: emploiCiIngestConfig,
+          rotation: ciRotation,
+          finishedAt,
+          data: data as Record<string, unknown>,
+          fetchedCount: data.items.length,
+          insertedCount: inserted,
+          updatedCount: updated,
+        })
+        : {
+          ...asPlainObject(emploiCiIngestConfig.runtime_state),
+          emploi_ci_full_scan: {
+            last_success_at: finishedAt,
+            fetched_count: data.items.length,
+            inserted_count: inserted,
+            updated_count: updated,
+            stopped_reason: data.stopped_reason,
+            diagnostics: data.diagnostics,
+          },
+        };
+      const sourcePatch: Record<string, unknown> = {
         last_checked_at: finishedAt,
         last_ingested_at: finishedAt,
-        last_success_at: finishedAt,
-        ingest_status: "ready",
+        ingest_status: runOk ? "ready" : "error",
         ingest_config: {
           ...emploiCiIngestConfig,
-          runtime_state: buildNextCiRuntimeState({
-            ingestConfig: emploiCiIngestConfig,
-            rotation: ciRotation,
-            finishedAt,
-            data: data as Record<string, unknown>,
-            fetchedCount: data.items.length,
-            insertedCount: inserted,
-            updatedCount: updated,
-          }),
+          runtime_state: nextRuntimeState,
         },
-      });
+      };
+      if (runOk) sourcePatch.last_success_at = finishedAt;
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, job_source_id, sourcePatch);
 
       return json({
-        ok: true,
+        ok: runOk,
         source_code,
         limit,
         dry_run: false,
-        status: "upserted_manual",
+        status: runOk ? "upserted_manual" : runStatus,
+        error: runError,
         parsed: data.parsed,
         inserted,
         updated,
+        diagnostics: data.diagnostics,
         start_page: data.effective_start_page,
         max_pages: data.effective_max_pages,
         pages_fetched: data.pages_fetched,
-        next_start_page: ciRotation.nextStartPage,
+        next_start_page: ciRotation?.nextStartPage ?? null,
       });
     }
 
@@ -5178,6 +5287,8 @@ Deno.serve(async (req) => {
       upserted: rows.length,
     });
   } catch (e) {
+    const code = edgeErrorCode(e);
+    const message = e instanceof Error ? e.message : String(e);
     await finishRun(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -5186,7 +5297,7 @@ Deno.serve(async (req) => {
         finished_at: new Date().toISOString(),
         status: "failed",
         ok: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: code === "ingest_failed" ? message : `${code}:${message}`,
         fetched_count: 0,
         inserted_count: 0,
         updated_count: 0,
@@ -5195,8 +5306,8 @@ Deno.serve(async (req) => {
     return json(
       {
         ok: false,
-        error: "ingest_failed",
-        message: e instanceof Error ? e.message : String(e),
+        error: code,
+        message,
       },
       500,
     );

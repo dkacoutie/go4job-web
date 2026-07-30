@@ -18,14 +18,19 @@ export type EmploiCiItem = {
 export type EmploiCiPageStat = {
   page: number;
   url: string;
+  html_bytes: number;
+  raw_link_count: number;
   parsed_count: number;
   added_count: number;
   duplicate_count: number;
+  marker_count: number;
 };
 
 const BASE_URL = "https://emploi.educarriere.ci";
-const FIRST_PAGE_URL = `${BASE_URL}/nos-offres`;
-const DEFAULT_MAX_PAGES = 31;
+const FIRST_PAGE_URL = `${BASE_URL}/emploi-accueil`;
+const DEFAULT_MAX_PAGES = 75;
+const DEFAULT_MAX_CONSECUTIVE_PAGES_WITHOUT_NEW_IDS = 2;
+const MIN_HTML_BYTES_FOR_LIST_PAGE = 1000;
 const FETCH_DELAY_MS = 250;
 const CONTRACT_TYPES = new Set([
   "emploi",
@@ -66,7 +71,7 @@ function titleFromSlug(slug: string) {
 }
 
 function pageUrl(page: number) {
-  return page <= 1 ? FIRST_PAGE_URL : `${BASE_URL}/emploi/page/emploi/${page}`;
+  return page <= 1 ? FIRST_PAGE_URL : `${FIRST_PAGE_URL}?page=${page}`;
 }
 
 function stripHtml(html: string): string {
@@ -100,6 +105,10 @@ function cleanText(value: string | null | undefined) {
     .trim();
 }
 
+function stripAccents(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 function parseFrenchDate(value: string | null | undefined) {
   const text = cleanText(value);
   const match = text.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
@@ -119,11 +128,12 @@ function extractMaxPages(html: string) {
   const text = stripHtml(html);
   const fromLabel = text.match(
     /Page\s*n(?:\u00b0|\u00ba)?\s*\d+\s*sur\s*(\d+)/i,
-  );
+  ) ?? text.match(/\bPage\s+\d+\s+sur\s+(\d+)\b/i);
   if (fromLabel) return Number(fromLabel[1]);
 
   let max = 1;
-  const pageLinkRe = /\/emploi\/page\/emploi\/(\d+)/gi;
+  const pageLinkRe =
+    /(?:emploi-accueil\?page=|changePage\(|<option\s+value=["']?)(\d+)/gi;
   let m: RegExpExecArray | null;
   while ((m = pageLinkRe.exec(html)) !== null) {
     max = Math.max(max, Number(m[1]));
@@ -147,6 +157,55 @@ function extractContractType(anchorTexts: string[]) {
   return null;
 }
 
+function extractContractTypeFromSegment(segment: string) {
+  const value = extractFirst(
+    segment,
+    /<span\b[^>]*class=["'][^"']*\bej-tag\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+  );
+  return value && CONTRACT_TYPES.has(value.toLowerCase()) ? value : null;
+}
+
+function extractFirst(segment: string, re: RegExp) {
+  return cleanText(segment.match(re)?.[1]);
+}
+
+function extractLocation(segment: string) {
+  return extractFirst(
+    segment,
+    /<span\b[^>]*class=["'][^"']*\bej-lieu\b[^"']*["'][^>]*>\s*(?:<i\b[\s\S]*?<\/i>)?\s*([\s\S]*?)<\/span>/i,
+  ) || null;
+}
+
+function extractCompany(segment: string) {
+  return extractFirst(
+    segment,
+    /<div\b[^>]*class=["'][^"']*\bej-societe\b[^"']*["'][^>]*>\s*(?:<i\b[\s\S]*?<\/i>)?\s*([\s\S]*?)<\/div>/i,
+  ) ||
+    extractFirst(
+      segment,
+      /<div\b[^>]*font-size\s*:\s*11px[^>]*>([\s\S]*?)<\/div>/i,
+    ) ||
+    extractFirst(
+      segment,
+      /<img\b[^>]*\balt=["']([^"']{2,160})["'][^>]*\bclass=["'][^"']*\bej-logo\b/i,
+    ) ||
+    extractFirst(
+      segment,
+      /<img\b[^>]*\bsrc=["'][^"']*logos-recruteurs[^"']*["'][^>]*\balt=["']([^"']{2,160})["']/i,
+    ) ||
+    null;
+}
+
+function extractDateAfterLabel(segmentText: string, label: string) {
+  const normalized = stripAccents(segmentText);
+  const normalizedLabel = stripAccents(label);
+  const escapedLabel = normalizedLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = normalized.match(
+    new RegExp(`${escapedLabel}\\s+le\\s+(\\d{1,2}\\/\\d{1,2}\\/\\d{4})`, "i"),
+  );
+  return match?.[1] ?? null;
+}
+
 function extractTitle(anchorTexts: string[], slug: string) {
   const candidates = anchorTexts
     .map(cleanText)
@@ -155,7 +214,33 @@ function extractTitle(anchorTexts: string[], slug: string) {
     titleFromSlug(slug);
 }
 
-function parseOffersFromHtml(html: string) {
+function extractTitleFromSegment(
+  segment: string,
+  anchorTexts: string[],
+  slug: string,
+) {
+  const cardTitle = extractFirst(
+    segment,
+    /<a\b[^>]*class=["'][^"']*\bej-poste\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
+  );
+  if (cardTitle) return cardTitle;
+
+  const featuredTitle = extractFirst(
+    segment,
+    /<div\b[^>]*font-size\s*:\s*12px[^>]*>([\s\S]*?)<\/div>/i,
+  );
+  if (featuredTitle && !featuredTitle.includes("&#...")) {
+    return featuredTitle;
+  }
+
+  const fallback = extractTitle(anchorTexts, slug);
+  if (/\bLimite\s*:/i.test(fallback) || fallback.includes("&#...")) {
+    return titleFromSlug(slug);
+  }
+  return fallback;
+}
+
+export function parseEmploiCiOffersFromHtml(html: string) {
   const linkRe =
     /<a\b[^>]*href=["']([^"']*\/offre-(\d+)-([^"']+?)\.html)["'][^>]*>([\s\S]*?)<\/a>/gi;
   const matches: Array<{
@@ -185,13 +270,24 @@ function parseOffersFromHtml(html: string) {
   }
 
   const offers: EmploiCiItem[] = [];
+  let parsingErrorCount = 0;
   for (const group of grouped.values()) {
-    const first = group[0];
-    const nextIndex = matches.find((candidate) =>
-      candidate.index > first.index && candidate.offerId !== first.offerId
-    )?.index ?? html.length;
-    const segment = html.slice(first.index, nextIndex);
-    const segmentText = stripHtml(segment);
+    const candidateSegments = group.map((candidate) => {
+      const nextIndex = matches.find((next) =>
+        next.index > candidate.index && next.offerId !== candidate.offerId
+      )?.index ?? html.length;
+      const segment = html.slice(candidate.index, nextIndex);
+      const segmentText = stripHtml(segment);
+      const score = (/\bej-societe\b/i.test(segment) ? 4 : 0) +
+        (/\bPubli/i.test(segmentText) ? 2 : 0) +
+        (/\bExpire le\b/i.test(segmentText) ? 2 : 0) +
+        (/\bej-poste\b/i.test(segment) ? 1 : 0);
+      return { candidate, segment, segmentText, score };
+    });
+    const best = candidateSegments.sort((a, b) => b.score - a.score)[0];
+    const first = best.candidate;
+    const segment = best.segment;
+    const segmentText = best.segmentText;
     const sourceUrl = absUrl(first.href);
     const external_id = first.offerId
       ? `educarriere:${first.offerId}`
@@ -202,30 +298,100 @@ function parseOffersFromHtml(html: string) {
     const dateEdition = extractField(
       segmentText,
       String.raw`Date d['\u2019]\u00e9dition`,
-    );
-    const dateLimite = extractField(segmentText, "Date limite");
+    ) || extractDateAfterLabel(segmentText, "Publie");
+    const dateLimite = extractField(segmentText, "Date limite") ||
+      extractDateAfterLabel(segmentText, "Expire");
+    const title = extractTitleFromSegment(segment, anchorTexts, first.slug);
+
+    if (!title || !sourceUrl) {
+      parsingErrorCount++;
+      continue;
+    }
 
     offers.push({
       external_id,
-      title: extractTitle(anchorTexts, first.slug),
+      title,
       source_url: sourceUrl,
       apply_url: sourceUrl,
       country: "CI",
       country_codes: ["CI"],
-      location: "Cote d'Ivoire",
-      company_name: null,
-      contract_type: extractContractType(anchorTexts),
+      location: extractLocation(segment) ?? "Cote d'Ivoire",
+      company_name: extractCompany(segment),
+      contract_type: extractContractType(anchorTexts) ??
+        extractContractTypeFromSegment(segment),
       description_text: null,
       published_at: parseFrenchDate(dateEdition),
       expires_at: parseFrenchDate(dateLimite),
     });
   }
 
-  return offers;
+  return {
+    items: offers,
+    raw_link_count: matches.length,
+    unique_link_id_count: grouped.size,
+    parsing_error_count: parsingErrorCount,
+  };
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function detectDisplayedOfferCount(html: string) {
+  const heroCount = html.match(
+    /id=["']ec-hero-count["'][^>]*>\s*([0-9\s.,]+)/i,
+  );
+  const fromHero = heroCount?.[1]?.replace(/\D/g, "");
+  if (fromHero) return Number(fromHero);
+
+  const text = stripHtml(html);
+  const count = text.match(/\b([0-9][0-9\s.,]*)\s+offres\s+en\s+ligne\b/i);
+  const normalized = count?.[1]?.replace(/\D/g, "");
+  return normalized ? Number(normalized) : null;
+}
+
+function countExpectedMarkers(html: string) {
+  const markerPatterns = [
+    /emploi-accueil/i,
+    /Trouvez votre prochain emploi/i,
+    /offres en ligne/i,
+    /Offres\s+.{0,4}\s*la\s+Une/i,
+    /\bej-card\b/i,
+    /\bej-poste\b/i,
+    /changePage\(/i,
+    /\/offre-\d+-/i,
+  ];
+  return markerPatterns.filter((re) => re.test(html)).length;
+}
+
+function classifyInvalidHtml(html: string) {
+  const text = stripHtml(html);
+  if (
+    /Erreur\s*:\s*Le fichier .* n.?existe pas/i.test(text) ||
+    /controllers\/[^"' ]+\.php/i.test(text)
+  ) {
+    return "php_error_page";
+  }
+  if (
+    /(?:cloudflare|captcha|g-recaptcha|cf-chl|challenge-form|just a moment|attention required|access denied|403 forbidden)/i
+      .test(text)
+  ) {
+    return "challenge_or_error_page";
+  }
+  const markerCount = countExpectedMarkers(html);
+  if (html.length < MIN_HTML_BYTES_FOR_LIST_PAGE && markerCount < 2) {
+    return "invalid_html";
+  }
+  if (markerCount < 2) return "invalid_html";
+  return null;
+}
+
+export class EmploiCiFetchError extends Error {
+  code: string;
+  url?: string;
+
+  constructor(code: string, message: string, url?: string) {
+    super(message);
+    this.name = "EmploiCiFetchError";
+    this.code = code;
+    this.url = url;
+  }
 }
 
 async function fetchPage(url: string) {
@@ -239,51 +405,109 @@ async function fetchPage(url: string) {
   });
 
   if (!res.ok) {
-    throw new Error(
+    throw new EmploiCiFetchError(
+      "network_or_http_error",
       `emploi_ci list fetch failed: ${res.status} ${res.statusText}`,
+      url,
     );
   }
 
-  return await res.text();
+  const html = await res.text();
+  const invalidCode = classifyInvalidHtml(html);
+  if (invalidCode) {
+    throw new EmploiCiFetchError(
+      invalidCode,
+      `emploi_ci list page invalid (${invalidCode}, ${html.length} bytes) for ${url}`,
+      url,
+    );
+  }
+
+  return {
+    html,
+    html_bytes: html.length,
+    marker_count: countExpectedMarkers(html),
+    displayed_offer_count: detectDisplayedOfferCount(html),
+    detected_max_pages: extractMaxPages(html),
+  };
 }
 
 export async function fetchEmploiCiItems(
   limit = 30,
-  options?: { maxPages?: number; startPage?: number },
+  options?: {
+    maxPages?: number;
+    startPage?: number;
+    maxConsecutivePagesWithoutNewIds?: number;
+  },
 ) {
   const capped = Math.max(1, Math.trunc(limit));
   const startPage = Math.max(1, Math.trunc(options?.startPage ?? 1));
-  let maxPages = Math.max(
+  const safetyMaxPages = Math.max(
     1,
     Math.trunc(options?.maxPages ?? DEFAULT_MAX_PAGES),
   );
-  let lastRequestedPage = startPage + maxPages - 1;
+  const maxConsecutivePagesWithoutNewIds = Math.max(
+    1,
+    Math.trunc(
+      options?.maxConsecutivePagesWithoutNewIds ??
+        DEFAULT_MAX_CONSECUTIVE_PAGES_WITHOUT_NEW_IDS,
+    ),
+  );
+  const requestedLastPage = startPage + safetyMaxPages - 1;
+  let lastRequestedPage = requestedLastPage;
+  let detectedMaxPages: number | null = null;
+  let displayedOfferCount: number | null = null;
   const items: EmploiCiItem[] = [];
   const seen = new Set<string>();
   const pageStats: EmploiCiPageStat[] = [];
   let pagesFetched = 0;
+  let validPages = 0;
+  let rawLinkCount = 0;
+  let parsingErrorCount = 0;
+  let consecutivePagesWithoutNewIds = 0;
+  let firstUsefulPage: number | null = null;
+  let lastUsefulPage: number | null = null;
   let stoppedReason = "max_pages_reached";
 
   for (let page = startPage; page <= lastRequestedPage; page++) {
     const url = pageUrl(page);
-    const html = await fetchPage(url);
+    const fetched = await fetchPage(url);
+    const html = fetched.html;
     pagesFetched++;
-
-    if (page === 1) {
-      maxPages = Math.min(maxPages, Math.max(1, extractMaxPages(html)));
-      lastRequestedPage = startPage + maxPages - 1;
+    validPages++;
+    if (displayedOfferCount === null) {
+      displayedOfferCount = fetched.displayed_offer_count;
     }
 
-    const pageOffers = parseOffersFromHtml(html);
+    if (detectedMaxPages === null && fetched.detected_max_pages > 1) {
+      detectedMaxPages = fetched.detected_max_pages;
+      lastRequestedPage = Math.min(requestedLastPage, detectedMaxPages);
+    }
+
+    const parsedPage = parseEmploiCiOffersFromHtml(html);
+    const pageOffers = parsedPage.items;
+    rawLinkCount += parsedPage.raw_link_count;
+    parsingErrorCount += parsedPage.parsing_error_count;
+
+    if (pageOffers.length === 0 && (displayedOfferCount ?? 1) > 0) {
+      throw new EmploiCiFetchError(
+        "parser_zero_results",
+        `emploi_ci parser found zero offers on a valid-looking page with displayed_count=${displayedOfferCount}`,
+        url,
+      );
+    }
+
     if (pageOffers.length === 0) {
       pageStats.push({
         page,
         url,
+        html_bytes: fetched.html_bytes,
+        raw_link_count: parsedPage.raw_link_count,
         parsed_count: 0,
         added_count: 0,
         duplicate_count: 0,
+        marker_count: fetched.marker_count,
       });
-      stoppedReason = "empty_page";
+      stoppedReason = "empty_valid_source";
       break;
     }
 
@@ -292,13 +516,13 @@ export async function fetchEmploiCiItems(
     for (const item of pageOffers) {
       if (seen.has(item.external_id)) {
         duplicateFromPage++;
-        stoppedReason = "duplicate_external_id";
-        page = lastRequestedPage + 1;
-        break;
+        continue;
       }
       seen.add(item.external_id);
       items.push(item);
       addedFromPage++;
+      firstUsefulPage ??= page;
+      lastUsefulPage = page;
 
       if (items.length >= capped) {
         stoppedReason = "limit_reached";
@@ -309,33 +533,84 @@ export async function fetchEmploiCiItems(
     pageStats.push({
       page,
       url,
+      html_bytes: fetched.html_bytes,
+      raw_link_count: parsedPage.raw_link_count,
       parsed_count: pageOffers.length,
       added_count: addedFromPage,
       duplicate_count: duplicateFromPage,
+      marker_count: fetched.marker_count,
     });
 
-    if (items.length >= capped || stoppedReason === "duplicate_external_id") {
+    if (items.length >= capped) {
       break;
     }
+
     if (addedFromPage === 0) {
-      stoppedReason = "empty_page";
+      consecutivePagesWithoutNewIds++;
+    } else {
+      consecutivePagesWithoutNewIds = 0;
+    }
+
+    if (consecutivePagesWithoutNewIds >= maxConsecutivePagesWithoutNewIds) {
+      stoppedReason = "pagination_stalled";
       break;
     }
+
+    if (detectedMaxPages !== null && page >= detectedMaxPages) {
+      stoppedReason = "detected_last_page";
+      break;
+    }
+
     if (page < lastRequestedPage) await delay(FETCH_DELAY_MS);
   }
+
+  const internalDuplicateCount = Math.max(0, rawLinkCount - seen.size);
+  const withTitleCount = items.filter((item) => item.title.trim()).length;
+  const withCompanyCount = items.filter((item) =>
+    Boolean(item.company_name?.trim())
+  ).length;
+  const withSourceUrlCount = items.filter((item) =>
+    Boolean(item.source_url?.trim())
+  ).length;
 
   return {
     list_url: FIRST_PAGE_URL,
     effective_start_page: startPage,
-    effective_max_pages: maxPages,
+    effective_max_pages: safetyMaxPages,
+    detected_max_pages: detectedMaxPages,
     pages_fetched: pagesFetched,
+    pages_requested: pagesFetched,
+    valid_pages: validPages,
     page_stats: pageStats,
     parsed_count_by_page: Object.fromEntries(
       pageStats.map((stat) => [String(stat.page), stat.added_count]),
     ),
     parsed: items.length,
     stopped_reason: stoppedReason,
+    diagnostics: {
+      pages_requested: pagesFetched,
+      pages_valid: validPages,
+      raw_link_count: rawLinkCount,
+      unique_id_count: seen.size,
+      internal_duplicate_count: internalDuplicateCount,
+      with_title_count: withTitleCount,
+      with_company_count: withCompanyCount,
+      with_source_url_count: withSourceUrlCount,
+      parsing_error_count: parsingErrorCount,
+      first_useful_page: firstUsefulPage,
+      last_useful_page: lastUsefulPage,
+      stopped_reason: stoppedReason,
+      displayed_offer_count: displayedOfferCount,
+      detected_max_pages: detectedMaxPages,
+      safety_max_pages: safetyMaxPages,
+      max_consecutive_pages_without_new_ids:
+        maxConsecutivePagesWithoutNewIds,
+    },
     sample: items.slice(0, 3),
     items,
   };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
