@@ -262,6 +262,29 @@ export default function AppNav() {
     </button>
   );
 
+  const notificationAriaLabel =
+    notificationUnreadCount > 0
+      ? `${notificationUnreadCount} notification${notificationUnreadCount > 1 ? "s" : ""} non lue${notificationUnreadCount > 1 ? "s" : ""}`
+      : "Notifications";
+
+  const renderNotificationButton = (className = "") => (
+    <button
+      type="button"
+      className={
+        `appnav__iconBtn${className ? ` ${className}` : ""} ` +
+        (isActive("/jobradar/notifications") ? "is-active" : "")
+      }
+      onClick={() => onNavigate("/jobradar/notifications")}
+      aria-label={notificationAriaLabel}
+      title="Notifications"
+    >
+      <span className="appnav__bell" aria-hidden="true" />
+      {notificationUnreadCount > 0 && (
+        <span className="appnav__floatingBadge">{formatNotificationBadge(notificationUnreadCount)}</span>
+      )}
+    </button>
+  );
+
   const onSignOut = async () => {
     if (isSigningOut) return;
 
@@ -308,6 +331,8 @@ export default function AppNav() {
         <img className="appnav__logo" src={go4jobLogo} alt="JobRadar" />
       </button>
 
+      {!loading && session && renderNotificationButton("appnav__mobileNotificationBtn")}
+
       {!loading && session && (
         <button
           type="button"
@@ -335,22 +360,7 @@ export default function AppNav() {
             Tableau de bord
           </button>
 
-          <button
-            type="button"
-            className={"appnav__iconBtn " + (isActive("/jobradar/notifications") ? "is-active" : "")}
-            onClick={() => onNavigate("/jobradar/notifications")}
-            aria-label={
-              notificationUnreadCount > 0
-                ? `${notificationUnreadCount} notification${notificationUnreadCount > 1 ? "s" : ""} non lue${notificationUnreadCount > 1 ? "s" : ""}`
-                : "Notifications"
-            }
-            title="Notifications"
-          >
-            <span className="appnav__bell" aria-hidden="true" />
-            {notificationUnreadCount > 0 && (
-              <span className="appnav__floatingBadge">{formatNotificationBadge(notificationUnreadCount)}</span>
-            )}
-          </button>
+          {renderNotificationButton()}
 
           {isAdmin && (
             <button

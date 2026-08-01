@@ -66,6 +66,11 @@ type ResendResult = {
   message: string;
 };
 
+type InternalNotificationResult = {
+  written: boolean;
+  error: string | null;
+};
+
 const CONFIRM_SEND = "SEND_JOB_ALERT_DIGEST_V2";
 const NOTIFICATION_CHANNEL = "job_alert_digest_v2";
 const DUPLICATE_CHANNELS = ["email", "email_non_paying_digest", NOTIFICATION_CHANNEL];
@@ -297,6 +302,56 @@ async function logStatus(
   }, { onConflict: "to_email,channel,digest_date" });
 
   if (error) throw new Error(`notification_log_write_failed:${error.message}`);
+}
+
+function isMissingUserNotificationsTable(error: { code?: string; message?: string } | null | undefined) {
+  if (!error) return false;
+  if (error.code === "42P01" || error.code === "PGRST205") return true;
+
+  const message = (error.message ?? "").toLowerCase();
+  return message.includes("user_notifications") &&
+    (message.includes("does not exist") || message.includes("schema cache"));
+}
+
+async function recordInternalDigestNotification(
+  supabase: SupabaseClient,
+  payload: {
+    user_id: string;
+    digest_date: string;
+    subject: string;
+    preheader: string;
+    selected_jobs_count: number;
+  },
+): Promise<InternalNotificationResult> {
+  const count = Math.max(0, payload.selected_jobs_count);
+  const fallbackTitle = `${count} offre${count > 1 ? "s" : ""} selectionnee${count > 1 ? "s" : ""} pour toi`;
+  const title = cleanString(payload.subject) || fallbackTitle;
+  const body = cleanString(payload.preheader) ||
+    "Ton digest JobRadar est pret. Retrouve les offres selectionnees dans ton espace.";
+
+  const { error } = await supabase
+    .from("user_notifications")
+    .upsert({
+      user_id: payload.user_id,
+      kind: "new_matches",
+      title,
+      body,
+      cta_label: "Voir mes offres",
+      cta_path: `/jobradar/feed?source=internal_digest&digest_date=${encodeURIComponent(payload.digest_date)}`,
+      dedupe_key: `new_matches:digest:${payload.digest_date}`,
+    }, {
+      onConflict: "user_id,dedupe_key",
+      ignoreDuplicates: true,
+    });
+
+  if (error) {
+    if (isMissingUserNotificationsTable(error)) {
+      return { written: false, error: "user_notifications_table_missing" };
+    }
+    return { written: false, error: error.message };
+  }
+
+  return { written: true, error: null };
 }
 
 async function sendWithResend(payload: Record<string, unknown>, resendKey: string): Promise<ResendResult> {
@@ -588,6 +643,8 @@ serve(async (req) => {
       min_score_to_send: minScoreToSend,
       resend_called: false,
       notification_log_written: false,
+      internal_notification_written: false,
+      internal_notification_error: null,
       diagnostics: {
         ...finalizedDiagnostics,
         digest_date: digestDate,
@@ -647,12 +704,22 @@ serve(async (req) => {
       provider_id: resend.id,
     });
 
+    const internalNotification = await recordInternalDigestNotification(supabase, {
+      user_id: userId,
+      digest_date: digestDate,
+      subject,
+      preheader,
+      selected_jobs_count: selectedJobs.length,
+    });
+
     return json(200, {
       ok: true,
       ...responseBase,
       reason: "sent",
       resend_called: true,
       notification_log_written: true,
+      internal_notification_written: internalNotification.written,
+      internal_notification_error: internalNotification.error,
       diagnostics: {
         ...responseBase.diagnostics,
         resend_status: resend.status,
