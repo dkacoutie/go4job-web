@@ -35,8 +35,7 @@ export default function AppNav() {
   const accountActive = useMemo(
     () =>
       loc.pathname.startsWith("/me") ||
-      loc.pathname.startsWith("/jobradar/profile") ||
-      loc.pathname.startsWith("/capcarriere"),
+      loc.pathname.startsWith("/jobradar/profile"),
     [loc.pathname]
   );
   const adminActive = useMemo(() => loc.pathname.startsWith("/admin"), [loc.pathname]);
@@ -65,7 +64,6 @@ export default function AppNav() {
     () =>
       [
         { label: "Mon CV", path: "/me/cv" },
-        { label: "Mes dossiers CapCarrière", path: "/capcarriere/applications" },
         { label: "Mon profil", path: "/jobradar/profile" },
         ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
         { label: "Mon accès JobRadar", path: "/me/subscription" },
@@ -108,7 +106,14 @@ export default function AppNav() {
   };
 
   useEffect(() => {
-    closeMenus();
+    const frame = requestAnimationFrame(() => {
+      setOpenMenu(null);
+      setMobileNavOpen(false);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
   }, [loc.pathname]);
 
   useEffect(() => {
@@ -125,7 +130,7 @@ export default function AppNav() {
 
       const [isAdminUser, partnerRes] = await Promise.all([
         fetchIsAdminUser(),
-        supabase.from("partner_accounts").select("id").eq("user_id", session.user.id).maybeSingle(),
+        supabase.from("partner_accounts").select("id").eq("user_id", session.user.id).eq("status", "active").maybeSingle(),
       ]);
 
       if (cancelled) return;
