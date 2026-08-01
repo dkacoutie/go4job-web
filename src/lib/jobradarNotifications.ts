@@ -60,6 +60,26 @@ export function emitNotificationsChanged() {
   window.dispatchEvent(new CustomEvent(JOBRADAR_NOTIFICATIONS_CHANGED_EVENT));
 }
 
+type BadgeNavigator = Navigator & {
+  setAppBadge?: (contents?: number) => Promise<void>;
+  clearAppBadge?: () => Promise<void>;
+};
+
+export async function syncInstalledAppBadge(count: number) {
+  if (typeof navigator === "undefined") return;
+
+  const badgeNavigator = navigator as BadgeNavigator;
+  try {
+    if (count > 0 && badgeNavigator.setAppBadge) {
+      await badgeNavigator.setAppBadge(count);
+    } else if (badgeNavigator.clearAppBadge) {
+      await badgeNavigator.clearAppBadge();
+    }
+  } catch {
+    // Badge support depends on browser, OS and install mode.
+  }
+}
+
 export async function fetchUnreadNotificationCount(userId: string): Promise<NotificationQueryResult<number>> {
   const { count, error } = await supabase
     .from("user_notifications")

@@ -9,6 +9,7 @@ import {
   fetchUnreadNotificationCount,
   formatNotificationBadge,
   JOBRADAR_NOTIFICATIONS_CHANGED_EVENT,
+  syncInstalledAppBadge,
 } from "./lib/jobradarNotifications";
 
 type MenuKey = "jobradar" | "account" | null;
@@ -202,6 +203,10 @@ export default function AppNav() {
       window.removeEventListener(JOBRADAR_NOTIFICATIONS_CHANGED_EVENT, onChanged);
     };
   }, [refreshNotificationCount]);
+
+  useEffect(() => {
+    void syncInstalledAppBadge(notificationUnreadCount);
+  }, [notificationUnreadCount]);
 
   useEffect(() => {
     if (!openMenu && !mobileNavOpen) return;
