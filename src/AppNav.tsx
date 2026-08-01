@@ -1,12 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import go4jobLogo from "./assets/go4job-logo.png";
 import "./AppNav.css";
 import { fetchIsAdminUser } from "./lib/adminAccess";
 import { useSession } from "./lib/useSession";
 import { supabase } from "./lib/supabaseClient";
+import {
+  fetchUnreadNotificationCount,
+  formatNotificationBadge,
+  JOBRADAR_NOTIFICATIONS_CHANGED_EVENT,
+} from "./lib/jobradarNotifications";
 
 type MenuKey = "jobradar" | "account" | null;
+type NavItem = { label: string; path: string; badge?: string };
 
 export default function AppNav() {
   const navigate = useNavigate();
@@ -16,6 +22,7 @@ export default function AppNav() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasPartnerAccount, setHasPartnerAccount] = useState(false);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
 
   const [openMenu, setOpenMenu] = useState<MenuKey>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -54,10 +61,15 @@ export default function AppNav() {
   const jobradarItems = useMemo(
     () => [
       { label: "Mes Offres", path: "/jobradar/feed" },
+      {
+        label: "Notifications",
+        path: "/jobradar/notifications",
+        badge: formatNotificationBadge(notificationUnreadCount),
+      },
       { label: "Mes alertes", path: "/jobradar/alerts" },
       { label: "Mes candidatures", path: "/jobradar/applications" },
     ],
-    []
+    [notificationUnreadCount]
   );
 
   const accountItems = useMemo(
@@ -69,7 +81,7 @@ export default function AppNav() {
         { label: "Mon profil", path: "/jobradar/profile" },
         ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
         { label: "Mon accès JobRadar", path: "/me/subscription" },
-      ] as Array<{ label: string; path: string }>,
+      ] as NavItem[],
     [hasPartnerAccount]
   );
 
@@ -86,6 +98,19 @@ export default function AppNav() {
     setOpenMenu(null);
     setMobileNavOpen(false);
   };
+
+  const refreshNotificationCount = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      setNotificationUnreadCount(0);
+      return;
+    }
+
+    const result = await fetchUnreadNotificationCount(userId);
+    if (!result.error) {
+      setNotificationUnreadCount(result.data);
+    }
+  }, [session?.user?.id]);
 
   const focusFirstItem = (key: Exclude<MenuKey, null>) => {
     const menu = key === "jobradar" ? jobMenuRef.current : accMenuRef.current;
@@ -147,6 +172,38 @@ export default function AppNav() {
   }, [session?.user?.id]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const userId = session?.user?.id;
+      if (!userId) {
+        if (!cancelled) setNotificationUnreadCount(0);
+        return;
+      }
+
+      const result = await fetchUnreadNotificationCount(userId);
+      if (!cancelled && !result.error) {
+        setNotificationUnreadCount(result.data);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, loc.pathname]);
+
+  useEffect(() => {
+    const onChanged = () => {
+      void refreshNotificationCount();
+    };
+
+    window.addEventListener(JOBRADAR_NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    return () => {
+      window.removeEventListener(JOBRADAR_NOTIFICATIONS_CHANGED_EVENT, onChanged);
+    };
+  }, [refreshNotificationCount]);
+
+  useEffect(() => {
     if (!openMenu && !mobileNavOpen) return;
 
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
@@ -178,6 +235,32 @@ export default function AppNav() {
     closeMenus();
     navigate(path);
   };
+
+  const renderMenuItem = (it: NavItem) => (
+    <button
+      key={it.path}
+      type="button"
+      role="menuitem"
+      data-menuitem="true"
+      className={"appnav__menuItem " + (isActive(it.path) ? "is-active" : "")}
+      onClick={() => onNavigate(it.path)}
+    >
+      <span className="appnav__itemLabel">{it.label}</span>
+      {it.badge && <span className="appnav__badge">{it.badge}</span>}
+    </button>
+  );
+
+  const renderMobileItem = (it: NavItem) => (
+    <button
+      key={it.path}
+      type="button"
+      className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
+      onClick={() => onNavigate(it.path)}
+    >
+      <span className="appnav__itemLabel">{it.label}</span>
+      {it.badge && <span className="appnav__badge">{it.badge}</span>}
+    </button>
+  );
 
   const onSignOut = async () => {
     if (isSigningOut) return;
@@ -252,6 +335,23 @@ export default function AppNav() {
             Tableau de bord
           </button>
 
+          <button
+            type="button"
+            className={"appnav__iconBtn " + (isActive("/jobradar/notifications") ? "is-active" : "")}
+            onClick={() => onNavigate("/jobradar/notifications")}
+            aria-label={
+              notificationUnreadCount > 0
+                ? `${notificationUnreadCount} notification${notificationUnreadCount > 1 ? "s" : ""} non lue${notificationUnreadCount > 1 ? "s" : ""}`
+                : "Notifications"
+            }
+            title="Notifications"
+          >
+            <span className="appnav__bell" aria-hidden="true" />
+            {notificationUnreadCount > 0 && (
+              <span className="appnav__floatingBadge">{formatNotificationBadge(notificationUnreadCount)}</span>
+            )}
+          </button>
+
           {isAdmin && (
             <button
               type="button"
@@ -282,18 +382,7 @@ export default function AppNav() {
 
             {openMenu === "jobradar" && (
               <div className="appnav__menu" role="menu" ref={jobMenuRef} aria-label="Menu JobRadar">
-                {jobradarItems.map((it) => (
-                  <button
-                    key={it.path}
-                    type="button"
-                    role="menuitem"
-                    data-menuitem="true"
-                    className={"appnav__menuItem " + (isActive(it.path) ? "is-active" : "")}
-                    onClick={() => onNavigate(it.path)}
-                  >
-                    {it.label}
-                  </button>
-                ))}
+                {jobradarItems.map(renderMenuItem)}
               </div>
             )}
           </div>
@@ -325,18 +414,7 @@ export default function AppNav() {
 
             {openMenu === "account" && (
               <div className="appnav__menu appnav__menu--right" role="menu" ref={accMenuRef} aria-label="Menu Compte">
-                {accountItems.map((it) => (
-                  <button
-                    key={it.path}
-                    type="button"
-                    role="menuitem"
-                    data-menuitem="true"
-                    className={"appnav__menuItem " + (isActive(it.path) ? "is-active" : "")}
-                    onClick={() => onNavigate(it.path)}
-                  >
-                    {it.label}
-                  </button>
-                ))}
+                {accountItems.map(renderMenuItem)}
 
                 <div className="appnav__menuDivider" role="separator" />
 
@@ -402,30 +480,12 @@ export default function AppNav() {
 
           <div className="appnav__mobileSection">
             <div className="appnav__mobileSectionTitle">JobRadar</div>
-            {jobradarItems.map((it) => (
-              <button
-                key={it.path}
-                type="button"
-                className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
-                onClick={() => onNavigate(it.path)}
-              >
-                {it.label}
-              </button>
-            ))}
+            {jobradarItems.map(renderMobileItem)}
           </div>
 
           <div className="appnav__mobileSection">
             <div className="appnav__mobileSectionTitle">Compte</div>
-            {accountItems.map((it) => (
-              <button
-                key={it.path}
-                type="button"
-                className={"appnav__mobileItem " + (isActive(it.path) ? "is-active" : "")}
-                onClick={() => onNavigate(it.path)}
-              >
-                {it.label}
-              </button>
-            ))}
+            {accountItems.map(renderMobileItem)}
             <button
               type="button"
               className="appnav__mobileItem appnav__mobileItem--danger"

@@ -144,6 +144,96 @@
   border-color: var(--brand-600);
 }
 
+.appnav__iconBtn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: rgba(15, 23, 42, 0.82);
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  cursor: pointer;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+
+.appnav__iconBtn:hover {
+  transform: translateY(-1px);
+  background: var(--bg);
+  border-color: var(--brand-400);
+}
+
+.appnav__iconBtn:focus {
+  outline: none;
+}
+
+.appnav__iconBtn:focus-visible {
+  box-shadow: var(--ring);
+}
+
+.appnav__iconBtn.is-active {
+  background: var(--brand-100);
+  border-color: var(--brand-400);
+  color: var(--brand-800);
+}
+
+.appnav__bell {
+  width: 15px;
+  height: 17px;
+  border: 2px solid currentColor;
+  border-bottom: 0;
+  border-radius: 10px 10px 4px 4px;
+  position: relative;
+}
+
+.appnav__bell::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: -4px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.appnav__bell::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: -8px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.82;
+}
+
+.appnav__floatingBadge,
+.appnav__badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--error-600);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.appnav__floatingBadge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  border: 2px solid var(--panel);
+}
+
 /* =========================
    Dropdown
    ========================= */
@@ -209,10 +299,23 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 10px;
   font-size: 13px;
   font-weight: 750;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease;
+}
+
+.appnav__itemLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appnav__menuItem .appnav__itemLabel,
+.appnav__mobileItem .appnav__itemLabel {
+  flex: 1 1 auto;
 }
 
 .appnav__menuItem:hover {

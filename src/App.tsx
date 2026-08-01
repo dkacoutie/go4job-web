@@ -39,6 +39,7 @@ const ProfilePage = lazy(() => import("./ProfilePage"));
 const ApplicationsPage = lazy(() => import("./ApplicationsPage"));
 const JobRadarFeedPage = lazy(() => import("./JobRadarFeedPage"));
 const JobDetailsPage = lazy(() => import("./JobDetailsPage"));
+const NotificationsPage = lazy(() => import("./NotificationsPage"));
 const MyCvPage = lazy(() => import("./MyCvPage"));
 const SubscriptionPage = lazy(() => import("./SubscriptionPage"));
 const PricingPage = lazy(() => import("./PricingPage"));
@@ -411,6 +412,14 @@ export default function App() {
                         <ApplicationsPage />
                       </LazyRoute>
                     </JobRadarOnboardingGate>
+                  }
+                />
+                <Route
+                  path="/jobradar/notifications"
+                  element={
+                    <LazyRoute>
+                      <NotificationsPage />
+                    </LazyRoute>
                   }
                 />
                 <Route
