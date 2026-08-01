@@ -7,6 +7,7 @@ import { resolveCountrySearchQuery } from "./lib/jobMatching";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import PwaInstallCard from "./components/PwaInstallCard";
 import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
 
@@ -487,6 +488,7 @@ export default function AlertsPage() {
 
     if (!n) {
       if (!keywordsDirty) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setKeywordsText("");
         setLastSuggestedFor("");
         setLastSuggestedText("");
@@ -738,7 +740,6 @@ export default function AlertsPage() {
       const msg = "La suppression n’a pas été confirmée. Réessaie dans quelques instants.";
       setErrorMsg(msg);
       pushToast({ kind: "error", title: "Suppression impossible", message: msg });
-      // eslint-disable-next-line no-console
       console.error("[alerts] delete failed", lastError);
       setDeleteBusy(false);
       return;
@@ -778,6 +779,8 @@ export default function AlertsPage() {
       </section>
 
       {errorMsg && <div className="alerts-error">Erreur : {errorMsg}</div>}
+
+      <PwaInstallCard />
 
       <>
         {freeAlertLimitReached ? (
@@ -1124,8 +1127,6 @@ export default function AlertsPage() {
     </div>
   );
 }
-
-
 
 
 

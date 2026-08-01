@@ -6,6 +6,9 @@ import App from "./App";
 
 // IMPORTANT: charge le client Supabase (et le window.supabase en DEV si tu l'as ajoute)
 import "./lib/supabaseClient";
+import { initPwa } from "./lib/pwa";
+
+initPwa();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

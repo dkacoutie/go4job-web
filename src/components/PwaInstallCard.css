@@ -1,0 +1,77 @@
+.pwaInstallCard {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.pwaInstallCard__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  background: var(--brand-100);
+  color: var(--brand-800);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.pwaInstallCard__body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pwaInstallCard__eyebrow {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pwaInstallCard__title {
+  color: var(--text);
+  font-size: 15.5px;
+  font-weight: 760;
+}
+
+.pwaInstallCard__body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pwaInstallCard__hint {
+  color: var(--text) !important;
+  font-weight: 650;
+}
+
+.pwaInstallCard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .pwaInstallCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pwaInstallCard__actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .pwaInstallCard__actions .btn {
+    flex: 1 1 140px;
+  }
+}
