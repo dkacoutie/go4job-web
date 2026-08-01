@@ -209,6 +209,7 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   padding:26px;
+  scroll-margin-top: 14px;
 }
 
 .auth-shell .card h2{

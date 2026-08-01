@@ -77,6 +77,7 @@ export default function AuthPage() {
   // quitte la page puis revient sur un nouveau montage du composant — cet
   // effet est alors le seul point où on peut détecter la connexion.
   const hasTrackedAuthRef = useRef(false);
+  const authCardRef = useRef<HTMLElement | null>(null);
 
   const redirectTo = useMemo(() => {
     const st = (location.state ?? {}) as AuthLocationState;
@@ -241,10 +242,22 @@ export default function AuthPage() {
     }
   }
 
+  const scrollAuthCardIntoView = () => {
+    if (!window.matchMedia("(max-width: 920px)").matches) return;
+
+    window.requestAnimationFrame(() => {
+      authCardRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+  };
+
   const switchMode = (next: "signin" | "signup") => {
     setErrorMsg(null);
     setInfoMsg(null);
     setMode(next);
+    scrollAuthCardIntoView();
   };
 
   return (
@@ -306,7 +319,7 @@ export default function AuthPage() {
           </div>
         </section>
 
-        <aside className="card">
+        <aside className="card" ref={authCardRef}>
           <h2>{mode === "signup" ? "Créer un compte" : "Connexion"}</h2>
 
           <p className="sub">
