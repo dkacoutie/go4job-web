@@ -70,6 +70,7 @@ const CONFIRM_SEND = "SEND_JOB_ALERT_DIGEST_V2";
 const NOTIFICATION_CHANNEL = "job_alert_digest_v2";
 const DUPLICATE_CHANNELS = ["email", "email_non_paying_digest", NOTIFICATION_CHANNEL];
 const REQUEST_TIMEOUT_MS = 15_000;
+const CODE_VERSION = "digest_history_v1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,7 +79,7 @@ const corsHeaders = {
 };
 
 function json(status: number, body: Record<string, unknown>) {
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify({ code_version: CODE_VERSION, ...body }), {
     status,
     headers: {
       ...corsHeaders,
@@ -427,7 +428,7 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
   const { limit, minJobsPreview, minJobsToSend, minScorePreview, minScoreToSend, maxBlocks } = normalizeOptions(body);
   const diagnostics = baseDiagnostics();
-  diagnostics.notes.push("send_job_alert_digest_v2 is not connected to cron and never sends to multiple users.");
+  diagnostics.notes.push("send_job_alert_digest_v2 handles one user per invocation; scheduled batching is orchestrated by private.cron_send_job_alert_digest.");
   diagnostics.notes.push("job_alert_sent_jobs is not used in V1; per-job deduplication remains for V1.1.");
 
   try {
