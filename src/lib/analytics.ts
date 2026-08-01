@@ -219,6 +219,11 @@ const ALLOWED_PARAM_KEYS = new Set([
   "confirmation_path",
   "reminder_step",
   "hours_since_pending",
+  "context",
+  "browser",
+  "os",
+  "outcome",
+  "available",
 ]);
 
 // Seuls les champs de texte réellement libres (saisis par l'utilisateur)
@@ -547,4 +552,52 @@ export function trackPaymentRecoveredAfterReminder(params: { hoursSincePending?:
 
 export function trackPassActivated(params: { planId?: string }) {
   sendEvent("pass_activated", { plan_id: params.planId });
+}
+
+export function trackPwaCtaShown(params: { context: string; browser?: string; os?: string; reason?: string }) {
+  sendEvent("pwa_cta_shown", {
+    context: params.context,
+    browser: params.browser,
+    os: params.os,
+    reason: params.reason,
+  });
+}
+
+export function trackPwaCtaClicked(params: { context: string; browser?: string; os?: string }) {
+  sendEvent("pwa_cta_clicked", {
+    context: params.context,
+    browser: params.browser,
+    os: params.os,
+  });
+}
+
+export function trackPwaPromptAvailable(params: { available: boolean; browser?: string; os?: string }) {
+  sendEvent("pwa_prompt_available", {
+    available: params.available,
+    browser: params.browser,
+    os: params.os,
+  });
+}
+
+export function trackPwaPromptOutcome(params: { outcome: "accepted" | "dismissed"; browser?: string; os?: string }) {
+  sendEvent("pwa_prompt_outcome", {
+    outcome: params.outcome,
+    browser: params.browser,
+    os: params.os,
+  });
+}
+
+export function trackPwaFallbackShown(params: { context: string; browser?: string; os?: string }) {
+  sendEvent("pwa_fallback_shown", {
+    context: params.context,
+    browser: params.browser,
+    os: params.os,
+  });
+}
+
+export function trackPwaAppInstalled(params?: { browser?: string; os?: string }) {
+  sendEvent("pwa_appinstalled", {
+    browser: params?.browser,
+    os: params?.os,
+  });
 }
