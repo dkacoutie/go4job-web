@@ -64,6 +64,8 @@ export default function AppNav() {
     () =>
       [
         { label: "Mon CV", path: "/me/cv" },
+        { label: "Mes alertes emploi", path: "/jobradar/alerts" },
+        { label: "Mes candidatures", path: "/jobradar/applications" },
         { label: "Mon profil", path: "/jobradar/profile" },
         ...(hasPartnerAccount ? [{ label: "Espace partenaire", path: "/me/partner" }] : []),
         { label: "Mon accès JobRadar", path: "/me/subscription" },
