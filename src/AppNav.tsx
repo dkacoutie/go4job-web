@@ -67,6 +67,7 @@ export default function AppNav() {
         path: "/jobradar/notifications",
         badge: formatNotificationBadge(notificationUnreadCount),
       },
+      { label: "Mes alertes reçues", path: "/jobradar/digests" },
       { label: "Mes alertes", path: "/jobradar/alerts" },
       { label: "Mes candidatures", path: "/jobradar/applications" },
     ],

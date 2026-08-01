@@ -176,6 +176,10 @@
   color: var(--brand-700);
 }
 
+.notifications-kind--digest_sent {
+  color: #0f766e;
+}
+
 .notifications-kind--alert_active {
   color: var(--success-600);
 }

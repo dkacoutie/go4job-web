@@ -4,6 +4,7 @@ export const JOBRADAR_NOTIFICATIONS_CHANGED_EVENT = "jobradar:notifications-chan
 
 export type JobRadarNotificationKind =
   | "new_matches"
+  | "digest_sent"
   | "alert_active"
   | "saved_job_expiring"
   | "subscription_status";

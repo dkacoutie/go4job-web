@@ -17,6 +17,8 @@ function kindLabel(kind: JobRadarNotificationKind) {
   switch (kind) {
     case "new_matches":
       return "Offres";
+    case "digest_sent":
+      return "Alertes reçues";
     case "alert_active":
       return "Alerte";
     case "saved_job_expiring":

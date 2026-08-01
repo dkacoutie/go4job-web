@@ -40,6 +40,8 @@ const ApplicationsPage = lazy(() => import("./ApplicationsPage"));
 const JobRadarFeedPage = lazy(() => import("./JobRadarFeedPage"));
 const JobDetailsPage = lazy(() => import("./JobDetailsPage"));
 const NotificationsPage = lazy(() => import("./NotificationsPage"));
+const JobRadarDigestsPage = lazy(() => import("./JobRadarDigestsPage"));
+const JobRadarDigestDetailPage = lazy(() => import("./JobRadarDigestDetailPage"));
 const MyCvPage = lazy(() => import("./MyCvPage"));
 const SubscriptionPage = lazy(() => import("./SubscriptionPage"));
 const PricingPage = lazy(() => import("./PricingPage"));
@@ -419,6 +421,22 @@ export default function App() {
                   element={
                     <LazyRoute>
                       <NotificationsPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/jobradar/digests"
+                  element={
+                    <LazyRoute>
+                      <JobRadarDigestsPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/jobradar/digests/:runId"
+                  element={
+                    <LazyRoute>
+                      <JobRadarDigestDetailPage />
                     </LazyRoute>
                   }
                 />

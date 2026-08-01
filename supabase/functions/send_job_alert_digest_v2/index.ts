@@ -66,11 +66,6 @@ type ResendResult = {
   message: string;
 };
 
-type InternalNotificationResult = {
-  written: boolean;
-  error: string | null;
-};
-
 const CONFIRM_SEND = "SEND_JOB_ALERT_DIGEST_V2";
 const NOTIFICATION_CHANNEL = "job_alert_digest_v2";
 const DUPLICATE_CHANNELS = ["email", "email_non_paying_digest", NOTIFICATION_CHANNEL];
@@ -304,54 +299,38 @@ async function logStatus(
   if (error) throw new Error(`notification_log_write_failed:${error.message}`);
 }
 
-function isMissingUserNotificationsTable(error: { code?: string; message?: string } | null | undefined) {
-  if (!error) return false;
-  if (error.code === "42P01" || error.code === "PGRST205") return true;
-
-  const message = (error.message ?? "").toLowerCase();
-  return message.includes("user_notifications") &&
-    (message.includes("does not exist") || message.includes("schema cache"));
-}
-
-async function recordInternalDigestNotification(
+async function recordDigestRun(
   supabase: SupabaseClient,
   payload: {
     user_id: string;
     digest_date: string;
+    channel: string;
     subject: string;
     preheader: string;
-    selected_jobs_count: number;
+    jobs: SelectedJob[];
   },
-): Promise<InternalNotificationResult> {
-  const count = Math.max(0, payload.selected_jobs_count);
-  const fallbackTitle = `${count} offre${count > 1 ? "s" : ""} selectionnee${count > 1 ? "s" : ""} pour toi`;
-  const title = cleanString(payload.subject) || fallbackTitle;
-  const body = cleanString(payload.preheader) ||
-    "Ton digest JobRadar est pret. Retrouve les offres selectionnees dans ton espace.";
+): Promise<string> {
+  const items = payload.jobs.map((job, index) => ({
+    job_id: job.id,
+    rank: index + 1,
+    title: cleanString(job.title) || "Offre JobRadar",
+    company_name: cleanString(job.company_name) || null,
+    location: cleanString(job.location) || null,
+    country: cleanString(job.country) || null,
+    score: job.score,
+  }));
 
-  const { error } = await supabase
-    .from("user_notifications")
-    .upsert({
-      user_id: payload.user_id,
-      kind: "new_matches",
-      title,
-      body,
-      cta_label: "Voir mes offres",
-      cta_path: `/jobradar/feed?source=internal_digest&digest_date=${encodeURIComponent(payload.digest_date)}`,
-      dedupe_key: `new_matches:digest:${payload.digest_date}`,
-    }, {
-      onConflict: "user_id,dedupe_key",
-      ignoreDuplicates: true,
-    });
+  const { data, error } = await supabase.rpc("record_job_alert_digest", {
+    p_user_id: payload.user_id,
+    p_digest_date: payload.digest_date,
+    p_channel: payload.channel,
+    p_subject: payload.subject,
+    p_preheader: payload.preheader,
+    p_items: items,
+  });
 
-  if (error) {
-    if (isMissingUserNotificationsTable(error)) {
-      return { written: false, error: "user_notifications_table_missing" };
-    }
-    return { written: false, error: error.message };
-  }
-
-  return { written: true, error: null };
+  if (error) throw new Error(`digest_run_record_failed:${error.message}`);
+  return String(data);
 }
 
 async function sendWithResend(payload: Record<string, unknown>, resendKey: string): Promise<ResendResult> {
@@ -643,8 +622,8 @@ serve(async (req) => {
       min_score_to_send: minScoreToSend,
       resend_called: false,
       notification_log_written: false,
-      internal_notification_written: false,
-      internal_notification_error: null,
+      digest_run_recorded: false,
+      digest_run_id: null,
       diagnostics: {
         ...finalizedDiagnostics,
         digest_date: digestDate,
@@ -704,13 +683,20 @@ serve(async (req) => {
       provider_id: resend.id,
     });
 
-    const internalNotification = await recordInternalDigestNotification(supabase, {
-      user_id: userId,
-      digest_date: digestDate,
-      subject,
-      preheader,
-      selected_jobs_count: selectedJobs.length,
-    });
+    let digestRunId: string | null = null;
+    let digestRunError: string | null = null;
+    try {
+      digestRunId = await recordDigestRun(supabase, {
+        user_id: userId,
+        digest_date: digestDate,
+        channel: NOTIFICATION_CHANNEL,
+        subject,
+        preheader,
+        jobs: selectedJobs,
+      });
+    } catch (error) {
+      digestRunError = error instanceof Error ? error.message : "digest_run_record_failed";
+    }
 
     return json(200, {
       ok: true,
@@ -718,12 +704,13 @@ serve(async (req) => {
       reason: "sent",
       resend_called: true,
       notification_log_written: true,
-      internal_notification_written: internalNotification.written,
-      internal_notification_error: internalNotification.error,
+      digest_run_recorded: digestRunId !== null,
+      digest_run_id: digestRunId,
       diagnostics: {
         ...responseBase.diagnostics,
         resend_status: resend.status,
         resend_message_id: resend.id,
+        digest_run_error: digestRunError,
       },
     });
   } catch (error) {
