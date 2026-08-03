@@ -6,6 +6,7 @@ import { trackProfileCompleted } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
+import { Badge } from "./components/ui";
 import "./ProfilePage.css";
 
 type Profile = {
@@ -604,17 +605,14 @@ export default function ProfilePage() {
                   <div className="pills">
                     {skills.length === 0 && <span className="muted">Ajoute 2-4 compétences clés.</span>}
                     {skills.map((skill, index) => (
-                      <span className="pill pill-edit" key={`${skill}-${index}`}>
+                      <Badge
+                        key={`${skill}-${index}`}
+                        variant="strong"
+                        onRemove={() => setSkills((prev) => prev.filter((_, i) => i !== index))}
+                        removeLabel={`Supprimer ${skill}`}
+                      >
                         {skill}
-                        <button
-                          className="pill-remove"
-                          type="button"
-                          onClick={() => setSkills((prev) => prev.filter((_, i) => i !== index))}
-                          aria-label={`Supprimer ${skill}`}
-                        >
-                          ×
-                        </button>
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                   <input
