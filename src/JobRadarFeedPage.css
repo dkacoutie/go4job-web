@@ -261,9 +261,12 @@
   color: var(--jr-text);
   font-weight: 700;
   cursor: pointer;
-  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  transition: transform 160ms var(--ease-out), background 160ms var(--ease-out), border-color 160ms var(--ease-out);
 }
-.jrBtn:hover { transform: translateY(-1px); background: var(--bg); }
+@media (hover: hover) and (pointer: fine){
+  .jrBtn:hover { transform: translateY(-1px); background: var(--bg); }
+}
+.jrBtn:active { transform: scale(.97); transition-duration: 100ms; }
 .jrBtn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
 .jrBtnPrimary {
@@ -588,14 +591,30 @@
   font-weight: 700;
 }
 
-.jr-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--jr-shadow);
-  border-color: var(--border-strong);
+@media (hover: hover) and (pointer: fine){
+  .jr-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--jr-shadow);
+    border-color: var(--border-strong);
+  }
+}
+
+.jr-card:active {
+  transform: scale(.99);
+  transition-duration: 100ms;
 }
 
 .jr-card:focus-visible {
   box-shadow: 0 0 0 3px var(--jr-focus);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .jr-card, .jr-card:hover, .jr-card:active,
+  .jrBtn:hover, .jrBtn:active,
+  .jr-ctaSm:hover, .jr-ctaSm:active,
+  .jr-ctaGhost:hover, .jr-ctaGhost:active{
+    transform: none !important;
+  }
 }
 
 /* top */
@@ -913,12 +932,19 @@
   color: #fff;
   cursor: pointer;
   background: var(--brand-700);
-  transition: transform 120ms ease, background 120ms ease;
+  transition: transform 160ms var(--ease-out), background 160ms var(--ease-out);
 }
 
-.jr-ctaSm:hover {
-  background: var(--brand-800);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine){
+  .jr-ctaSm:hover {
+    background: var(--brand-800);
+    transform: translateY(-1px);
+  }
+}
+
+.jr-ctaSm:active {
+  transform: scale(.97);
+  transition-duration: 100ms;
 }
 
 .jr-ctaSm:disabled {
@@ -946,9 +972,16 @@
   transition: transform 120ms ease, background 120ms ease;
 }
 
-.jr-ctaGhost:hover {
-  transform: translateY(-1px);
-  background: var(--brand-100);
+@media (hover: hover) and (pointer: fine){
+  .jr-ctaGhost:hover {
+    transform: translateY(-1px);
+    background: var(--brand-100);
+  }
+}
+
+.jr-ctaGhost:active {
+  transform: scale(.97);
+  transition-duration: 100ms;
 }
 
 .jr-ctaGhost:disabled {

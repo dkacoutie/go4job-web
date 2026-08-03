@@ -17,15 +17,17 @@
   background: var(--panel);
   cursor: pointer;
   font-weight: 700;
-  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease, background 120ms ease, border-color 120ms ease;
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out), opacity 160ms var(--ease-out), background 160ms var(--ease-out), border-color 160ms var(--ease-out);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
 }
 
-.btn:hover{ transform: translateY(-1px); }
-.btn:active{ transform: translateY(0) scale(.99); }
+@media (hover: hover) and (pointer: fine){
+  .btn:hover{ transform: translateY(-1px); }
+}
+.btn:active{ transform: scale(.97); transition-duration: 100ms; }
 
 .btn:focus{ outline: none; }
 .btn:focus-visible{ outline: none; box-shadow: var(--ring); }
@@ -98,10 +100,13 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
+  transition: background 160ms var(--ease-out), transform 160ms var(--ease-out);
 }
 .iconBtn svg{ fill: rgba(15,23,42,0.70); }
-.iconBtn:hover{ background: var(--bg); transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine){
+  .iconBtn:hover{ background: var(--bg); transform: translateY(-1px); }
+}
+.iconBtn:active{ transform: scale(.94); transition-duration: 100ms; }
 
 .menuPanel{
   position: absolute;
@@ -165,7 +170,7 @@
   align-items: flex-start;
   gap: 12px;
 
-  animation: toastIn 220ms ease-out;
+  animation: toastIn 220ms var(--ease-out);
 }
 
 .toast::before{
@@ -248,7 +253,7 @@
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
   padding: 16px;
-  animation: modalIn 180ms ease-out;
+  animation: modalIn 180ms var(--ease-out);
 }
 @keyframes modalIn{
   from{ transform: translateY(10px) scale(.985); opacity: 0; }
@@ -277,3 +282,19 @@
 
 /* Images safety */
 img{ max-width: 100%; height: auto; }
+
+/* =========================================================
+   Accessibilité — mouvement réduit
+   Garde les fondus (compréhension), retire les déplacements.
+========================================================= */
+@media (prefers-reduced-motion: reduce){
+  .btn, .btn:hover, .btn:active,
+  .iconBtn, .iconBtn:hover, .iconBtn:active{
+    transform: none !important;
+  }
+  .toast{ animation: toastFadeIn 160ms ease !important; }
+  .modal{ animation: modalFadeIn 160ms ease !important; }
+}
+
+@keyframes toastFadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
+@keyframes modalFadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
