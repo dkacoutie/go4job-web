@@ -2,6 +2,14 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  # Clé publique ("publishable key") logo.dev, faite pour être exposée
+  # côté client — pas un secret. Mise ici (config file) car les
+  # "Environment variables" du dashboard Netlify sont réservées au plan
+  # payant sur ce compte (voir capture du 04/08/2026 : Team settings >
+  # Environment variables > "This feature is available on paid plans").
+  VITE_LOGO_DEV_TOKEN = "pk_Wjv_L8n9SMirp8Yg_fFbUQ"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
