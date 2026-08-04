@@ -183,6 +183,14 @@ const COMPANY_AVATAR_PALETTE = [
 
 function getCompanyAvatar(name?: string | null) {
   const label = (name ?? "").trim();
+
+  // Pas de nom d'entreprise : sur ce flux, c'est presque toujours une offre
+  // remote/agrégée légitime, pas une erreur. "?" se lit comme une anomalie ;
+  // un globe se lit comme "à distance", plus juste et moins inquiétant.
+  if (!label) {
+    return { initials: "🌐", bg: "var(--bg)", fg: "var(--muted)" };
+  }
+
   const initials =
     label
       .split(/\s+/)
