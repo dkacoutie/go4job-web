@@ -90,30 +90,30 @@ function partnerAccountStatusLabel(status: PartnerAccountRow["status"]) {
   if (status === "active") return "Actif";
   if (status === "pending") return "En attente";
   if (status === "paused") return "En pause";
-  return "Desactive";
+  return "Désactivé";
 }
 
 function activationMessageForStatus(status: PartnerAccountRow["status"]) {
   if (status === "pending") {
     return {
-      title: "Ton compte partenaire doit etre regularise",
+      title: "Votre compte partenaire doit être régularisé",
       body:
-        "Ce compte provient d'un ancien flux et n'est pas aligne avec le programme actuel. Contacte l'equipe pour faire le point sur sa reprise.",
+        "Ce compte provient d'un ancien flux et n'est pas aligné avec le programme actuel. Contactez l'équipe pour faire le point sur sa reprise.",
     };
   }
 
   if (status === "paused") {
     return {
-      title: "Ton espace partenaire est temporairement en pause",
+      title: "Votre espace partenaire est temporairement en pause",
       body:
-        "L'equipe JobRadar a mis ce compte partenaire en pause. Tu peux nous contacter pour verifier la situation et reprendre l'activite si besoin.",
+        "L'équipe JobRadar a mis ce compte partenaire en pause. Vous pouvez nous contacter pour vérifier la situation et reprendre l'activité si besoin.",
     };
   }
 
   return {
-    title: "Ton espace partenaire est desactive",
+    title: "Votre espace partenaire est désactivé",
     body:
-      "Ce compte partenaire est desactive. Contacte l'equipe JobRadar si une reactivation doit etre envisagee.",
+      "Ce compte partenaire est désactivé. Contactez l'équipe JobRadar si une réactivation doit être envisagée.",
   };
 }
 
@@ -209,7 +209,7 @@ export default function PartnerPortalPage() {
       setCommissions(snapshot.commissions);
       setPayouts(snapshot.payouts);
     } catch (err: any) {
-      setErrorMsg(err?.message ?? "Impossible de charger ton espace partenaire.");
+      setErrorMsg(err?.message ?? "Impossible de charger votre espace partenaire.");
     } finally {
       setPageLoading(false);
     }
@@ -270,11 +270,11 @@ export default function PartnerPortalPage() {
       kind: "conversion" as const,
       at: conversion.converted_at,
       tone: conversion.status === "attributed" ? ("green" as const) : ("gray" as const),
-      title: conversion.status === "attributed" ? "Vente attribuee" : "Vente non commissionable",
+      title: conversion.status === "attributed" ? "Vente attribuée" : "Vente non commissionable",
       detail:
         conversion.status === "attributed"
           ? `Code ${conversion.referral_code_used} | premier pass payé du client`
-          : `Code ${conversion.referral_code_used} | ${conversion.disqualification_reason ?? "non eligible"}`,
+          : `Code ${conversion.referral_code_used} | ${conversion.disqualification_reason ?? "non éligible"}`,
     }));
 
     const commissionItems = commissions.map((commission) => {
@@ -296,11 +296,11 @@ export default function PartnerPortalPage() {
 
       const title =
         commission.status === "paid"
-          ? "Commission payee"
+          ? "Commission payée"
           : commission.status === "approved"
-          ? "Commission approuvee"
+          ? "Commission approuvée"
           : commission.status === "voided"
-          ? "Commission annulee"
+          ? "Commission annulée"
           : "Commission en attente";
 
       return {
@@ -325,8 +325,8 @@ export default function PartnerPortalPage() {
           : payout.status === "failed"
           ? ("red" as const)
           : ("gray" as const),
-      title: payout.status === "paid" ? "Paiement effectue" : `Paiement ${payout.status}`,
-      detail: `${formatAmount(payout.amount_minor, payout.currency)} | ${payout.payment_method ?? "reglement manuel"}`,
+      title: payout.status === "paid" ? "Paiement effectué" : `Paiement ${payout.status}`,
+      detail: `${formatAmount(payout.amount_minor, payout.currency)} | ${payout.payment_method ?? "règlement manuel"}`,
     }));
 
     return [...conversionItems, ...commissionItems, ...payoutItems]
@@ -341,14 +341,14 @@ export default function PartnerPortalPage() {
       await copyText(effectiveSummary.referral_code);
       pushToast({
         kind: "success",
-        title: "Code partenaire copie",
-        message: "Tu peux maintenant le partager facilement.",
+        title: "Code partenaire copié",
+        message: "Vous pouvez maintenant le partager facilement.",
       });
     } catch {
       pushToast({
         kind: "error",
         title: "Copie impossible",
-        message: "Ton navigateur a bloque la copie du code. Tu peux le selectionner manuellement.",
+        message: "Votre navigateur a bloqué la copie du code. Vous pouvez le sélectionner manuellement.",
       });
     }
   }, [effectiveSummary?.referral_code, pushToast]);
@@ -360,14 +360,14 @@ export default function PartnerPortalPage() {
       await copyText(referralLink);
       pushToast({
         kind: "success",
-        title: "Lien partenaire copie",
-        message: "Ton lien personnel est pret a etre partage.",
+        title: "Lien partenaire copié",
+        message: "Votre lien personnel est prêt à être partagé.",
       });
     } catch {
       pushToast({
         kind: "error",
         title: "Copie impossible",
-        message: "Ton navigateur a bloque la copie du lien. Tu peux le selectionner manuellement.",
+        message: "Votre navigateur a bloqué la copie du lien. Vous pouvez le sélectionner manuellement.",
       });
     }
   }, [pushToast, referralLink]);
@@ -377,7 +377,7 @@ export default function PartnerPortalPage() {
       <div className="partnerPortal">
         <div className="partnerPortal__state card">
           <h1>Espace partenaire</h1>
-          <p className="subtitle">Chargement de ton dashboard partenaire...</p>
+          <p className="subtitle">Chargement de votre dashboard partenaire...</p>
         </div>
       </div>
     );
@@ -388,7 +388,7 @@ export default function PartnerPortalPage() {
       <div className="partnerPortal">
         <div className="partnerPortal__state card">
           <span className="badge badge--red">Erreur</span>
-          <h1>Impossible de charger ton espace partenaire</h1>
+          <h1>Impossible de charger votre espace partenaire</h1>
           <p className="subtitle">{errorMsg}</p>
           <div className="partnerPortal__heroActions">
             <button type="button" className="btn btn--primary" onClick={() => void loadData()}>
@@ -405,10 +405,10 @@ export default function PartnerPortalPage() {
       <div className="partnerPortal">
         <section className="partnerPortal__state card">
           <span className="badge badge--blue">Programme partenaires</span>
-          <h1>Aucun compte partenaire rattache a ce profil</h1>
+          <h1>Aucun compte partenaire rattaché à ce profil</h1>
           <p className="subtitle">
-            Cet espace est reserve aux partenaires. Si tu as recu le lien direct vers le programme partenaires,
-            finalise ton adhesion depuis cette page puis reviens ici. Sinon, contacte-nous pour verifier ta situation.
+            Cet espace est réservé aux partenaires. Si vous avez reçu le lien direct vers le programme partenaires,
+            finalisez votre adhésion depuis cette page puis revenez ici. Sinon, contactez-nous pour vérifier votre situation.
           </p>
           <div className="partnerPortal__contactBox">
             <div>
@@ -416,13 +416,13 @@ export default function PartnerPortalPage() {
               <strong>{PARTNER_CONTACT_EMAIL}</strong>
             </div>
             <div>
-              <span>Acces actuel</span>
+              <span>Accès actuel</span>
               <strong>Aucun compte partenaire</strong>
             </div>
           </div>
           <div className="partnerPortal__heroActions">
             <a className="btn" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Programme%20partenaires`}>
-              Contacter l'equipe
+              Contacter l'équipe
             </a>
             <Link className="btn btn--primary" to="/">
               Retour au dashboard
@@ -459,7 +459,7 @@ export default function PartnerPortalPage() {
               Copier mon code
             </button>
             <a className="btn btn--primary" href={`mailto:${PARTNER_CONTACT_EMAIL}?subject=Suivi%20compte%20partenaire`}>
-              Contacter l'equipe
+              Contacter l'équipe
             </a>
           </div>
         </section>
@@ -478,7 +478,7 @@ export default function PartnerPortalPage() {
           <div className="partnerPortal__welcomeIntro">
             <div>
               <span className="badge badge--green">Compte partenaire pret</span>
-              <h2>Bienvenue dans ton espace partenaire</h2>
+              <h2>Bienvenue dans votre espace partenaire</h2>
               <div className="partnerPortal__welcomeMessage">
                 {activationWelcomeMessage.paragraphs.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
@@ -504,19 +504,19 @@ export default function PartnerPortalPage() {
 
           <div className="partnerPortal__welcomeGuide">
             <div>
-              <h3>Actions recommandees</h3>
+              <h3>Actions recommandées</h3>
               <div className="partnerPortal__welcomeChecklist">
                 <div className="partnerPortal__welcomeChecklistItem">
-                  <strong>1. Copie ton lien personnel</strong>
-                  <span>Utilise en priorite ce lien pour tes partages afin de garder un suivi propre des recommandations.</span>
+                  <strong>1. Copiez votre lien personnel</strong>
+                  <span>Utilisez en priorité ce lien pour vos partages afin de garder un suivi propre des recommandations.</span>
                 </div>
                 <div className="partnerPortal__welcomeChecklistItem">
-                  <strong>2. Garde aussi ton code partenaire</strong>
-                  <span>Il peut t'aider dans les echanges directs ou quand tu accompagnes quelqu'un pas a pas.</span>
+                  <strong>2. Gardez aussi votre code partenaire</strong>
+                  <span>Il peut vous aider dans les échanges directs ou quand vous accompagnez quelqu'un pas à pas.</span>
                 </div>
                 <div className="partnerPortal__welcomeChecklistItem">
-                  <strong>3. Reviens suivre tes performances</strong>
-                  <span>Tu retrouveras ici tes ventes attribuees, tes commissions et tes paiements au meme endroit.</span>
+                  <strong>3. Revenez suivre vos performances</strong>
+                  <span>Vous retrouverez ici vos ventes attribuées, vos commissions et vos paiements au même endroit.</span>
                 </div>
               </div>
             </div>
@@ -547,8 +547,8 @@ export default function PartnerPortalPage() {
             <div>
               <h1>Mon espace partenaire</h1>
               <p className="subtitle">
-                Suis tes ventes, tes commissions et tes paiements au meme endroit. Ce dashboard est connecte a ton
-                compte partenaire et n'affiche que tes donnees.
+                Suivez vos ventes, vos commissions et vos paiements au même endroit. Ce dashboard est connecté à votre
+                compte partenaire et n'affiche que vos données.
               </p>
             </div>
             <span className={statusBadgeClass(effectiveSummary.partner_status)}>
@@ -562,11 +562,11 @@ export default function PartnerPortalPage() {
               <strong className="mono">{effectiveSummary.referral_code}</strong>
             </div>
             <div className="partnerPortal__infoPill">
-              <span>Derniere vente</span>
+              <span>Dernière vente</span>
               <strong>{formatDateTime(effectiveSummary.last_conversion_at)}</strong>
             </div>
             <div className="partnerPortal__infoPill">
-              <span>Total gagne</span>
+              <span>Total gagné</span>
               <strong>{formatCurrencyTotals(effectiveSummary.commissions_total_earned_by_currency)}</strong>
             </div>
           </div>
@@ -574,12 +574,12 @@ export default function PartnerPortalPage() {
 
         <div className="partnerPortal__shareCard">
           <div className="partnerPortal__shareHeader">
-            <h2>Ton lien personnel</h2>
-            <p>Partage ce lien avec ton audience. C'est lui qui porte ton code partenaire pour le tracking.</p>
+            <h2>Votre lien personnel</h2>
+            <p>Partagez ce lien avec votre audience. C'est lui qui porte votre code partenaire pour le tracking.</p>
           </div>
 
           <div className="partnerPortal__shareBox">
-            <span>Lien personnel a partager</span>
+            <span>Lien personnel à partager</span>
             <strong className="mono">{referralLink}</strong>
           </div>
 
@@ -593,8 +593,8 @@ export default function PartnerPortalPage() {
           </div>
 
           <div className="partnerPortal__shareNote">
-            Le lien /devenir-partenaire sert uniquement a rejoindre le programme partenaires. Ton lien personnel type
-            a partager est : <strong>{PARTNER_REFERRAL_BASE_URL}CODE_PARTENAIRE</strong>
+            Le lien /devenir-partenaire sert uniquement à rejoindre le programme partenaires. Votre lien personnel type
+            à partager est : <strong>{PARTNER_REFERRAL_BASE_URL}CODE_PARTENAIRE</strong>
           </div>
         </div>
       </section>
@@ -621,15 +621,15 @@ export default function PartnerPortalPage() {
           <strong>{formatCurrencyTotals(effectiveSummary.commissions_pending_by_currency)}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Commissions approuvees</span>
+          <span>Commissions approuvées</span>
           <strong>{formatCurrencyTotals(effectiveSummary.commissions_approved_by_currency)}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Commissions payees</span>
+          <span>Commissions payées</span>
           <strong>{formatCurrencyTotals(effectiveSummary.commissions_paid_by_currency)}</strong>
         </article>
         <article className="card partnerPortal__metric">
-          <span>Total gagne</span>
+          <span>Total gagné</span>
           <strong>{formatCurrencyTotals(effectiveSummary.commissions_total_earned_by_currency)}</strong>
         </article>
       </section>
@@ -637,12 +637,12 @@ export default function PartnerPortalPage() {
       <section className="partnerPortal__grid">
         <article className="card">
           <div className="card__titleRow">
-            <h2>Historique recent</h2>
-            <span className="badge badge--blue">Derniers evenements</span>
+            <h2>Historique récent</h2>
+            <span className="badge badge--blue">Derniers événements</span>
           </div>
 
           {recentActivity.length === 0 ? (
-            <div className="empty">Ton historique apparaitra ici des que des ventes ou commissions seront enregistrees.</div>
+            <div className="empty">Votre historique apparaîtra ici dès que des ventes ou commissions seront enregistrées.</div>
           ) : (
             <div className="partnerPortal__activityList">
               {recentActivity.map((item) => (
@@ -666,7 +666,7 @@ export default function PartnerPortalPage() {
               <button
                 type="button"
                 className="partnerPortal__infoTrigger"
-                aria-label="Voir la regle de commission"
+                aria-label="Voir la règle de commission"
                 aria-expanded={isCommissionInfoOpen}
                 onClick={() => setIsCommissionInfoOpen((prev) => !prev)}
               >
@@ -674,10 +674,10 @@ export default function PartnerPortalPage() {
               </button>
 
               {isCommissionInfoOpen && (
-                <div className="partnerPortal__infoBubble" role="dialog" aria-label="Regle de commission">
+                <div className="partnerPortal__infoBubble" role="dialog" aria-label="Règle de commission">
                   <p>
                     Les commissions portent sur le premier pass payé du client. Les prolongations ne sont pas
-                    commissionnes.
+                    commissionnées.
                   </p>
                   <button
                     type="button"
@@ -701,11 +701,11 @@ export default function PartnerPortalPage() {
               <strong>{commissions.filter((item) => item.status === "pending").length}</strong>
             </div>
             <div>
-              <span>Commissions approuvees</span>
+              <span>Commissions approuvées</span>
               <strong>{commissions.filter((item) => item.status === "approved").length}</strong>
             </div>
             <div>
-              <span>Paiements recenses</span>
+              <span>Paiements recensés</span>
               <strong>{payouts.length}</strong>
             </div>
           </div>
@@ -721,7 +721,7 @@ export default function PartnerPortalPage() {
           </div>
 
           {commissions.length === 0 ? (
-            <div className="empty">Aucune commission enregistree pour le moment.</div>
+            <div className="empty">Aucune commission enregistrée pour le moment.</div>
           ) : (
             <div className="partnerPortal__rows">
               {commissions.map((commission) => (
@@ -749,14 +749,14 @@ export default function PartnerPortalPage() {
           </div>
 
           {payouts.length === 0 ? (
-            <div className="empty">Aucun paiement partenaire n'a encore ete effectue.</div>
+            <div className="empty">Aucun paiement partenaire n'a encore été effectué.</div>
           ) : (
             <div className="partnerPortal__rows">
               {payouts.map((payout) => (
                 <div key={payout.id} className="partnerPortal__row">
                   <div className="partnerPortal__rowMain">
                     <strong>{formatAmount(payout.amount_minor, payout.currency)}</strong>
-                    <span>{payout.payment_method ?? "Paiement manuel"} | {payout.payment_reference ?? "Sans reference"}</span>
+                    <span>{payout.payment_method ?? "Paiement manuel"} | {payout.payment_reference ?? "Sans référence"}</span>
                   </div>
                   <div className="partnerPortal__rowMeta">
                     <span className={statusBadgeClass(payout.status)}>{payout.status}</span>

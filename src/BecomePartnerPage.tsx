@@ -52,28 +52,7 @@ const PARTNER_ESSENTIAL_TERMS = [
   "La commission porte sur le premier pass payé du client.",
 ];
 
-function normalizePartnerPageCopy(value: string) {
-  return value
-    .replace("A quoi", "À quoi")
-    .replace(" a rejoindre ", " à rejoindre ")
-    .replace("Apres", "Après")
-    .replace(" acces ", " accès ")
-    .replace("acces ", "accès ")
-    .replace("acces", "accès")
-    .replace(" active", " activé")
-    .replace("recoit-on", "reçoit-on")
-    .replace(" paye", " payé")
-    .replace(" recommande", " recommandé")
-    .replace(" a diffuser", " à diffuser")
-    .replace("Ou suivre", "Où suivre")
-    .replace("attribuees", "attribuées")
-    .replace(" a son audience", " à son audience");
-}
-
-const PARTNER_PAGE_FAQ = PARTNER_PROGRAM_FAQ.map((item) => ({
-  question: normalizePartnerPageCopy(item.question),
-  answers: item.answers.map((answer) => normalizePartnerPageCopy(answer)),
-}));
+const PARTNER_PAGE_FAQ = PARTNER_PROGRAM_FAQ;
 
 const PARTNER_HELP_ITEMS = PARTNER_PAGE_FAQ.slice(0, 2).map((item) => ({
   question: item.question,
