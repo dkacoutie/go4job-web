@@ -4,7 +4,7 @@ import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { trackApplicationStarted } from "./lib/analytics";
-import { formatPlainDescriptionToHtml, sanitizeHtmlBasic, stripHtmlToText } from "./lib/jobDescriptionFormat";
+import { formatPlainDescriptionToHtml, formatSourceHtml, stripHtmlToText } from "./lib/jobDescriptionFormat";
 import "./JobDetailsPage.css";
 
 type ApplicationStatus =
@@ -367,7 +367,7 @@ export default function JobDetailsPage() {
     const jsonDesc = extractDescFromJobJson(job?.job_json ?? null);
 
     const htmlSource = htmlRaw || jsonDesc.html || "";
-    const html = htmlSource ? sanitizeHtmlBasic(htmlSource) : "";
+    const html = htmlSource ? formatSourceHtml(htmlSource) : "";
     const htmlText = html ? stripHtmlToText(html) : "";
     const jsonText = (jsonDesc.text ?? "").trim();
 

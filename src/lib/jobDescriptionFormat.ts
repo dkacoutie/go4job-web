@@ -121,7 +121,10 @@ const KNOWN_SECTION_LABELS = [
   "missions",
   "vos missions",
   "missions principales",
-  "principales missions",
+  // "principales missions" (ordre inverse) volontairement absent : cette
+  // suite de mots apparaît aussi comme sous-chaîne de tournures courantes
+  // ("vos principales missions"), qui deviendraient à tort une rubrique
+  // coupée après "vos". "missions principales" couvre l'intitulé isolé.
   "profil",
   "profil recherché",
   "votre profil",
@@ -155,12 +158,43 @@ const KNOWN_SECTION_LABELS = [
   "about us",
   "skills",
   "nice to have",
+  // Intitulés observés sur les sources à champs structurés (Talentsoft et
+  // similaires) : label suivi de ":" sur sa propre ligne (ou isolable par
+  // reflowFlattenedSectionLabels), valeur en clair juste après.
+  "domaine d'activités et famille de métier",
+  "description du poste",
+  "intitulé de poste",
+  "intitulé du poste",
+  "nature du contrat",
+  "type de contrat",
+  "durée du contrat",
+  "temps de travail",
+  "niveau de diplôme",
+  "niveau d'études",
+  "niveau d'étude",
+  "expérience souhaitée",
+  "expérience demandée",
+  "salaire",
+  "rémunération",
+  "date de prise de poste",
+  "date de début",
+  "secteur d'activité",
+  "lieu",
 ];
 
 // Traité du plus long au plus court : évite qu'un intitulé court générique
 // ("missions") ne capture prématurément une partie d'un intitulé plus long
 // et plus précis ("vos missions", "missions principales").
 const LABELS_BY_LENGTH_DESC = [...KNOWN_SECTION_LABELS].sort((a, b) => b.length - a.length);
+
+// Repli "libellé collé à ce qui le PRÉCÈDE" (ex: "test.Profil recherché :")
+// : un intitulé d'un seul mot y est trop risqué, il peut capturer la fin
+// d'une tournure plus longue qui n'a rien à voir (ex: "missions" dans "Vos
+// principales missions :" — la phrase se ferait couper après "principales").
+// Le repli "libellé collé à ce qui le SUIT sur la même ligne" (ex:
+// "Lieu : Rennes") n'a pas ce risque : il n'y a rien à regarder en arrière,
+// donc les intitulés courts y restent admis.
+const GLUE_BEFORE_LABELS = LABELS_BY_LENGTH_DESC.filter((label) => label.includes(" "));
 
 function isKnownSectionLabel(line: string): boolean {
   const trimmed = line.trim();
@@ -277,15 +311,27 @@ function reflowFlattenedDashes(text: string): string {
 // chaque itération : ça évite qu'un intitulé court ("missions") ne vienne
 // re-couper un intitulé plus long déjà correctement isolé ("vos missions").
 const SECTION_LABEL_ALTERNATION = LABELS_BY_LENGTH_DESC.map(escapeRegExp).join("|");
+const GLUE_BEFORE_ALTERNATION = GLUE_BEFORE_LABELS.map(escapeRegExp).join("|");
 
 function reflowFlattenedSectionLabels(text: string): string {
-  const beforeRe = new RegExp(`([^\\n\\s])[ \\t]+(${SECTION_LABEL_ALTERNATION})(\\s*:)`, "gi");
+  const beforeRe = new RegExp(`([^\\n\\s])[ \\t]+(${GLUE_BEFORE_ALTERNATION})(\\s*:)`, "gi");
   let out = text.replace(beforeRe, (_m, before, label, colon) => `${before}\n${label}${colon}`);
 
   const afterRe = new RegExp(`(${SECTION_LABEL_ALTERNATION})(\\s*:)[ \\t]+(\\S)`, "gi");
   out = out.replace(afterRe, (_m, label, colon, after) => `${label}${colon}\n${after}`);
 
   return out;
+}
+
+/**
+ * Répare le cas où le marqueur de puce est seul sur sa ligne et le texte de
+ * l'item suit sur la ligne d'après (observé sur Talentsoft : "- " puis
+ * "Assurer le quittancement..." sur la ligne suivante). Sans ce repli, la
+ * puce vide disparaît au filtrage et l'item redevient un paragraphe normal
+ * au lieu d'un élément de liste.
+ */
+function joinLoneBulletMarkerWithNextLine(text: string): string {
+  return text.replace(/^([ \t]*[-*•▪‣●][ \t]*)\n[ \t]*/gm, "$1 ");
 }
 
 function escapeRegExp(value: string): string {
@@ -318,14 +364,63 @@ function renderBlocksToHtml(blocks: Block[]): string {
  * sans jamais inventer de contenu ni de rubrique absente du texte source.
  * Le résultat passe par le même sanitizer strict que le HTML natif.
  */
+/**
+ * Certaines sources (Talentsoft et similaires) fournissent du HTML
+ * "faussement structuré" : des libellés en <b>/<strong> suivis de ":" et des
+ * <br /> comme seule séparation, sans le moindre <p>/<ul>/<table> — donc du
+ * texte à plat malgré les balises. Traiter ce cas comme du HTML "déjà
+ * structuré" produit un unique bloc illisible. On le détecte pour le
+ * rerouter vers le même pipeline texte que les sources sans HTML, plutôt que
+ * de l'afficher tel quel.
+ */
+function looksWeaklyStructuredHtml(html: string): boolean {
+  const hasBlockStructure = /<\s*(p|ul|ol|table|h[1-6])[\s>]/i.test(html);
+  const hasLineBreakTags = /<\s*br\s*\/?>/i.test(html);
+  return hasLineBreakTags && !hasBlockStructure;
+}
+
+/** Convertit ce HTML à plat en texte porteur de vrais retours à la ligne,
+ * pour pouvoir le repasser dans le même pipeline que le texte brut. */
+function weaklyStructuredHtmlToText(html: string): string {
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|tr)\s*>/gi, "\n");
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(withBreaks, "text/html");
+    return (doc.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+  } catch {
+    return withBreaks.replace(/<\/?[^>]+(>|$)/g, "").trim();
+  }
+}
+
+/**
+ * Point d'entrée pour le HTML fourni par une source : passe par le
+ * sanitizer strict si le HTML est réellement structuré, ou re-route vers le
+ * pipeline texte (reconstruction sûre) s'il ne l'est qu'en apparence.
+ */
+export function formatSourceHtml(htmlRaw: string): string {
+  const trimmed = (htmlRaw ?? "").trim();
+  if (!trimmed) return "";
+  if (looksWeaklyStructuredHtml(trimmed)) {
+    const text = weaklyStructuredHtmlToText(trimmed);
+    return text ? formatPlainDescriptionToHtml(text) : sanitizeHtmlBasic(trimmed);
+  }
+  return sanitizeHtmlBasic(trimmed);
+}
+
 export function formatPlainDescriptionToHtml(rawText: string): string {
   const text = (rawText ?? "").replace(/\r\n?/g, "\n").trim();
   if (!text) return "";
 
-  const hasRealLineBreaks = text.includes("\n");
-  const bulletsFixed = hasRealLineBreaks
-    ? text
-    : reflowFlattenedDashes(reflowFlattenedAsterisks(text));
+  // Les heuristiques ci-dessous ne coupent qu'à des motifs répétés (seuil
+  // >= 2 ou >= 3 occurrences, cf. leur doc), donc rester sûres même sur un
+  // texte qui contient déjà quelques vrais retours à la ligne : un texte
+  // avec seulement quelques \n épars (un par champ, par exemple) restait
+  // sinon un unique bloc pour tout le corps de l'offre, faute de repli sur
+  // les listes/rubriques aplaties qu'il contient malgré tout.
+  const bulletsJoined = joinLoneBulletMarkerWithNextLine(text);
+  const bulletsFixed = reflowFlattenedDashes(reflowFlattenedAsterisks(bulletsJoined));
   const prepared = reflowFlattenedSectionLabels(bulletsFixed);
 
   const lines = prepared.split("\n");
