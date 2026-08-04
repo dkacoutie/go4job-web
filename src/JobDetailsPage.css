@@ -94,6 +94,51 @@
   flex-wrap: wrap;
 }
 
+.jd-headLeft {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.jd-avatar {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  overflow: hidden;
+  background: var(--jd-surface);
+  margin-top: 2px;
+}
+
+/* Logo réel (liste blanche, voir lib/companyLogo.ts) : fond blanc pour les
+   PNG à fond transparent. */
+.jd-avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+  border-radius: inherit;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .jd-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+}
+
 .jd-title {
   margin: 0 0 8px;
   font-size: 26px;
@@ -132,6 +177,12 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.jd-actions--bottom {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--jd-border);
 }
 
 .jd-locked {
@@ -388,4 +439,19 @@
   border-color: transparent;
   background: var(--error-100);
   color: var(--error-600);
+}
+
+@media (max-width: 640px) {
+  .jd-actions {
+    align-items: stretch;
+  }
+
+  .jd-actions > .btn,
+  .jd-actionsRow {
+    width: 100%;
+  }
+
+  .jd-actionsRow > .btn {
+    flex: 1 1 180px;
+  }
 }

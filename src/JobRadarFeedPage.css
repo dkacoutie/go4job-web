@@ -667,6 +667,20 @@
   font-weight: 800;
   letter-spacing: -0.01em;
   line-height: 1;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+/* Logo réel (liste blanche, voir lib/companyLogo.ts) : fond blanc pour les
+   PNG à fond transparent, léger padding pour ne pas coller aux bords. */
+.jr-avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+  border-radius: inherit;
+  padding: 4px;
+  box-sizing: border-box;
 }
 
 .jr-title {

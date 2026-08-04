@@ -5,6 +5,7 @@ import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { trackApplicationStarted } from "./lib/analytics";
 import { formatPlainDescriptionToHtml, formatSourceHtml, stripHtmlToText } from "./lib/jobDescriptionFormat";
+import { CompanyAvatar } from "./components/CompanyAvatar";
 import "./JobDetailsPage.css";
 
 type ApplicationStatus =
@@ -618,13 +619,22 @@ export default function JobDetailsPage() {
         ) : (
           <section className="jd-card">
             <div className="jd-head">
-              <div>
-                <h1 className="jd-title">{job.title ?? "Offre"}</h1>
-                <div className="jd-sub">
-                  {(job.company_name ?? "-") +
-                    " | " +
-                    (job.location ?? job.country ?? "-") +
-                    (job.remote_type ? ` | ${job.remote_type}` : "")}
+              <div className="jd-headLeft">
+                <CompanyAvatar
+                  companyName={job.company_name}
+                  applyUrl={job.apply_url}
+                  sourceUrl={job.source_url}
+                  avatarClassName="jd-avatar"
+                  imgClassName="jd-avatarImg"
+                />
+                <div>
+                  <h1 className="jd-title">{job.title ?? "Offre"}</h1>
+                  <div className="jd-sub">
+                    {(job.company_name ?? "-") +
+                      " | " +
+                      (job.location ?? job.country ?? "-") +
+                      (job.remote_type ? ` | ${job.remote_type}` : "")}
+                  </div>
                 </div>
               </div>
 

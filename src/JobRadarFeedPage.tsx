@@ -43,6 +43,7 @@ import OnboardingAlertInviteBanner from "./components/OnboardingAlertInviteBanne
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { useToast } from "./components/ToastCenter";
+import { CompanyAvatar } from "./components/CompanyAvatar";
 import "./JobRadarFeedPage.css";
 
 type AlertRow = {
@@ -88,6 +89,9 @@ type JobRow = {
   remote_type?: string | null;
   contract_type?: string | null;
   job_family?: string | null;
+
+  apply_url?: string | null;
+  source_url?: string | null;
 
   sort_at?: string | null;
   published_at?: string | null;
@@ -171,39 +175,23 @@ function getRelevanceLabel(score: number) {
   return "À explorer";
 }
 
-// Palette curatée (pas de couleur aléatoire criarde) pour donner à chaque
-// entreprise un repère visuel distinct — une offre devient "chez qui",
-// pas juste une ligne dans une liste.
-const COMPANY_AVATAR_PALETTE = [
-  { bg: "var(--brand-100)", fg: "var(--brand-800)" },
-  { bg: "var(--accent-100)", fg: "var(--accent-700)" },
-  { bg: "var(--success-100)", fg: "var(--success-600)" },
-  { bg: "var(--warning-100)", fg: "var(--warning-600)" },
-] as const;
+// Avatar par défaut (initiales/globe) déplacé dans lib/companyAvatar.ts,
+// utilisé par le composant partagé <CompanyAvatar> (avec tentative de logo
+// réel pour les employeurs en liste blanche, voir lib/companyLogo.ts).
 
-function getCompanyAvatar(name?: string | null) {
-  const label = (name ?? "").trim();
-
-  // Pas de nom d'entreprise : sur ce flux, c'est presque toujours une offre
-  // remote/agrégée légitime, pas une erreur. "?" se lit comme une anomalie ;
-  // un globe se lit comme "à distance", plus juste et moins inquiétant.
-  if (!label) {
-    return { initials: "🌐", bg: "var(--bg)", fg: "var(--muted)" };
+// Les offres "shadow feed" (comparaison backend, ShadowFeedJobRow) ne
+// portent pas apply_url/source_url — on retombe alors simplement sur
+// l'avatar par défaut (aucun logo tenté), sans forcer ces champs sur ce
+// type distinct.
+function getJobApplyUrls(job: JobRow | ShadowFeedMatchRow["job"]): {
+  applyUrl?: string | null;
+  sourceUrl?: string | null;
+} {
+  if ("apply_url" in job || "source_url" in job) {
+    const withUrls = job as JobRow;
+    return { applyUrl: withUrls.apply_url, sourceUrl: withUrls.source_url };
   }
-
-  const initials =
-    label
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((word) => word[0]?.toUpperCase())
-      .join("") || "?";
-  let hash = 0;
-  for (let i = 0; i < label.length; i += 1) {
-    hash = (hash * 31 + label.charCodeAt(i)) % 997;
-  }
-  const palette = COMPANY_AVATAR_PALETTE[hash % COMPANY_AVATAR_PALETTE.length];
-  return { initials, bg: palette.bg, fg: palette.fg };
+  return {};
 }
 
 const WHY_MAX_LEN = 72;
@@ -650,6 +638,8 @@ const JOB_SELECT_FIELDS = `
   remote_type,
   contract_type,
   job_family,
+  apply_url,
+  source_url,
   published_at,
   posted_at,
   scraped_at,
@@ -2616,18 +2606,13 @@ export default function JobRadarFeedPage() {
                         >
                           <div className="jr-cardTop">
                             <div className="jr-cardHeadLeft">
-                              {(() => {
-                                const avatar = getCompanyAvatar(job.company_name);
-                                return (
-                                  <span
-                                    className="jr-avatar"
-                                    style={{ background: avatar.bg, color: avatar.fg }}
-                                    aria-hidden="true"
-                                  >
-                                    {avatar.initials}
-                                  </span>
-                                );
-                              })()}
+                              <CompanyAvatar
+                                companyName={job.company_name}
+                                applyUrl={job.apply_url}
+                                sourceUrl={job.source_url}
+                                avatarClassName="jr-avatar"
+                                imgClassName="jr-avatarImg"
+                              />
                               <div className="jr-title">{job.title ?? "—"}</div>
                             </div>
                             <span className="jr-score jr-scoreWidened">Résultat élargi</span>
@@ -2745,6 +2730,7 @@ export default function JobRadarFeedPage() {
                   allowAlertReason: matchesAlertCountry,
                 });
                 const locationLabel = [job.location ?? job.country, job.remote_type].filter(Boolean).join(" · ");
+                const jobUrls = getJobApplyUrls(job);
 
                   return (
                     <div
@@ -2763,18 +2749,13 @@ export default function JobRadarFeedPage() {
                     >
                     <div className="jr-cardTop">
                       <div className="jr-cardHeadLeft">
-                        {(() => {
-                          const avatar = getCompanyAvatar(job.company_name);
-                          return (
-                            <span
-                              className="jr-avatar"
-                              style={{ background: avatar.bg, color: avatar.fg }}
-                              aria-hidden="true"
-                            >
-                              {avatar.initials}
-                            </span>
-                          );
-                        })()}
+                        <CompanyAvatar
+                          companyName={job.company_name}
+                          applyUrl={jobUrls.applyUrl}
+                          sourceUrl={jobUrls.sourceUrl}
+                          avatarClassName="jr-avatar"
+                          imgClassName="jr-avatarImg"
+                        />
                         <div className="jr-title">{job.title ?? "—"}</div>
                       </div>
                       <span className={scoreClass}>{relevanceLabel}</span>
