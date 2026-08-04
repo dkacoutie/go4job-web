@@ -171,6 +171,33 @@ function getRelevanceLabel(score: number) {
   return "À explorer";
 }
 
+// Palette curatée (pas de couleur aléatoire criarde) pour donner à chaque
+// entreprise un repère visuel distinct — une offre devient "chez qui",
+// pas juste une ligne dans une liste.
+const COMPANY_AVATAR_PALETTE = [
+  { bg: "var(--brand-100)", fg: "var(--brand-800)" },
+  { bg: "var(--accent-100)", fg: "var(--accent-700)" },
+  { bg: "var(--success-100)", fg: "var(--success-600)" },
+  { bg: "var(--warning-100)", fg: "var(--warning-600)" },
+] as const;
+
+function getCompanyAvatar(name?: string | null) {
+  const label = (name ?? "").trim();
+  const initials =
+    label
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase())
+      .join("") || "?";
+  let hash = 0;
+  for (let i = 0; i < label.length; i += 1) {
+    hash = (hash * 31 + label.charCodeAt(i)) % 997;
+  }
+  const palette = COMPANY_AVATAR_PALETTE[hash % COMPANY_AVATAR_PALETTE.length];
+  return { initials, bg: palette.bg, fg: palette.fg };
+}
+
 const WHY_MAX_LEN = 72;
 
 function collapseSpaces(input: string) {
@@ -2580,7 +2607,21 @@ export default function JobRadarFeedPage() {
                           }}
                         >
                           <div className="jr-cardTop">
-                            <div className="jr-title">{job.title ?? "—"}</div>
+                            <div className="jr-cardHeadLeft">
+                              {(() => {
+                                const avatar = getCompanyAvatar(job.company_name);
+                                return (
+                                  <span
+                                    className="jr-avatar"
+                                    style={{ background: avatar.bg, color: avatar.fg }}
+                                    aria-hidden="true"
+                                  >
+                                    {avatar.initials}
+                                  </span>
+                                );
+                              })()}
+                              <div className="jr-title">{job.title ?? "—"}</div>
+                            </div>
                             <span className="jr-score jr-scoreWidened">Résultat élargi</span>
                           </div>
                           <div className="jr-meta">
@@ -2713,7 +2754,21 @@ export default function JobRadarFeedPage() {
                       }}
                     >
                     <div className="jr-cardTop">
-                      <div className="jr-title">{job.title ?? "—"}</div>
+                      <div className="jr-cardHeadLeft">
+                        {(() => {
+                          const avatar = getCompanyAvatar(job.company_name);
+                          return (
+                            <span
+                              className="jr-avatar"
+                              style={{ background: avatar.bg, color: avatar.fg }}
+                              aria-hidden="true"
+                            >
+                              {avatar.initials}
+                            </span>
+                          );
+                        })()}
+                        <div className="jr-title">{job.title ?? "—"}</div>
+                      </div>
                       <span className={scoreClass}>{relevanceLabel}</span>
                     </div>
                     <div className="jr-meta">
