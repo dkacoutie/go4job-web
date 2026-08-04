@@ -23,6 +23,8 @@ import { fetchJobWebGhanaPortalItems } from "./sources/jobwebghana_portal.ts";
 import { fetchHotNigerianJobsPortalItems } from "./sources/hotnigerianjobs_portal.ts";
 import { fetchNovojobPortalItems } from "./sources/novojob_portal.ts";
 import { fetchGoAfricaOnlineCiPortalItems } from "./sources/goafricaonline_ci_portal.ts";
+import { fetchEburkaPortalItems } from "./sources/eburka_portal.ts";
+import { fetchFedAfricaPortalItems } from "./sources/fedafrica_portal.ts";
 import { fetchJobbermanPortalItems } from "./sources/jobberman_portal.ts";
 import {
   buildCrossSourceJobIdentity,
@@ -2151,16 +2153,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (source_code === "reliefweb_api") {
-      if (!dry_run) {
-        return json({
-          ok: false,
-          source_code,
-          dry_run: false,
-          error: "reliefweb_api_import_disabled_dry_run_only",
-        }, 409);
-      }
-
+    if (source_code === "reliefweb_api" && dry_run) {
       const reliefwebAppname =
         typeof body?.appname === "string" && body.appname.trim()
           ? body.appname.trim()
@@ -2230,6 +2223,8 @@ Deno.serve(async (req) => {
         "jobberman_gh_portal",
         "myjobmag_ng_portal",
         "myjobmag_gh_portal",
+        "eburka_portal",
+        "fedafrica_portal",
       ].includes(source_code)
     ) {
       if (!dry_run) {
@@ -2259,12 +2254,24 @@ Deno.serve(async (req) => {
         const goAfricaOnlineCiImportAllowed = source_code === "goafricaonline_ci_portal" &&
           body?.allow_import === true &&
           isGoAfricaOnlineCiImportConfirmed(body?.confirm, requestedLimit);
+        const eburkaImportAllowed = source_code === "eburka_portal" &&
+          body?.allow_import === true &&
+          body?.confirm === "IMPORT_EBURKA_PORTAL" &&
+          requestedLimit !== null &&
+          requestedLimit <= 50;
+        const fedAfricaImportAllowed = source_code === "fedafrica_portal" &&
+          body?.allow_import === true &&
+          body?.confirm === "IMPORT_FEDAFRICA_PORTAL" &&
+          requestedLimit !== null &&
+          requestedLimit <= 30;
 
         if (
           !jobWebGhanaImportAllowed &&
           !novojobImportAllowed &&
           !myJobMagNgImportAllowed &&
-          !goAfricaOnlineCiImportAllowed
+          !goAfricaOnlineCiImportAllowed &&
+          !eburkaImportAllowed &&
+          !fedAfricaImportAllowed
         ) {
           return json({
             ok: false,
@@ -2278,6 +2285,10 @@ Deno.serve(async (req) => {
               ? "myjobmag_ng_import_requires_explicit_confirmation"
               : source_code === "goafricaonline_ci_portal"
               ? "goafricaonline_ci_import_requires_explicit_confirmation"
+              : source_code === "eburka_portal"
+              ? "eburka_import_requires_explicit_confirmation"
+              : source_code === "fedafrica_portal"
+              ? "fedafrica_import_requires_explicit_confirmation"
               : `${source_code}_import_disabled_dry_run_only`,
           }, 409);
         }
@@ -2326,6 +2337,16 @@ Deno.serve(async (req) => {
       }
       if (dry_run && (source_code === "jobberman_ng_portal" || source_code === "jobberman_gh_portal")) {
         return json(commercialDryRunResponse(await fetchJobbermanPortalItems(source_code, {
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (dry_run && source_code === "eburka_portal") {
+        return json(commercialDryRunResponse(await fetchEburkaPortalItems({
+          limit: commercialDryRunLimit,
+        })));
+      }
+      if (dry_run && source_code === "fedafrica_portal") {
+        return json(commercialDryRunResponse(await fetchFedAfricaPortalItems({
           limit: commercialDryRunLimit,
         })));
       }
@@ -2651,6 +2672,335 @@ Deno.serve(async (req) => {
         rejected_navigation_url_count: data.meta.rejected_navigation_url_count,
         rejected_missing_company_count: data.meta.rejected_missing_company_count,
         rejected_invalid_job_url_count: data.meta.rejected_invalid_job_url_count,
+      });
+    }
+
+    if (source_code === "eburka_portal") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_EBURKA_PORTAL" ||
+        requestedLimit === null ||
+        requestedLimit > 50
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "eburka_import_requires_explicit_confirmation",
+        }, 409);
+      }
+
+      const importLimit = toBoundedInt(limit, 30, 1, 50);
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchEburkaPortalItems({ limit: importLimit });
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
+        limit: importLimit,
+        dry_run: false,
+        status: "eburka_portal_upserted",
+        parsed: data.parsed_count,
+        parsed_count: data.parsed_count,
+        fetched_count: data.fetched_count,
+        inserted,
+        updated,
+        skipped_quality_count: data.skipped_quality_count,
+        pages_fetched: data.pages_fetched,
+        feeds_fetched: data.feeds_fetched,
+        stopped_reason: data.stopped_reason,
+      });
+    }
+
+    if (source_code === "fedafrica_portal") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_FEDAFRICA_PORTAL" ||
+        requestedLimit === null ||
+        requestedLimit > 30
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "fedafrica_import_requires_explicit_confirmation",
+        }, 409);
+      }
+
+      const importLimit = toBoundedInt(limit, 20, 1, 30);
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchFedAfricaPortalItems({ limit: importLimit });
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.list_url,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
+        limit: importLimit,
+        dry_run: false,
+        status: "fedafrica_portal_upserted",
+        parsed: data.parsed_count,
+        parsed_count: data.parsed_count,
+        fetched_count: data.fetched_count,
+        inserted,
+        updated,
+        skipped_quality_count: data.skipped_quality_count,
+        pages_fetched: data.pages_fetched,
+        feeds_fetched: data.feeds_fetched,
+        stopped_reason: data.stopped_reason,
+      });
+    }
+
+    if (source_code === "reliefweb_api") {
+      if (!jobSource) {
+        return json({ ok: false, error: "job_source_not_found" }, 404);
+      }
+
+      const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : null;
+      if (
+        dry_run ||
+        body?.allow_import !== true ||
+        body?.confirm !== "IMPORT_RELIEFWEB_API" ||
+        requestedLimit === null ||
+        requestedLimit > 100
+      ) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "reliefweb_import_requires_explicit_confirmation",
+        }, 409);
+      }
+
+      const reliefwebAppname =
+        typeof body?.appname === "string" && body.appname.trim()
+          ? body.appname.trim()
+          : typeof body?.reliefweb_appname === "string" &&
+              body.reliefweb_appname.trim()
+          ? body.reliefweb_appname.trim()
+          : Deno.env.get("RELIEFWEB_APPNAME")?.trim() ?? "";
+
+      if (!reliefwebAppname) {
+        return json({
+          ok: false,
+          source_code,
+          dry_run: false,
+          error: "reliefweb_appname_missing",
+          message:
+            "ReliefWeb API requires an appname. Pass body.appname or set RELIEFWEB_APPNAME.",
+        }, 400);
+      }
+
+      const importLimit = toBoundedInt(limit, 50, 1, 100);
+      const offset = toBoundedInt(body?.offset, 0, 0, 10000);
+      const countries = toStringArray(body?.countries);
+      const runId = await createRun(
+        supabaseUrl,
+        serviceKey,
+        jobSource.id,
+        "ingest",
+      );
+      currentRunId = runId;
+
+      const supabase = createClient(supabaseUrl, serviceKey);
+      const data = await fetchReliefWebJobs({
+        appname: reliefwebAppname,
+        limit: importLimit,
+        offset,
+        countries,
+      });
+      const rows = await mapScrapedItemsToRows(
+        data.items,
+        jobSource,
+        source_code,
+        data.endpoint,
+      );
+
+      let inserted = 0;
+      let updated = 0;
+      try {
+        ({ inserted, updated } = await upsertJobsWithStats(supabase, rows, {
+          batchSize: 100,
+        }));
+      } catch (upErr) {
+        const err = upErr instanceof JobsUpsertFailedError
+          ? upErr
+          : new JobsUpsertFailedError((upErr as Error).message);
+        await finishRun(supabaseUrl, serviceKey, currentRunId, {
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          ok: false,
+          error: `jobs_upsert_failed: ${err.message}`,
+          fetched_count: rows.length,
+          inserted_count: err.inserted,
+          updated_count: err.updated,
+        });
+        return json({
+          ok: false,
+          source_code,
+          error: "jobs_upsert_failed",
+          message: err.message,
+        }, 500);
+      }
+
+      const finishedAt = new Date().toISOString();
+      await finishRun(supabaseUrl, serviceKey, currentRunId, {
+        finished_at: finishedAt,
+        status: "success",
+        ok: true,
+        fetched_count: rows.length,
+        inserted_count: inserted,
+        updated_count: updated,
+      });
+      await patchJobSourceMetadata(supabaseUrl, serviceKey, jobSource.id, {
+        last_checked_at: finishedAt,
+        last_ingested_at: finishedAt,
+        last_success_at: finishedAt,
+        ingest_status: "ready",
+      });
+
+      return json({
+        ok: true,
+        source_code,
+        requested_limit: requestedLimit,
+        effective_limit: importLimit,
+        limit: importLimit,
+        offset: data.offset,
+        countries_requested: data.countries_requested,
+        dry_run: false,
+        status: "reliefweb_api_upserted",
+        parsed: data.parsed,
+        total_count: data.total_count,
+        inserted,
+        updated,
       });
     }
 

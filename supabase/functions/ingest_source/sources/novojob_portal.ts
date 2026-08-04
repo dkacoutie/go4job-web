@@ -95,6 +95,16 @@ function normalizeNovojobUrl(rawUrl: string | null | undefined) {
   }
 }
 
+// Novojob sert la meme offre sous deux chemins differents selon le flux RSS
+// qui repond (avec ou sans le segment /cote-d-ivoire/ en tete), confirme le
+// 30/07/2026 : meme identifiant numerique, meme entreprise, meme date de
+// publication a la seconde pres, deux chemins distincts. Un external_id
+// fonde sur le chemin complet est donc instable ; l'identifiant numerique en
+// fin de chemin, lui, ne varie jamais. Meme principe que emploi_ci_portal.ts.
+function extractNovojobNumericId(pathname: string): string | null {
+  return pathname.match(/(\d+)-[^/]+$/)?.[1] ?? null;
+}
+
 function isNavigationUrl(rawUrl: string) {
   try {
     const url = new URL(rawUrl);
@@ -150,10 +160,19 @@ const NOVOJOB_COUNTRY_NAME_TO_ISO: Record<string, string> = {
 
 function improveNovojob(job: CommercialSourceJob): CommercialSourceJob {
   const normalizedUrl = normalizeNovojobUrl(job.source_url);
+  const numericId = normalizedUrl
+    ? extractNovojobNumericId(new URL(normalizedUrl).pathname)
+    : null;
   const baseJob = normalizedUrl
     ? {
       ...job,
-      external_id: `novojob_portal:${normalizedUrl}`,
+      // Cle stable = identifiant numerique seul. Fallback sur l'URL complete
+      // uniquement si l'extraction echoue (ne devrait pas arriver puisque
+      // normalizeNovojobUrl exige deja un identifiant numerique en fin de
+      // chemin), pour ne jamais se retrouver sans external_id.
+      external_id: numericId
+        ? `novojob_portal:${numericId}`
+        : `novojob_portal:${normalizedUrl}`,
       source_url: normalizedUrl,
       apply_url: normalizedUrl,
     }

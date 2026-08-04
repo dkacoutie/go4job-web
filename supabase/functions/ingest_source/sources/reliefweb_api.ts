@@ -3,6 +3,7 @@ export type ReliefWebApiItem = {
   title: string;
   company_name: string | null;
   country: string | null;
+  country_codes: string[] | null;
   location: string | null;
   source_url: string | null;
   apply_url: string | null;
@@ -35,6 +36,25 @@ const DEFAULT_COUNTRIES = [
   "Guinea",
   "Niger",
 ];
+
+// ReliefWeb echoe le nom de pays exact demande dans le filtre (verifie sur le
+// dry-run reel du 30/07/2026 : "Côte d'Ivoire", "Burkina Faso", "Nigeria",
+// "Guinea" retournes tels quels). Mapping direct nom -> ISO2 plutot qu'un
+// gazetteer generique, pour eviter le meme trou de couverture country_codes
+// que rss_ngojobsinafrica (cf. CLAUDE.md, point de vigilance connu).
+const RELIEFWEB_COUNTRY_NAME_TO_ISO: Record<string, string> = {
+  "Côte d'Ivoire": "CI",
+  "Cote d'Ivoire": "CI",
+  "Senegal": "SN",
+  "Ghana": "GH",
+  "Nigeria": "NG",
+  "Benin": "BJ",
+  "Togo": "TG",
+  "Burkina Faso": "BF",
+  "Mali": "ML",
+  "Guinea": "GN",
+  "Niger": "NE",
+};
 
 function cleanText(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -160,6 +180,9 @@ function mapReliefWebJob(record: Record<string, unknown>): ReliefWebApiItem {
   const fields = asRecord(record.fields);
   const id = cleanText(record.id) ?? cleanText(fields.id) ?? crypto.randomUUID();
   const countries = extractCountries(fields);
+  const countryCodes = uniqueStrings(
+    countries.map((name) => RELIEFWEB_COUNTRY_NAME_TO_ISO[name] ?? null),
+  );
   const sourceUrl = extractUrl(fields, record);
   const applyUrl = extractApplyUrl(fields, record);
   const howToApply = cleanText(fields.how_to_apply);
@@ -170,6 +193,7 @@ function mapReliefWebJob(record: Record<string, unknown>): ReliefWebApiItem {
     title: cleanText(fields.title) ?? "Untitled ReliefWeb job",
     company_name: extractSourceName(fields),
     country: countries[0] ?? null,
+    country_codes: countryCodes.length ? countryCodes : null,
     location: extractLocation(fields),
     published_at: extractDate(fields, "created"),
     expires_at: extractDate(fields, "closing"),
