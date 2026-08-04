@@ -4,6 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { trackAlertCreated } from "./lib/analytics";
 import { resolveCountrySearchQuery } from "./lib/jobMatching";
+import {
+  mergeKeywordLists,
+  normalizeSuggestionText,
+  suggestExcludedKeywordsFromTitle,
+  suggestKeywordsFromTitle,
+  splitKeywordsText,
+} from "./lib/jobAlertKeywordSuggestions";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
@@ -71,188 +78,6 @@ function buildAlertFeedUrl(alert?: AlertRow | null) {
 
   const qs = params.toString();
   return qs ? `/jobradar/feed?${qs}` : "/jobradar/feed";
-}
-
-/* =========================
-   Keyword Suggestion Engine (FR + EN)
-========================= */
-type KeywordPreset = { id: string; match: RegExp; keywords: string[] };
-
-const KEYWORD_PRESETS: KeywordPreset[] = [
-  {
-    id: "data-bi",
-    match: /\b(data|analyst|analyse|analytics|bi|power\s?bi|tableau|sql|reporting|dashboard|etl|dataviz|visualisation)\b/i,
-    keywords: [
-      "data analyst",
-      "analyste data",
-      "business intelligence",
-      "BI",
-      "power bi",
-      "tableau",
-      "sql",
-      "reporting",
-      "dashboard",
-      "etl",
-      "datawarehouse",
-      "data quality",
-      "kpi",
-      "excel",
-    ],
-  },
-  {
-    id: "data-science-ml",
-    match: /\b(data\s?scientist|machine\s?learning|ml\b|ai\b|ia\b|deep\s?learning|nlp|model)\b/i,
-    keywords: [
-      "data scientist",
-      "machine learning",
-      "ML",
-      "AI",
-      "IA",
-      "python",
-      "pandas",
-      "scikit-learn",
-      "tensorflow",
-      "pytorch",
-      "nlp",
-      "feature engineering",
-      "modeling",
-    ],
-  },
-  {
-    id: "frontend",
-    match: /\b(front[- ]?end|frontend|react|vue|angular|next\.?js|ui|web\s?designer|intégrateur|integration)\b/i,
-    keywords: [
-      "frontend",
-      "front-end",
-      "react",
-      "nextjs",
-      "vue",
-      "angular",
-      "typescript",
-      "javascript",
-      "html",
-      "css",
-      "tailwind",
-      "ui",
-      "integration",
-      "web",
-    ],
-  },
-  {
-    id: "backend",
-    match: /\b(back[- ]?end|backend|api|node|express|django|flask|laravel|spring|java|php|c#|dotnet|\.net)\b/i,
-    keywords: [
-      "backend",
-      "api",
-      "rest",
-      "graphql",
-      "node",
-      "express",
-      "django",
-      "flask",
-      "laravel",
-      "spring",
-      "java",
-      "php",
-      ".net",
-      "postgres",
-      "mysql",
-      "authentication",
-    ],
-  },
-  {
-    id: "fullstack",
-    match: /\b(full[- ]?stack|fullstack)\b/i,
-    keywords: ["fullstack", "react", "node", "typescript", "api", "postgres", "supabase", "auth", "ui", "deployment"],
-  },
-  {
-    id: "mobile",
-    match: /\b(mobile|android|ios|react\s?native|flutter|kotlin|swift)\b/i,
-    keywords: ["mobile", "android", "ios", "react native", "flutter", "kotlin", "swift", "firebase", "api"],
-  },
-  {
-    id: "devops-cloud",
-    match: /\b(devops|cloud|aws|azure|gcp|docker|kubernetes|k8s|ci\/cd|terraform)\b/i,
-    keywords: ["devops", "cloud", "aws", "azure", "gcp", "docker", "kubernetes", "ci/cd", "terraform", "linux", "monitoring", "deployment"],
-  },
-  {
-    id: "security",
-    match: /\b(security|cyber|cybersécurité|secops|soc|pentest|vulnerability|iso\s?27001)\b/i,
-    keywords: ["cybersecurity", "cybersécurité", "soc", "secops", "pentest", "vulnerability", "iso 27001", "audit", "siem"],
-  },
-  {
-    id: "project-management",
-    match: /\b(chef\s?de\s?projet|project\s?manager|pmo|product\s?owner|scrum|agile|kanban)\b/i,
-    keywords: ["chef de projet", "project manager", "PMO", "product owner", "scrum", "agile", "kanban", "planning", "budget", "stakeholders"],
-  },
-  {
-    id: "m-e-ngo",
-    match: /\b(m&e|suivi[- ]?évaluation|monitoring|evaluation|ong|ngo|humanitarian|relief|programme|program)\b/i,
-    keywords: ["suivi-évaluation", "monitoring", "evaluation", "M&E", "ngo", "ong", "programme", "program", "baseline", "indicator", "reporting"],
-  },
-  {
-    id: "sales-bd",
-    match: /\b(business\s?developer|business\s?development|bd\b|sales|commercial|vente|account\s?manager)\b/i,
-    keywords: ["business developer", "business development", "sales", "commercial", "prospection", "account manager", "crm", "pipeline", "closing"],
-  },
-  {
-    id: "marketing-com",
-    match: /\b(marketing|communication|community\s?manager|social\s?media|content|seo|sea|copywriter|brand)\b/i,
-    keywords: ["marketing", "communication", "community manager", "social media", "content", "seo", "sea", "copywriting", "brand", "campaign"],
-  },
-  {
-    id: "health-pharma",
-    match: /\b(santé|health|pharmacie|pharmacien|pharmacist|infirmier|nurse|medical|clinique|hôpital)\b/i,
-    keywords: ["santé", "health", "pharmacie", "pharmacist", "medical", "hospital", "clinic", "patient", "protocol", "stock médicament"],
-  },
-];
-
-const STOP_WORDS = new Set([
-  "de","des","du","la","le","les","un","une","et","en","a","à","au","aux","pour","avec","sans","sur","dans","chez","ou",
-  "cdi","cdd","stage","alternance","junior","senior","confirme","confirmé","freelance","remote","hybride","temps","plein","partiel",
-  "of","the","an","and","or","for","with","without","in","on","at","to","from","full","time","part","intern","internship","contract","permanent",
-  "abidjan","san","pedro","dakar","bamako","ouagadougou","cote","ivoire","ivory","coast","senegal","mali","ghana","benin","togo","niger",
-]);
-
-function normalizeText(input: string) {
-  return input.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
-
-function unique(arr: string[]) {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const x of arr) {
-    const k = x.trim().toLowerCase();
-    if (!k) continue;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(x.trim());
-  }
-  return out;
-}
-
-function fallbackKeywords(title: string) {
-  const t = normalizeText(title);
-  const tokens = t
-    .replace(/[^a-z0-9\s+.#-]/g, " ")
-    .split(/\s+/)
-    .map((w) => w.trim())
-    .filter(Boolean)
-    .filter((w) => w.length >= 3)
-    .filter((w) => !STOP_WORDS.has(w));
-
-  const picked = unique(tokens).slice(0, 6);
-  const generic = ["job", "emploi", "opportunity", "offre"];
-  return unique([...picked, ...generic]).slice(0, 10);
-}
-
-function suggestKeywordsFromTitle(title: string) {
-  const raw = title.trim();
-  if (!raw) return [];
-  const matches: string[] = [];
-  for (const p of KEYWORD_PRESETS) if (p.match.test(raw)) matches.push(...p.keywords);
-  const extra = fallbackKeywords(raw).slice(0, 4);
-  return unique([...matches, ...extra]).slice(0, 18);
 }
 
 /* =========================
@@ -396,6 +221,18 @@ export default function AlertsPage() {
   const freeAlertLimitReached = !allowPremium && countActive >= FREE_ACTIVE_ALERT_LIMIT;
   const activeAlert = useMemo(() => rows.find((r) => r.is_active) ?? null, [rows]);
   const activeAlertFeedUrl = useMemo(() => buildAlertFeedUrl(activeAlert), [activeAlert]);
+  const suggestedKeywords = useMemo(() => suggestKeywordsFromTitle(name), [name]);
+  const suggestedExcludedKeywords = useMemo(() => suggestExcludedKeywordsFromTitle(name), [name]);
+  const selectedKeywordSet = useMemo(
+    () => new Set(splitKeywordsText(keywordsText).map((keyword) => normalizeSuggestionText(keyword))),
+    [keywordsText],
+  );
+  const selectedExcludedKeywordSet = useMemo(
+    () => new Set(splitKeywordsText(excludedKeywordsText).map((keyword) => normalizeSuggestionText(keyword))),
+    [excludedKeywordsText],
+  );
+  const showKeywordSuggestions = name.trim().length >= 2 && suggestedKeywords.length > 0;
+  const showExcludedKeywordSuggestions = name.trim().length >= 2 && suggestedExcludedKeywords.length > 0;
 
   const { pushToast } = useToast();
 
@@ -496,15 +333,17 @@ export default function AlertsPage() {
       return;
     }
 
-    const suggested = suggestKeywordsFromTitle(n).join(", ");
+    const suggestedList = suggestKeywordsFromTitle(n);
+    if (!suggestedList.length) return;
+
+    const suggested = suggestedList.join(", ");
 
     const keywordsIsStillAuto =
       !keywordsDirty ||
-      keywordsText.trim() === "" ||
       (lastSuggestedFor &&
-        normalizeText(lastSuggestedFor) === normalizeText(name) &&
-        normalizeText(lastSuggestedText) === normalizeText(keywordsText)) ||
-      (lastSuggestedText && normalizeText(lastSuggestedText) === normalizeText(keywordsText));
+        normalizeSuggestionText(lastSuggestedFor) === normalizeSuggestionText(name) &&
+        normalizeSuggestionText(lastSuggestedText) === normalizeSuggestionText(keywordsText)) ||
+      (lastSuggestedText && normalizeSuggestionText(lastSuggestedText) === normalizeSuggestionText(keywordsText));
 
     if (keywordsIsStillAuto) {
       setKeywordsText(suggested);
@@ -514,13 +353,51 @@ export default function AlertsPage() {
     }
   }, [name, keywordsDirty, keywordsText, lastSuggestedFor, lastSuggestedText]);
 
+  function applyKeywordSuggestions() {
+    const suggested = suggestedKeywords.join(", ");
+    setKeywordsText(suggested);
+    setLastSuggestedFor(name);
+    setLastSuggestedText(suggested);
+    setKeywordsDirty(false);
+  }
+
+  function clearKeywordSuggestions() {
+    setKeywordsText("");
+    setKeywordsDirty(true);
+  }
+
+  function toggleSuggestedKeyword(keyword: string) {
+    const current = splitKeywordsText(keywordsText);
+    const normalizedKeyword = normalizeSuggestionText(keyword);
+    const exists = current.some((item) => normalizeSuggestionText(item) === normalizedKeyword);
+    const next = exists
+      ? current.filter((item) => normalizeSuggestionText(item) !== normalizedKeyword)
+      : mergeKeywordLists(current, [keyword]);
+    const nextText = next.join(", ");
+
+    setKeywordsText(nextText);
+    setKeywordsDirty(true);
+  }
+
+  function toggleSuggestedExcludedKeyword(keyword: string) {
+    const current = splitKeywordsText(excludedKeywordsText);
+    const normalizedKeyword = normalizeSuggestionText(keyword);
+    const exists = current.some((item) => normalizeSuggestionText(item) === normalizedKeyword);
+    const next = exists
+      ? current.filter((item) => normalizeSuggestionText(item) !== normalizedKeyword)
+      : mergeKeywordLists(current, [keyword], 4);
+
+    setExcludedKeywordsText(next.join(", "));
+    setExcludedKeywordsConfigured(true);
+  }
+
   async function createAlert() {
     if (!userId || busy) return;
 
     const n = name.trim();
-    const kw = uniqClean(keywordsText.split(",").map((s) => s.trim()).filter(Boolean));
-    const skillsKeywords = uniqClean(skillsKeywordsText.split(",").map((s) => s.trim()).filter(Boolean));
-    const excludedKeywords = uniqClean(excludedKeywordsText.split(",").map((s) => s.trim()).filter(Boolean));
+    const kw = splitKeywordsText(keywordsText);
+    const skillsKeywords = splitKeywordsText(skillsKeywordsText);
+    const excludedKeywords = splitKeywordsText(excludedKeywordsText);
     const channels = uniqClean([chEmail ? "email" : ""]).filter(Boolean);
 
     // OK countries: null = Tous pays, sinon array
@@ -824,8 +701,39 @@ export default function AlertsPage() {
         <div className="alerts-form">
           <label className="label">
             Nom de l’alerte
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Data Analyst" />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: menuisier, comptable, transitaire" />
           </label>
+
+          {showKeywordSuggestions ? (
+            <div className="keywordSuggestions" aria-label="Suggestions de mots-clés">
+              <div className="keywordSuggestionsTop">
+                <div>
+                  <div className="keywordSuggestionsTitle">Suggestions JobRadar</div>
+                  <div className="keywordSuggestionsText">Mots utiles détectés pour “{name.trim()}”.</div>
+                </div>
+                <button className="keywordSuggestionsApply" type="button" onClick={applyKeywordSuggestions}>
+                  Appliquer toutes
+                </button>
+              </div>
+
+              <div className="keywordSuggestionChips">
+                {suggestedKeywords.map((keyword) => {
+                  const selected = selectedKeywordSet.has(normalizeSuggestionText(keyword));
+                  return (
+                    <button
+                      key={keyword}
+                      type="button"
+                      className={selected ? "keywordSuggestionChip selected" : "keywordSuggestionChip"}
+                      aria-pressed={selected}
+                      onClick={() => toggleSuggestedKeyword(keyword)}
+                    >
+                      {keyword}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <label className="label">
             Mots-clés (séparés par des virgules)
@@ -839,6 +747,12 @@ export default function AlertsPage() {
               placeholder="ex: data analyst, power bi, sql"
             />
           </label>
+
+          {keywordsText.trim() ? (
+            <button className="keywordClearBtn" type="button" onClick={clearKeywordSuggestions}>
+              Effacer les mots-clés
+            </button>
+          ) : null}
 
           <div className="row2 advancedFields">
             <label className="label">
@@ -867,6 +781,24 @@ export default function AlertsPage() {
                 placeholder="BTP, chantier, restauration, formation"
               />
               <span className="fieldHint">Exemple : BTP, chantier, restauration, formation</span>
+              {showExcludedKeywordSuggestions ? (
+                <div className="keywordMiniSuggestions" aria-label="Suggestions de mots à exclure">
+                  {suggestedExcludedKeywords.map((keyword) => {
+                    const selected = selectedExcludedKeywordSet.has(normalizeSuggestionText(keyword));
+                    return (
+                      <button
+                        key={keyword}
+                        type="button"
+                        className={selected ? "keywordMiniChip selected" : "keywordMiniChip"}
+                        aria-pressed={selected}
+                        onClick={() => toggleSuggestedExcludedKeyword(keyword)}
+                      >
+                        {keyword}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </label>
           </div>
 
@@ -1127,7 +1059,3 @@ export default function AlertsPage() {
     </div>
   );
 }
-
-
-
-
