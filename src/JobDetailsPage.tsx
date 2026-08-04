@@ -64,6 +64,7 @@ type AppRow = {
 };
 
 const MIN_DESC_LEN = 400;
+type ApplyOpenMode = "new-tab" | "same-tab";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -72,12 +73,17 @@ function isUuid(v: unknown): v is string {
   );
 }
 
-function safeExternalUrl(raw: string | null): string | null {
+function safeExternalUrl(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
+
+  if (trimmed.startsWith("/") || trimmed.startsWith("\\") || trimmed.startsWith("#")) return null;
+
+  const candidate = /^[a-z][a-z\d+\-.]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
   try {
-    const u = new URL(trimmed);
+    const u = new URL(candidate);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     return u.toString();
   } catch {
@@ -219,10 +225,16 @@ export default function JobDetailsPage() {
 
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMsg, setAiMsg] = useState<string | null>(null);
+  const [autoApplyKey, setAutoApplyKey] = useState<string | null>(null);
 
   const srcUrl = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return safeExternalUrl(params.get("src"));
+  }, [location.search]);
+
+  const shouldAutoApply = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("action") === "apply";
   }, [location.search]);
 
   const similarQuery = useMemo(() => {
@@ -340,7 +352,7 @@ export default function JobDetailsPage() {
 
   const applyLink = useMemo(() => {
     if (!job) return null;
-    return job.apply_url || job.source_url || null;
+    return safeExternalUrl(job.apply_url) ?? safeExternalUrl(job.source_url);
   }, [job]);
 
   const similarLink = useMemo(() => {
@@ -382,7 +394,7 @@ export default function JobDetailsPage() {
     };
   }, [job]);
 
-  async function postuler() {
+  async function postuler(openMode: ApplyOpenMode = "new-tab") {
     if (!id || !isUuid(id)) return;
 
     if (!userId) {
@@ -400,28 +412,53 @@ export default function JobDetailsPage() {
       return;
     }
 
+    // La redirection part immédiatement, avant tout appel réseau : sur
+    // mobile, l'autorisation de navigation accordée par le clic ne survit
+    // pas à un aller-retour réseau (contrairement à la plupart des
+    // navigateurs desktop, plus tolérants). Sans ça, "même onglet" —
+    // utilisé par l'ouverture automatique depuis une notification — se
+    // bloquait silencieusement sur téléphone.
+    if (openMode === "new-tab") {
+      window.open(applyLink, "_blank", "noopener,noreferrer");
+    } else {
+      window.location.assign(applyLink);
+    }
+
     setActionBusy(true);
     setErrorMsg(null);
 
-    try {
-      const { error } = await supabase
-        .from("applications")
-        .upsert(
-          { user_id: userId, job_id: id, status: "in_progress" as ApplicationStatus },
-          { onConflict: "user_id,job_id" }
-        );
+    // Enregistrement de la candidature en tâche de fond : on ne bloque plus
+    // la redirection sur cet appel, seulement le suivi/analytics.
+    void (async () => {
+      try {
+        const { error } = await supabase
+          .from("applications")
+          .upsert(
+            { user_id: userId, job_id: id, status: "in_progress" as ApplicationStatus },
+            { onConflict: "user_id,job_id" }
+          );
 
-      if (error) throw error;
-
-      trackApplicationStarted({ jobId: id });
-      window.open(applyLink, "_blank", "noopener,noreferrer");
-      await load();
-    } catch {
-      setErrorMsg(GENERIC_SERVER_ERROR);
-    } finally {
-      setActionBusy(false);
-    }
+        if (error) throw error;
+        trackApplicationStarted({ jobId: id });
+      } catch {
+        setErrorMsg(GENERIC_SERVER_ERROR);
+      } finally {
+        setActionBusy(false);
+        if (openMode === "new-tab") {
+          void load();
+        }
+      }
+    })();
   }
+
+  useEffect(() => {
+    const key = shouldAutoApply && id ? `${id}:${location.search}` : null;
+    if (!key || autoApplyKey === key || busy || loading || isLoadingPass || !job || !userId) return;
+
+    setAutoApplyKey(key);
+    void postuler("same-tab");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoApply, id, location.search, autoApplyKey, busy, loading, isLoadingPass, job, userId]);
 
   async function removeFromList() {
     if (!userId || !id || !isUuid(id) || !app) return;
@@ -513,6 +550,35 @@ export default function JobDetailsPage() {
     return null;
   };
 
+  const renderActions = (placement: "top" | "bottom") => (
+    <div className={`jd-actions jd-actions--${placement}`}>
+      <button className="btn btnPrimary" disabled={actionBusy} onClick={() => postuler()}>
+        {actionBusy ? "Ouverture..." : "Ouvrir le lien de candidature"}
+      </button>
+
+      <div className="jd-actionsRow">
+        <button
+          className="btn btnGhost"
+          disabled={actionBusy}
+          onClick={markSubmitted}
+          title="Confirmer que tu as envoyé ta candidature"
+        >
+          Confirmer que j’ai postulé
+        </button>
+
+        {app && (
+          <button className="btn btnGhost" disabled={actionBusy} onClick={removeFromList}>
+            Retirer
+          </button>
+        )}
+      </div>
+
+      <button className="btn btnGhost" onClick={() => navigate("/jobradar/applications")}>
+        Voir mes candidatures {"->"}
+      </button>
+    </div>
+  );
+
   return (
     <div className="jd-shell">
       <main className="jd-main">
@@ -574,32 +640,7 @@ export default function JobDetailsPage() {
 
             {allowPremium ? (
               <>
-            <div className="jd-actions">
-              <button className="btn btnPrimary" disabled={actionBusy} onClick={postuler}>
-                {actionBusy ? "Ouverture..." : "Ouvrir le lien de candidature"}
-              </button>
-
-              <div className="jd-actionsRow">
-                <button
-                  className="btn btnGhost"
-                  disabled={actionBusy}
-                  onClick={markSubmitted}
-                  title="Confirmer que tu as envoyé ta candidature"
-                >
-                  Confirmer que j’ai postulé
-                </button>
-
-                {app && (
-                  <button className="btn btnGhost" disabled={actionBusy} onClick={removeFromList}>
-                    Retirer
-                  </button>
-                )}
-              </div>
-
-              <button className="btn btnGhost" onClick={() => navigate("/jobradar/applications")}>
-                Voir mes candidatures {"->"}
-              </button>
-            </div>
+            {renderActions("top")}
 
             <div className="jd-body">
               <h3>Description</h3>
@@ -651,6 +692,7 @@ export default function JobDetailsPage() {
                 </a>
               )}
             </div>
+            {renderActions("bottom")}
               </>
             ) : (
               <div className="jd-locked">
@@ -667,5 +709,3 @@ export default function JobDetailsPage() {
     </div>
   );
 }
-
-

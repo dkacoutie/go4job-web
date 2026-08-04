@@ -78,6 +78,17 @@ function groupNotifications(rows: JobRadarNotification[]) {
   return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
 }
 
+function shouldOpenApplyLink(row: JobRadarNotification) {
+  const label = (row.cta_label ?? "").toLowerCase();
+  return label.includes("ouvrir") && label.includes("candidature");
+}
+
+function withApplyAction(path: string) {
+  if (!path.startsWith("/jobradar/jobs/")) return path;
+  if (path.includes("action=apply")) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}action=apply`;
+}
+
 export default function NotificationsPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
@@ -131,7 +142,7 @@ export default function NotificationsPage() {
 
   const onOpenNotification = (row: JobRadarNotification) => {
     const target = isSafeNotificationPath(row.cta_path) ? row.cta_path : "/jobradar/feed";
-    navigate(target);
+    navigate(shouldOpenApplyLink(row) ? withApplyAction(target) : target);
   };
 
   return (
