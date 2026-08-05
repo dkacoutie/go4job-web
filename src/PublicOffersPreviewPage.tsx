@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchPublicJobsCount, fetchPublicJobsPreview, type PublicJobPreview } from "./lib/publicJobsPreview";
 import { trackSelectContent } from "./lib/analytics";
+import { useSession } from "./lib/useSession";
 import "./PublicOffersPreviewPage.css";
 
 function formatSalary(job: PublicJobPreview): string | null {
@@ -30,6 +31,7 @@ function formatRelativeDate(iso: string | null): string | null {
 
 export default function PublicOffersPreviewPage() {
   const navigate = useNavigate();
+  const { session } = useSession();
   const [jobs, setJobs] = useState<PublicJobPreview[] | null>(null);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [error, setError] = useState(false);
@@ -56,7 +58,16 @@ export default function PublicOffersPreviewPage() {
 
   function goSignUp(jobId?: string) {
     if (jobId) trackSelectContent({ itemId: jobId });
-    navigate("/auth", { state: { from: "/jobradar/feed" } });
+    const target = jobId ? `/jobradar/jobs/${jobId}` : "/jobradar/feed";
+    // Déjà connecté (ex. lien /offres visité par un utilisateur existant) :
+    // on l'envoie directement sur l'offre cliquée plutôt que de le faire
+    // repasser par /auth, qui l'aurait de toute façon renvoyé au même
+    // endroit après un aller-retour inutile.
+    if (session) {
+      navigate(target);
+      return;
+    }
+    navigate("/auth", { state: { from: target } });
   }
 
   const roundedCount = totalCount !== null ? Math.floor(totalCount / 1000) * 1000 : null;
