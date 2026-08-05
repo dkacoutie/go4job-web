@@ -1,0 +1,35 @@
+-- Trouvé pendant l'audit fonctionnel du 05/08/2026 (page /admin/health,
+-- bandeau "Incident probable" en rouge, non lié aux corrections précédentes
+-- de cette session).
+--
+-- Le cron horaire jobradar-job-lifecycle-hourly (celui qui fait transiter
+-- les offres active -> stale -> expired et resynchronise is_active/
+-- is_expired sur toute la table jobs) échoue à CHAQUE exécution depuis le
+-- 28/07/2026 (dernier succès : 2026-07-28 00:20 UTC, confirmé via
+-- cron.job_run_details), soit un peu plus de 8 jours d'affilée sans mise à
+-- jour du statut des offres au moment du diagnostic.
+--
+-- Cause : deux versions de la fonction coexistent en base --
+--   jobradar_job_lifecycle_maintenance()                    (sans argument)
+--   jobradar_job_lifecycle_maintenance(p_batch integer = 15000)
+-- La deuxième a un paramètre par défaut, donc un appel sans argument comme
+-- celui du cron ("select public.jobradar_job_lifecycle_maintenance();")
+-- correspond aux DEUX signatures à la fois. Postgres refuse de choisir :
+-- "ERROR: function public.jobradar_job_lifecycle_maintenance() is not
+-- unique ... Could not choose a best candidate function."
+--
+-- La version à p_batch est la plus récente et la plus complète (limite de
+-- lot, suivi du backlog de reprise) : c'est visiblement elle qui devait
+-- rester après une migration antérieure qui a ajouté le batching sans
+-- supprimer l'ancienne signature. Correctif : supprimer l'ancienne version
+-- sans argument. Le cron existant, qui appelle la fonction sans argument,
+-- utilisera alors automatiquement p_batch = 15000 (comportement identique
+-- à l'ancienne version pour un lot de moins de 15 000 lignes, ce qui est
+-- le cas courant).
+--
+-- Purement une suppression de fonction obsolète : aucune donnée touchée,
+-- aucun appelant existant ne référence explicitly la forme sans argument
+-- autrement que par ce cron (le nom de fonction est le même, seul le
+-- nombre d'arguments change).
+
+drop function if exists public.jobradar_job_lifecycle_maintenance();
