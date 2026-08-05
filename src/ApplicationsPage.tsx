@@ -6,7 +6,28 @@ import { EmptyState } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
 import "./ApplicationsPage.css";
 
-type ApplicationStatus = "queued" | "submitted" | "retired";
+// Statuts réellement écrits en base, tous chemins confondus :
+// - save_job (RPC, bouton "Sauvegarder" du fil d'offres) écrit "saved"
+// - JobDetailsPage écrit "in_progress" puis "submitted"
+// - cette page écrit "queued" (remettre) et "retired" (retirer)
+// - "withdrawn" et "failed" existent aussi en base (autres chemins plus
+//   anciens). Le type ci-dessous couvre l'ensemble constaté en prod le
+//   05/08/2026 (voir requête "select status, count(*) from applications
+//   group by status") : sans ça, cette page ne reconnaissait que
+//   queued/submitted/retired et laissait ~83% des lignes réelles
+//   invisibles dans les onglets À postuler/Envoyées/Retirées (visibles
+//   seulement sous "Tout").
+type ApplicationStatus = "saved" | "queued" | "in_progress" | "submitted" | "retired" | "withdrawn" | "failed";
+
+// Regroupe les statuts réels dans les 3 catégories affichées par les
+// onglets. "saved" / "in_progress" / "failed" sont tous des variantes de
+// "pas encore envoyée" -> À postuler. "withdrawn" est l'équivalent de
+// "retired" écrit par d'autres chemins.
+function statusBucket(s: ApplicationStatus): "queued" | "submitted" | "retired" {
+  if (s === "submitted") return "submitted";
+  if (s === "retired" || s === "withdrawn") return "retired";
+  return "queued";
+}
 
 type JobMini = {
   id: string;
@@ -41,19 +62,28 @@ function norm(s: string) {
 
 function statusLabel(s: ApplicationStatus) {
   switch (s) {
+    case "saved":
+      return "À postuler";
     case "queued":
       return "À postuler";
+    case "in_progress":
+      return "En cours";
     case "submitted":
       return "Envoyée";
     case "retired":
       return "Retirée";
+    case "withdrawn":
+      return "Retirée";
+    case "failed":
+      return "Échec";
     default:
       return s;
   }
 }
 
 function statusClass(s: ApplicationStatus) {
-  return s === "queued" ? "chipQueued" : s === "submitted" ? "chipSubmitted" : "chipRetired";
+  const bucket = statusBucket(s);
+  return bucket === "submitted" ? "chipSubmitted" : bucket === "retired" ? "chipRetired" : "chipQueued";
 }
 
 function getApplyLink(job?: JobMini | null) {
@@ -162,16 +192,15 @@ export default function ApplicationsPage() {
   const counts = useMemo(() => {
     const c = { all: rows.length, queued: 0, submitted: 0, retired: 0 };
     for (const r of rows) {
-      if (r.status === "queued") c.queued += 1;
-      else if (r.status === "submitted") c.submitted += 1;
-      else if (r.status === "retired") c.retired += 1;
+      const bucket = statusBucket(r.status);
+      c[bucket] += 1;
     }
     return c;
   }, [rows]);
 
   const filtered = useMemo(() => {
     const qn = norm(q);
-    const byTab = tab === "all" ? rows : rows.filter((r) => r.status === tab);
+    const byTab = tab === "all" ? rows : rows.filter((r) => statusBucket(r.status) === tab);
 
     if (!qn) return byTab;
 
@@ -349,7 +378,7 @@ export default function ApplicationsPage() {
                       (job?.remote_type ? ` · ${job.remote_type}` : "")}
                   </div>
 
-                  {r.status === "retired" && (
+                  {statusBucket(r.status) === "retired" && (
                     <div className="app-failNote">🗑️ Retirée de ta liste (tu peux la remettre quand tu veux).</div>
                   )}
 
@@ -359,7 +388,7 @@ export default function ApplicationsPage() {
                     </button>
 
                     <div className="app-actionsRight">
-                      {r.status === "retired" ? (
+                      {statusBucket(r.status) === "retired" ? (
                         <button
                           className="btn btnGhost"
                           disabled={isUpdating}
