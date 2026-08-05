@@ -20,6 +20,8 @@ type Profile = {
   cv_file_path?: string | null;
   cv_filename?: string | null;
   cv_updated_at?: string | null;
+  notif_telegram?: boolean | null;
+  telegram_chat_id?: string | null;
 };
 
 const COUNTRIES = [
@@ -119,6 +121,11 @@ export default function ProfilePage() {
   const [cvFilename, setCvFilename] = useState<string | null>(null);
   const [cvUpdatedAt, setCvUpdatedAt] = useState<string | null>(null);
   const cvInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [telegramLinking, setTelegramLinking] = useState(false);
+  const [telegramUnlinking, setTelegramUnlinking] = useState(false);
+  const [telegramError, setTelegramError] = useState<string | null>(null);
   // Complétude du profil telle que chargée depuis la base, pour ne déclencher
   // profile_completed que sur une vraie transition incomplet -> complet, pas
   // à chaque enregistrement d'un profil déjà complet.
@@ -145,7 +152,7 @@ export default function ProfilePage() {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "user_id, full_name, phone, location, country_code, headline, experience_years, cv_file_path, cv_filename, cv_updated_at"
+          "user_id, full_name, phone, location, country_code, headline, experience_years, cv_file_path, cv_filename, cv_updated_at, notif_telegram, telegram_chat_id"
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -177,6 +184,8 @@ export default function ProfilePage() {
       setCvFilePath(p?.cv_file_path ?? null);
       setCvFilename(p?.cv_filename ?? null);
       setCvUpdatedAt(p?.cv_updated_at ?? null);
+
+      setTelegramLinked(Boolean(p?.notif_telegram && p?.telegram_chat_id));
 
       const loadedExpMissing = !(
         typeof p?.experience_years === "number" && Number.isFinite(p.experience_years)
@@ -473,6 +482,47 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleLinkTelegram() {
+    if (telegramLinking) return;
+    setTelegramLinking(true);
+    setTelegramError(null);
+
+    const { data, error } = await supabase.functions.invoke("telegram_link_start", { body: {} });
+
+    setTelegramLinking(false);
+
+    const linkUrl = (data as { link_url?: string } | null)?.link_url;
+    if (error || !linkUrl) {
+      setTelegramError("Impossible de générer le lien Telegram. Réessaie dans quelques instants.");
+      return;
+    }
+
+    window.open(linkUrl, "_blank", "noopener,noreferrer");
+    pushToast({
+      kind: "info",
+      title: "Lien Telegram ouvert",
+      message: "Appuie sur « Démarrer » dans Telegram pour terminer la liaison.",
+    });
+  }
+
+  async function handleUnlinkTelegram() {
+    if (telegramUnlinking) return;
+    setTelegramUnlinking(true);
+    setTelegramError(null);
+
+    const { error } = await supabase.rpc("unlink_telegram_account");
+
+    setTelegramUnlinking(false);
+
+    if (error) {
+      setTelegramError("Impossible de délier Telegram. Réessaie dans quelques instants.");
+      return;
+    }
+
+    setTelegramLinked(false);
+    pushToast({ kind: "success", title: "Telegram délié", message: "Tu ne recevras plus de rappel Telegram." });
+  }
+
   const expMissing = !experienceYears.trim() && !cvFilePath;
   const isIncomplete = !fullName.trim() || !city.trim() || skills.length === 0 || expMissing;
 
@@ -709,6 +759,46 @@ export default function ProfilePage() {
                     e.currentTarget.value = "";
                   }}
                 />
+              </div>
+
+              <div className="profile-section">
+                <div className="profile-section__head">
+                  <div>
+                    <div className="profile-section__title">Notifications Telegram</div>
+                    <div className="profile-section__text">
+                      En plus de l’email, reçois un rappel Telegram quand de nouvelles offres correspondent à tes
+                      alertes JobRadar.
+                    </div>
+                  </div>
+                  {telegramLinked ? (
+                    <button className="btn btnGhost" type="button" onClick={handleUnlinkTelegram} disabled={telegramUnlinking}>
+                      {telegramUnlinking ? "Déliaison…" : "Délier"}
+                    </button>
+                  ) : (
+                    <button className="btn btnGhost" type="button" onClick={handleLinkTelegram} disabled={telegramLinking}>
+                      {telegramLinking ? "Génération du lien…" : "Lier mon compte Telegram"}
+                    </button>
+                  )}
+                </div>
+
+                {telegramLinked ? (
+                  <div className="profile-cvFilled">
+                    <div>
+                      <div className="profile-cvName">Compte Telegram lié</div>
+                      <div className="profile-cvMeta">Les rappels sont actifs, en plus de l’email.</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="profile-cvEmpty">
+                    <div className="profile-cvEmpty__title">Aucun compte Telegram lié</div>
+                    <div className="profile-cvEmpty__text">
+                      Clique sur « Lier mon compte Telegram », puis appuie sur « Démarrer » dans la conversation qui
+                      s’ouvre. L’email reste ton canal principal, Telegram s’ajoute simplement en complément.
+                    </div>
+                  </div>
+                )}
+
+                {telegramError && <div className="profile-msg profile-msgErr">{telegramError}</div>}
               </div>
 
               {errorMsg && <div className="profile-msg profile-msgErr">{errorMsg}</div>}
