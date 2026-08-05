@@ -44,11 +44,13 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
   const year = new Date().getFullYear();
   const isPublic = variant === "public";
 
+  // Seule la page Facebook est officielle et active à ce jour. LinkedIn,
+  // Instagram et TikTok n'ont pas encore de page JobRadar : mieux vaut ne
+  // rien afficher plutôt que des liens qui pointent vers un profil générique
+  // ou vide. Ajouter les entrées ci-dessous dès qu'une page officielle
+  // existe (les icônes correspondantes sont déjà prêtes dans SocialIcon).
   const socials: Social[] = [
-    { label: "LinkedIn", href: "https://www.linkedin.com", icon: "linkedin" },
-    { label: "Facebook", href: "https://www.facebook.com", icon: "facebook" },
-    { label: "Instagram", href: "https://www.instagram.com", icon: "instagram" },
-    { label: "TikTok", href: "https://www.tiktok.com", icon: "tiktok" },
+    { label: "Facebook", href: "https://web.facebook.com/profile.php?id=61585633683227", icon: "facebook" },
   ];
 
   return (
