@@ -1,9 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/ToastCenter";
+import OnboardingStepper from "./components/OnboardingStepper";
 import "./MyCvPage.css";
 import { Document, Packer, Paragraph } from "docx";
 import { jsPDF } from "jspdf";
@@ -249,6 +250,8 @@ async function extractTextFromFile(f: File) {
 export default function MyCvPage() {
   const navigate = useNavigate();
   const { session, loading } = useSession();
+  const [searchParams] = useSearchParams();
+  const onboardingFlow = searchParams.get("flow") === "onboarding";
 
   const [label, setLabel] = useState("CV");
   const [cvText, setCvText] = useState("");
@@ -268,6 +271,7 @@ export default function MyCvPage() {
   const [editableSkills, setEditableSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
   const [lastParsed, setLastParsed] = useState<CvExtractResponse | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [file, setFile] = useState<File | null>(null);
   const [fileMeta, setFileMeta] = useState<FileMeta | null>(null);
@@ -626,17 +630,27 @@ export default function MyCvPage() {
           ? {
               title: "CV analysé (à vérifier)",
               message: "Certaines informations peuvent être incomplètes. Relis ton profil pour améliorer la précision.",
-              primary: { label: "Relire mon profil", to: "/jobradar/profile" },
-              secondary: { label: "Voir les offres pour moi", to: "/jobradar/feed" },
-              tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
+              primary: onboardingFlow
+                ? { label: "Continuer vers les alertes", to: "/jobradar/alerts?flow=onboarding&prefill=onboarding" }
+                : { label: "Relire mon profil", to: "/jobradar/profile" },
+              secondary: onboardingFlow
+                ? { label: "Relire mon profil", to: "/profile?flow=onboarding" }
+                : { label: "Voir les offres pour moi", to: "/jobradar/feed" },
+              tertiary: onboardingFlow ? undefined : { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "info",
             }
           : {
               title: "Prochaine étape recommandée",
-              message: "Vérifie ton profil détecté, puis mets à jour tes alertes et découvre les offres recommandées.",
-              primary: { label: "Voir les offres pour moi", to: "/jobradar/feed" },
-              secondary: { label: "Mettre à jour mon profil", to: "/jobradar/profile" },
-              tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
+              message: onboardingFlow
+                ? "Ton CV est analysé. Passe maintenant à tes alertes pour recevoir des offres ciblées."
+                : "Vérifie ton profil détecté, puis mets à jour tes alertes et découvre les offres recommandées.",
+              primary: onboardingFlow
+                ? { label: "Continuer vers les alertes", to: "/jobradar/alerts?flow=onboarding&prefill=onboarding" }
+                : { label: "Voir les offres pour moi", to: "/jobradar/feed" },
+              secondary: onboardingFlow
+                ? { label: "Retour au parcours", to: "/jobradar/onboarding?step=cv" }
+                : { label: "Mettre à jour mon profil", to: "/jobradar/profile" },
+              tertiary: onboardingFlow ? undefined : { label: "Gérer mes alertes", to: "/jobradar/alerts" },
               tone: "success",
             },
       );
@@ -650,9 +664,9 @@ export default function MyCvPage() {
       setNextStep({
         title: "Impossible d'analyser ce CV",
         message: "Essaie un PDF/DOCX plus lisible ou complète ton profil manuellement.",
-        primary: { label: "Réessayer", to: "/me/cv" },
-        secondary: { label: "Compléter mon profil", to: "/jobradar/profile" },
-        tertiary: { label: "Gérer mes alertes", to: "/jobradar/alerts" },
+        primary: { label: "Réessayer", to: onboardingFlow ? "/me/cv?flow=onboarding" : "/me/cv" },
+        secondary: { label: "Compléter mon profil", to: onboardingFlow ? "/profile?flow=onboarding" : "/jobradar/profile" },
+        tertiary: onboardingFlow ? undefined : { label: "Gérer mes alertes", to: "/jobradar/alerts" },
         tone: "info",
       });
     } finally {
@@ -889,10 +903,26 @@ export default function MyCvPage() {
     <div className="mycv-shell">
       <div className="mycv-top">
         <div className="mycv-title">
-          <button className="btn btnGhost" type="button" onClick={() => navigate("/")}>Retour</button>
+          <button
+            className="btn btnGhost"
+            type="button"
+            onClick={() => navigate(onboardingFlow ? "/jobradar/onboarding?step=cv" : "/")}
+          >
+            Retour
+          </button>
           <h1>Mon CV</h1>
         </div>
       </div>
+
+      {onboardingFlow && (
+        <div style={{ marginBottom: 18 }}>
+          <OnboardingStepper
+            currentStep="cv"
+            completedSteps={["profile", "preferences", "preview", "unlock", "complete-profile"]}
+            compact
+          />
+        </div>
+      )}
 
       <div className="cv-guidance">
         <div className="cv-guidance__title">Ajoute ton CV pour améliorer les offres recommandées</div>
@@ -973,15 +1003,23 @@ export default function MyCvPage() {
             <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
 
-          <div className="field">
-            <label className="label">Texte du CV (optionnel)</label>
-            <textarea
-              className="textarea"
-              value={cvText}
-              onChange={(e) => setCvText(e.target.value)}
-              placeholder="Colle ton CV ici si besoin..."
-            />
-          </div>
+          {(!onboardingFlow || showAdvanced) && (
+            <div className="field">
+              <label className="label">Texte du CV (optionnel)</label>
+              <textarea
+                className="textarea"
+                value={cvText}
+                onChange={(e) => setCvText(e.target.value)}
+                placeholder="Colle ton CV ici si besoin..."
+              />
+            </div>
+          )}
+
+          {onboardingFlow && (
+            <button className="btn btnGhost btnSm" type="button" onClick={() => setShowAdvanced((v) => !v)}>
+              {showAdvanced ? "Masquer les options avancées" : "Plus d'options"}
+            </button>
+          )}
 
           <div className="cv-actions">
             <div className="cv-actionsLeft">
@@ -1015,20 +1053,22 @@ export default function MyCvPage() {
             {needsReview && <span className="cv-badge">À vérifier</span>}
           </div>
 
-          <div className="cv-outputActions">
-            <button className="btn btnGhost" type="button" onClick={handleCopy} disabled={!canExport}>
-              Copier
-            </button>
-            <button className="btn btnGhost" type="button" onClick={handleDownloadTxt} disabled={!canExport}>
-              Télécharger TXT
-            </button>
-            <button className="btn btnGhost" type="button" onClick={handleDownloadDocx} disabled={!canExport}>
-              Télécharger DOCX
-            </button>
-            <button className="btn btnGhost" type="button" onClick={handleDownloadPdf} disabled={!canExport}>
-              Télécharger PDF
-            </button>
-          </div>
+          {(!onboardingFlow || showAdvanced) && (
+            <div className="cv-outputActions">
+              <button className="btn btnGhost" type="button" onClick={handleCopy} disabled={!canExport}>
+                Copier
+              </button>
+              <button className="btn btnGhost" type="button" onClick={handleDownloadTxt} disabled={!canExport}>
+                Télécharger TXT
+              </button>
+              <button className="btn btnGhost" type="button" onClick={handleDownloadDocx} disabled={!canExport}>
+                Télécharger DOCX
+              </button>
+              <button className="btn btnGhost" type="button" onClick={handleDownloadPdf} disabled={!canExport}>
+                Télécharger PDF
+              </button>
+            </div>
+          )}
 
           {isAnalyzing && (
             <div className="cv-progress" aria-live="polite">
@@ -1059,7 +1099,7 @@ export default function MyCvPage() {
                 <button
                   className="btn btnGhost"
                   type="button"
-                  onClick={() => navigate("/jobradar/profile")}
+                  onClick={() => navigate(onboardingFlow ? "/profile?flow=onboarding" : "/jobradar/profile")}
                 >
                   Compléter mon profil
                 </button>
@@ -1084,7 +1124,7 @@ export default function MyCvPage() {
                   <div className="cv-verifyText">
                     Certaines informations peuvent être incomplètes. Relis ton profil pour améliorer la précision.
                   </div>
-                  <button className="btn btnGhost btnSm" type="button" onClick={() => navigate("/jobradar/profile")}>
+                  <button className="btn btnGhost btnSm" type="button" onClick={() => navigate(onboardingFlow ? "/profile?flow=onboarding" : "/jobradar/profile")}>
                     Relire mon profil
                   </button>
                 </div>
@@ -1186,6 +1226,18 @@ export default function MyCvPage() {
           )}
         </section>
       </div>
+
+      {onboardingFlow && cvFilePath && !nextStep && (
+        <div className="cv-nextStep">
+          <NextStepCard
+            title="CV enregistré"
+            message="Tu peux l'analyser pour affiner tes recommandations, ou continuer directement vers tes alertes."
+            primaryAction={{ label: "Continuer vers les alertes", to: "/jobradar/alerts?flow=onboarding&prefill=onboarding" }}
+            secondaryAction={{ label: "Analyser mon CV maintenant", onClick: () => void analyzeAndSave() }}
+            tone="success"
+          />
+        </div>
+      )}
 
       {nextStep && (
         <div className="cv-nextStep">

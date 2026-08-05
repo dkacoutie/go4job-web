@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { trackAlertCreated } from "./lib/analytics";
 import { resolveCountrySearchQuery } from "./lib/jobMatching";
@@ -13,7 +13,9 @@ import {
 } from "./lib/jobAlertKeywordSuggestions";
 import { useSession } from "./lib/useSession";
 import { usePass } from "./lib/usePass";
+import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
+import OnboardingStepper from "./components/OnboardingStepper";
 import PwaInstallCard from "./components/PwaInstallCard";
 import { useToast } from "./components/ToastCenter";
 import "./AlertsPage.css";
@@ -171,8 +173,13 @@ function IconTrash() {
 
 export default function AlertsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const onboardingFlow = searchParams.get("flow") === "onboarding";
+  const prefillOnboarding = searchParams.get("prefill") === "onboarding";
   const { session, loading } = useSession();
   const { hasActivePass, isLoadingPass } = usePass();
+  const onboarding = useJobRadarOnboarding();
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const FREE_ACTIVE_ALERT_LIMIT = 1;
   const GENERIC_SERVER_ERROR = "Une erreur temporaire est survenue. Réessaie dans quelques instants.";
   const FREE_ALERT_LIMIT_MESSAGE =
@@ -319,6 +326,25 @@ export default function AlertsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session, userId, allowPremium, isLoadingPass]);
+
+  const prefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!prefillOnboarding || prefillAppliedRef.current || onboarding.loading) return;
+    const draft = onboarding.onboarding.preferences?.alertDrafts?.[0];
+    if (!draft) return;
+
+    prefillAppliedRef.current = true;
+    setName(draft.name || "");
+    if (draft.keywords?.length) {
+      setKeywordsText(draft.keywords.join(", "));
+      setKeywordsDirty(true);
+    }
+    if (draft.frequency) setFrequency(draft.frequency);
+    if (draft.countries && draft.countries.length) {
+      setAllCountries(false);
+      setCountries(draft.countries);
+    }
+  }, [prefillOnboarding, onboarding.loading, onboarding.onboarding.preferences?.alertDrafts]);
 
   useEffect(() => {
     const n = name.trim();
@@ -494,6 +520,10 @@ export default function AlertsPage() {
       channel: channels[0],
     });
 
+    if (onboardingFlow) {
+      void onboarding.markOnboardingComplete();
+    }
+
     setName("");
     setKeywordsText("");
     setKeywordsDirty(false);
@@ -637,6 +667,16 @@ export default function AlertsPage() {
 
   return (
     <div className="alerts-shell">
+      {onboardingFlow && (
+        <div style={{ marginBottom: 18 }}>
+          <OnboardingStepper
+            currentStep="alerts"
+            completedSteps={["profile", "preferences", "preview", "unlock", "complete-profile", "cv"]}
+            compact
+          />
+        </div>
+      )}
+
       <section className="alerts-hero">
         <div className="alerts-heroTop">
           <div>
@@ -649,8 +689,12 @@ export default function AlertsPage() {
             </p>
           </div>
 
-          <button className="btn btnGhost" type="button" onClick={() => navigate("/jobradar/feed")}>
-            Voir les offres →
+          <button
+            className="btn btnGhost"
+            type="button"
+            onClick={() => navigate(onboardingFlow ? "/jobradar/onboarding?step=alerts" : "/jobradar/feed")}
+          >
+            {onboardingFlow ? "Retour au parcours" : "Voir les offres →"}
           </button>
         </div>
       </section>
@@ -754,53 +798,66 @@ export default function AlertsPage() {
             </button>
           ) : null}
 
-          <div className="row2 advancedFields">
-            <label className="label">
-              Compétences ou outils recherchés
-              <input
-                className="input"
-                value={skillsKeywordsText}
-                onChange={(e) => {
-                  setSkillsKeywordsConfigured(true);
-                  setSkillsKeywordsText(e.target.value);
-                }}
-                placeholder="Agile, SAP, ERP, Salesforce, Excel, Paie"
-              />
-              <span className="fieldHint">Exemple : Agile, SAP, ERP, Salesforce, Excel, Paie</span>
-            </label>
+          {onboardingFlow && (
+            <button
+              className="btn btnGhost btnSm"
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              style={{ alignSelf: "flex-start" }}
+            >
+              {showAdvanced ? "Masquer les options avancées" : "Plus d'options (compétences, mots à exclure)"}
+            </button>
+          )}
 
-            <label className="label">
-              Mots à exclure
-              <input
-                className="input"
-                value={excludedKeywordsText}
-                onChange={(e) => {
-                  setExcludedKeywordsConfigured(true);
-                  setExcludedKeywordsText(e.target.value);
-                }}
-                placeholder="BTP, chantier, restauration, formation"
-              />
-              <span className="fieldHint">Exemple : BTP, chantier, restauration, formation</span>
-              {showExcludedKeywordSuggestions ? (
-                <div className="keywordMiniSuggestions" aria-label="Suggestions de mots à exclure">
-                  {suggestedExcludedKeywords.map((keyword) => {
-                    const selected = selectedExcludedKeywordSet.has(normalizeSuggestionText(keyword));
-                    return (
-                      <button
-                        key={keyword}
-                        type="button"
-                        className={selected ? "keywordMiniChip selected" : "keywordMiniChip"}
-                        aria-pressed={selected}
-                        onClick={() => toggleSuggestedExcludedKeyword(keyword)}
-                      >
-                        {keyword}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </label>
-          </div>
+          {(!onboardingFlow || showAdvanced) && (
+            <div className="row2 advancedFields">
+              <label className="label">
+                Compétences ou outils recherchés
+                <input
+                  className="input"
+                  value={skillsKeywordsText}
+                  onChange={(e) => {
+                    setSkillsKeywordsConfigured(true);
+                    setSkillsKeywordsText(e.target.value);
+                  }}
+                  placeholder="Agile, SAP, ERP, Salesforce, Excel, Paie"
+                />
+                <span className="fieldHint">Exemple : Agile, SAP, ERP, Salesforce, Excel, Paie</span>
+              </label>
+
+              <label className="label">
+                Mots à exclure
+                <input
+                  className="input"
+                  value={excludedKeywordsText}
+                  onChange={(e) => {
+                    setExcludedKeywordsConfigured(true);
+                    setExcludedKeywordsText(e.target.value);
+                  }}
+                  placeholder="BTP, chantier, restauration, formation"
+                />
+                <span className="fieldHint">Exemple : BTP, chantier, restauration, formation</span>
+                {showExcludedKeywordSuggestions ? (
+                  <div className="keywordMiniSuggestions" aria-label="Suggestions de mots à exclure">
+                    {suggestedExcludedKeywords.map((keyword) => {
+                      const selected = selectedExcludedKeywordSet.has(normalizeSuggestionText(keyword));
+                      return (
+                        <button
+                          key={keyword}
+                          type="button"
+                          className={selected ? "keywordMiniChip selected" : "keywordMiniChip"}
+                          aria-pressed={selected}
+                          onClick={() => toggleSuggestedExcludedKeyword(keyword)}
+                        >
+                          {keyword}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </label>
+            </div>
+          )}
 
           <div className="row2">
             <label className="label">
@@ -879,13 +936,25 @@ export default function AlertsPage() {
       {createdHint && (
         <div style={{ margin: "18px 0" }}>
           <NextStepCard
-            title="Prochaine étape recommandée"
-            message="Découvre les offres correspondant à cette alerte ou améliore ton ciblage."
-            primaryAction={{ label: "Voir les offres proches de mon alerte", to: activeAlertFeedUrl }}
-            secondaryAction={
-              freeAlertLimitReached ? undefined : { label: "Ajouter un autre pays", to: "/jobradar/alerts" }
+            title={onboardingFlow ? "Ton alerte est prête" : "Prochaine étape recommandée"}
+            message={
+              onboardingFlow
+                ? "Ton profil, ton CV et ton alerte sont configurés. Tu peux maintenant ouvrir tes offres."
+                : "Découvre les offres correspondant à cette alerte ou améliore ton ciblage."
             }
-            tone="info"
+            primaryAction={
+              onboardingFlow
+                ? { label: "Ouvrir mes offres", to: "/jobradar/feed" }
+                : { label: "Voir les offres proches de mon alerte", to: activeAlertFeedUrl }
+            }
+            secondaryAction={
+              onboardingFlow
+                ? { label: "Voir les offres proches de mon alerte", to: activeAlertFeedUrl }
+                : freeAlertLimitReached
+                ? undefined
+                : { label: "Ajouter un autre pays", to: "/jobradar/alerts" }
+            }
+            tone={onboardingFlow ? "success" : "info"}
           />
         </div>
       )}
