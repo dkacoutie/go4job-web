@@ -96,11 +96,41 @@ export type AdminHealthCron = {
   recent_error_summary?: string | null;
 };
 
+// JR-0068 (07/08/2026) : paiements + inscriptions, absents de la V1
+// initiale (admin_health_v1_overview listait 'billing_details' dans
+// 'excluded_from_v1'). Alimente par la RPC admin_health_v1_billing.
+export type AdminHealthBilling = {
+  as_of?: string;
+  signups?: {
+    total?: number;
+    today?: number;
+    "7d"?: number;
+    "30d"?: number;
+  };
+  payments?: {
+    paid_total_count?: number;
+    paid_today?: number;
+    paid_7d?: number;
+    paid_30d?: number;
+    pending_count?: number;
+    failed_30d?: number;
+    revenue_by_currency_30d?: Array<{ currency: string; amount_minor: number }>;
+    by_plan_30d?: Array<{ plan_code: string; count: number }>;
+  };
+  subscriptions?: {
+    active_count?: number;
+    expiring_48h?: number;
+    expired_30d?: number;
+  };
+  payment_alerts_unresolved?: number;
+};
+
 export type AdminHealthData = {
   overview: AdminHealthOverview;
   sources: AdminHealthSource[];
   runs: AdminHealthRun[];
   crons: AdminHealthCron[];
+  billing: AdminHealthBilling;
 };
 
 export type AdminHealthResponse = {
