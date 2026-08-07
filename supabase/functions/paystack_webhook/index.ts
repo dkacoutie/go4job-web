@@ -260,8 +260,9 @@ Deno.serve(async (req) => {
   // Paiement deja marque paye (par un webhook precedent ou par
   // paystack_reconcile_pending) mais pass jamais active : on retente
   // uniquement l'activation, idempotente par construction (verifie
-  // source_payment_id avant d'inserer), sans revalider montant/devise qui
-  // l'ont deja ete pour passer ce paiement a "paid".
+  // source_payment_id avant d'inserer ou d'etendre - voir JR-0092), sans
+  // revalider montant/devise qui l'ont deja ete pour passer ce paiement a
+  // "paid".
   if (payment.status === "paid" || payment.status === "paid_test") {
     const { error: subErr } = await admin.rpc("activate_pass_from_payment", {
       p_payment_id: payment.id,
@@ -282,15 +283,6 @@ Deno.serve(async (req) => {
   }
 
   const nowIso = new Date().toISOString();
-  const { data: activePass } = await admin
-    .from("billing_subscriptions")
-    .select("id, ends_at")
-    .eq("user_id", payment.user_id)
-    .eq("status", "active")
-    .gt("ends_at", nowIso)
-    .maybeSingle();
-  const hasActivePass = Boolean(activePass?.id);
-
   const paystackStatus = (data?.status || "").toString().toLowerCase();
   const amount = typeof data?.amount === "number" ? data.amount : null;
   const currency = (data?.currency || "").toString();
@@ -360,18 +352,13 @@ Deno.serve(async (req) => {
   // webhook concurrent ou paystack_reconcile_pending a deja resolu ce
   // paiement entre notre lecture et cet appel, updatedPayment reflete
   // simplement l'etat deja ecrit par l'autre appelant, sans erreur.
-  if (hasActivePass) {
-    await admin.from("billing_events").insert({
-      user_id: payment.user_id,
-      event_type:
-        targetStatus === "paid_test"
-          ? "paystack_webhook_paid_test_existing_pass"
-          : "paystack_webhook_paid_existing_pass",
-      payload: { reference, event },
-    });
-    return new Response("ok", { status: 200 });
-  }
-
+  //
+  // JR-0092 (07/08/2026) : on appelle desormais TOUJOURS
+  // activate_pass_from_payment ici, meme si l'utilisateur a deja un pass
+  // actif. Avant ce correctif, ce cas court-circuitait silencieusement
+  // (paiement capte, aucun jour ajoute). La RPC gere maintenant elle-meme
+  // la prolongation du pass actif au lieu de l'ecraser - voir sa definition
+  // SQL pour le detail (mise a jour en place, source_payment_id repointe).
   const { error: subErr } = await admin.rpc("activate_pass_from_payment", {
     p_payment_id: payment.id,
   });
