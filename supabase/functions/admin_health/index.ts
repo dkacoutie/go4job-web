@@ -13,6 +13,7 @@ type HealthPayload = {
   sources: unknown;
   runs: unknown;
   crons: unknown;
+  billing: unknown;
 };
 
 type HealthRpcKey = keyof HealthPayload;
@@ -22,6 +23,9 @@ const healthRpcs: Array<{ key: HealthRpcKey; name: string }> = [
   { key: "sources", name: "admin_health_v1_sources" },
   { key: "runs", name: "admin_health_v1_runs" },
   { key: "crons", name: "admin_health_v1_crons" },
+  // JR-0068 (07/08/2026) : paiements + inscriptions, absents de v1 jusqu'ici
+  // (voir 'excluded_from_v1' dans admin_health_v1_overview).
+  { key: "billing", name: "admin_health_v1_billing" },
 ];
 
 function cleanSecret(value: string | undefined | null): string {
