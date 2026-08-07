@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import "./AdminHealthPage.css";
 import {
   fetchAdminHealthV1,
+  type AdminHealthBilling,
   type AdminHealthCron,
   type AdminHealthData,
   type AdminHealthRun,
@@ -10,13 +11,13 @@ import {
 } from "./lib/adminHealthApi";
 
 type Severity = "ok" | "info" | "warning" | "critical";
-type TabKey = "overview" | "sources" | "runs" | "crons" | "signals";
+type TabKey = "overview" | "sources" | "runs" | "crons" | "billing" | "signals";
 
 type PriorityItem = {
   level: Severity;
   title: string;
   evidence: string;
-  zone: "Offres" | "Runs" | "Crons" | "Sources" | "Signaux";
+  zone: "Offres" | "Runs" | "Crons" | "Sources" | "Argent" | "Signaux";
 };
 
 function n(value: unknown) {
@@ -53,6 +54,21 @@ function fmtDuration(ms?: number | null) {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes} min ${rest}s`;
+}
+
+// JR-0068/0069 (07/08/2026) : amount_minor suit la convention deja utilisee
+// cote paiement (paystackAmount() dans paystack_webhook) : EUR/USD sont en
+// centimes (diviser par 100), XOF/XAF sont deja en unite entiere (pas de
+// division). Diviser XOF par 100 afficherait un montant 100x trop petit.
+function fmtRevenueAmount(amountMinor: unknown, currency: string) {
+  const upper = (currency || "").toUpperCase();
+  const isZeroDecimal = upper === "XOF" || upper === "XAF";
+  const raw = n(amountMinor);
+  const value = isZeroDecimal ? raw : raw / 100;
+  const formatted = new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: isZeroDecimal ? 0 : 2,
+  }).format(value);
+  return `${formatted} ${upper}`;
 }
 
 function severityRank(level?: string | null) {
@@ -136,12 +152,14 @@ export default function AdminHealthPage() {
   }, []);
 
   const overview = data?.overview;
+  const billing = data?.billing;
   const runs24h = n(overview?.runs?.ingest_runs_24h);
   const success24h = n(overview?.runs?.ingest_success_24h);
   const successRate = runs24h > 0 ? (success24h / runs24h) * 100 : 0;
   const activeJobs = n(overview?.jobs?.active_not_expired);
   const createdToday = n(overview?.jobs?.created_today);
   const runningOver30m = n(overview?.runs?.running_over_30m);
+  const paymentAlertsUnresolved = n(billing?.payment_alerts_unresolved);
 
   const crons = useMemo(() => data?.crons ?? [], [data?.crons]);
   const activeCrons = useMemo(() => crons.filter((cron) => cron.active), [crons]);
@@ -180,6 +198,18 @@ export default function AdminHealthPage() {
 
   const priorityItems = useMemo<PriorityItem[]>(() => {
     const items: PriorityItem[] = [];
+
+    // JR-0068/0069 (07/08/2026) : priorite absolue, avant meme les offres.
+    // Un paiement recu sans acces active est le seul signal qui touche
+    // directement l'argent deja encaisse.
+    if (paymentAlertsUnresolved > 0) {
+      items.push({
+        level: "critical",
+        zone: "Argent",
+        title: "Paiement recu, acces jamais active",
+        evidence: `${fmtNumber(paymentAlertsUnresolved)} alerte(s) paystack_pass_activation_failed non resolue(s)`,
+      });
+    }
 
     if (activeJobs === 0) {
       items.push({
@@ -268,6 +298,7 @@ export default function AdminHealthPage() {
     hardcodedDigestCrons.length,
     overview?.sources?.auto_disabled,
     overview?.sources?.without_success_24h,
+    paymentAlertsUnresolved,
     runningOver30m,
     runs24h,
     success24h,
@@ -276,6 +307,7 @@ export default function AdminHealthPage() {
 
   const uxSeverity = useMemo<Severity>(() => {
     if (
+      paymentAlertsUnresolved > 0 ||
       activeJobs === 0 ||
       runs24h === 0 ||
       (runs24h > 0 && successRate < 95) ||
@@ -288,7 +320,7 @@ export default function AdminHealthPage() {
     if (priorityItems.some((item) => item.level === "warning")) return "warning";
     if (priorityItems.some((item) => item.level === "info")) return "info";
     return "ok";
-  }, [activeCronErrors.length, activeJobs, priorityItems, runningOver30m, runs24h, successRate]);
+  }, [activeCronErrors.length, activeJobs, paymentAlertsUnresolved, priorityItems, runningOver30m, runs24h, successRate]);
 
   const diagnostic = useMemo(() => {
     if (uxSeverity === "critical") return "Un signal operationnel actif demande une verification immediate.";
@@ -324,6 +356,7 @@ export default function AdminHealthPage() {
     { key: "sources", label: "Sources" },
     { key: "runs", label: "Runs" },
     { key: "crons", label: "Crons" },
+    { key: "billing", label: "Argent" },
     { key: "signals", label: "Signaux" },
   ];
 
@@ -337,7 +370,7 @@ export default function AdminHealthPage() {
           <p>{diagnostic}</p>
           <div className="adminHealth__summaryLine">
             {fmtNumber(runs24h)} runs / {fmtNumber(success24h)} succes · {fmtNumber(activeJobs)} offres actives ·{" "}
-            {fmtNumber(activeCrons.length)} crons actifs
+            {fmtNumber(activeCrons.length)} crons actifs · {fmtNumber(n(billing?.subscriptions?.active_count))} pass actifs
           </div>
         </div>
         <div className="adminHealth__decisionMeta">
@@ -364,6 +397,7 @@ export default function AdminHealthPage() {
           activeCronErrors={activeCronErrors}
           activeCronsCount={activeCrons.length}
           activeJobs={activeJobs}
+          billing={billing}
           createdToday={createdToday}
           hardcodedDigestCrons={hardcodedDigestCrons}
           overview={overview}
@@ -379,6 +413,7 @@ export default function AdminHealthPage() {
       {activeTab === "sources" ? <SourcesPanel rows={watchSources} /> : null}
       {activeTab === "runs" ? <RunsPanel rows={sortedRuns} /> : null}
       {activeTab === "crons" ? <CronsPanel rows={crons} /> : null}
+      {activeTab === "billing" ? <BillingPanel billing={billing} /> : null}
       {activeTab === "signals" ? <SignalsPanel redFlags={redFlags} events={events} /> : null}
     </div>
   );
@@ -388,6 +423,7 @@ function OverviewPanel({
   activeCronErrors,
   activeCronsCount,
   activeJobs,
+  billing,
   createdToday,
   hardcodedDigestCrons,
   overview,
@@ -401,6 +437,7 @@ function OverviewPanel({
   activeCronErrors: AdminHealthCron[];
   activeCronsCount: number;
   activeJobs: number;
+  billing: AdminHealthBilling | undefined;
   createdToday: number;
   hardcodedDigestCrons: AdminHealthCron[];
   overview: AdminHealthData["overview"] | undefined;
@@ -411,6 +448,9 @@ function OverviewPanel({
   successRate: number;
   watchSources: AdminHealthSource[];
 }) {
+  const paymentAlertsUnresolved = n(billing?.payment_alerts_unresolved);
+  const activePasses = n(billing?.subscriptions?.active_count);
+
   return (
     <div className="adminHealth__tabPanel">
       <section className="adminHealth__priority" aria-label="A traiter en priorite">
@@ -430,6 +470,13 @@ function OverviewPanel({
       </section>
 
       <section className="adminHealth__kpiGrid" aria-label="KPI principaux">
+        <KpiCard
+          label="Alertes paiement"
+          value={fmtNumber(paymentAlertsUnresolved)}
+          note="Paye mais acces non active"
+          severity={paymentAlertsUnresolved > 0 ? "critical" : "ok"}
+        />
+        <KpiCard label="Pass actifs" value={fmtNumber(activePasses)} note={`${fmtNumber(n(billing?.payments?.paid_30d))} paiements sur 30j`} />
         <KpiCard label="Offres actives" value={fmtNumber(activeJobs)} severity={activeJobs === 0 ? "critical" : "ok"} />
         <KpiCard
           label="Creees aujourd'hui"
@@ -490,6 +537,12 @@ function OverviewPanel({
           <MetricLine label="Actifs" value={fmtNumber(activeCronsCount)} />
           <MetricLine label="Erreurs recentes" value={fmtNumber(activeCronErrors.length)} />
           <MetricLine label="user_id fixe" value={fmtNumber(hardcodedDigestCrons.length)} />
+        </MiniPanel>
+
+        <MiniPanel title="Argent (30j)">
+          <MetricLine label="Paiements reussis" value={fmtNumber(n(billing?.payments?.paid_30d))} />
+          <MetricLine label="Echoues" value={fmtNumber(n(billing?.payments?.failed_30d))} />
+          <MetricLine label="Nouvelles inscriptions" value={fmtNumber(n(billing?.signups?.["30d"]))} />
         </MiniPanel>
       </section>
     </div>
@@ -603,6 +656,76 @@ function CronsPanel({ rows }: { rows: AdminHealthCron[] }) {
   );
 }
 
+function BillingPanel({ billing }: { billing: AdminHealthBilling | undefined }) {
+  const signups = billing?.signups;
+  const payments = billing?.payments;
+  const subs = billing?.subscriptions;
+  const alerts = n(billing?.payment_alerts_unresolved);
+  const revenueRows = payments?.revenue_by_currency_30d ?? [];
+  const planRows = payments?.by_plan_30d ?? [];
+
+  return (
+    <div className="adminHealth__tabPanel">
+      {alerts > 0 ? (
+        <div className="adminHealth__infoNotice">
+          {fmtNumber(alerts)} alerte(s) de paiement non resolue(s) — paiement recu, acces jamais active. Voir aussi
+          l'onglet Signaux et l'email d'alerte (jobradar_monitor_alert_email).
+        </div>
+      ) : null}
+
+      <section className="adminHealth__kpiGrid" aria-label="KPI argent">
+        <KpiCard label="Inscriptions (total)" value={fmtNumber(signups?.total)} note={`${fmtNumber(signups?.["7d"])} sur 7j`} />
+        <KpiCard label="Paiements reussis (total)" value={fmtNumber(payments?.paid_total_count)} note={`${fmtNumber(payments?.paid_30d)} sur 30j`} />
+        <KpiCard label="Pass actifs" value={fmtNumber(subs?.active_count)} note={`${fmtNumber(subs?.expiring_48h)} expirent sous 48h`} />
+        <KpiCard
+          label="Alertes paiement"
+          value={fmtNumber(alerts)}
+          severity={alerts > 0 ? "critical" : "ok"}
+          note="Paye mais acces non active"
+        />
+      </section>
+
+      <section className="adminHealth__overviewGrid">
+        <MiniPanel title="Inscriptions">
+          <MetricLine label="Aujourd'hui" value={fmtNumber(signups?.today)} />
+          <MetricLine label="7 derniers jours" value={fmtNumber(signups?.["7d"])} />
+          <MetricLine label="30 derniers jours" value={fmtNumber(signups?.["30d"])} />
+        </MiniPanel>
+
+        <MiniPanel title="Paiements (30j)">
+          <MetricLine label="Reussis" value={fmtNumber(payments?.paid_30d)} />
+          <MetricLine label="Echoues" value={fmtNumber(payments?.failed_30d)} />
+          <MetricLine label="En attente" value={fmtNumber(payments?.pending_count)} />
+        </MiniPanel>
+
+        <MiniPanel title="Revenu (30j)">
+          {revenueRows.length === 0 ? (
+            <Empty>Aucun paiement sur 30 jours.</Empty>
+          ) : (
+            revenueRows.map((row) => (
+              <MetricLine key={row.currency} label={row.currency} value={fmtRevenueAmount(row.amount_minor, row.currency)} />
+            ))
+          )}
+        </MiniPanel>
+
+        <MiniPanel title="Pass vendus par plan (30j)">
+          {planRows.length === 0 ? (
+            <Empty>Aucun pass vendu sur 30 jours.</Empty>
+          ) : (
+            planRows.map((row) => <MetricLine key={row.plan_code} label={row.plan_code} value={fmtNumber(row.count)} />)
+          )}
+        </MiniPanel>
+
+        <MiniPanel title="Abonnements">
+          <MetricLine label="Actifs" value={fmtNumber(subs?.active_count)} />
+          <MetricLine label="Expirent sous 48h" value={fmtNumber(subs?.expiring_48h)} />
+          <MetricLine label="Expires (30j)" value={fmtNumber(subs?.expired_30d)} />
+        </MiniPanel>
+      </section>
+    </div>
+  );
+}
+
 function SignalsPanel({
   redFlags,
   events,
@@ -641,8 +764,8 @@ function SignalsPanel({
         ))}
       </div>
       <p className="adminHealth__muted adminHealth__scope">
-        Hors V1: paiements detailles, partenaires detailles, messages detailles, actions admin, imports,
-        relances cron et envois.
+        Hors V1: partenaires detailles, messages detailles, actions admin, imports, relances cron et envois.
+        Paiements et inscriptions sont couverts depuis l'onglet Argent (JR-0068).
       </p>
     </section>
   );
