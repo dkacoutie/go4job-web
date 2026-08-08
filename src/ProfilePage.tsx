@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import OnboardingStepper from "./components/OnboardingStepper";
 import { supabase } from "./lib/supabaseClient";
@@ -22,6 +22,11 @@ type Profile = {
   cv_updated_at?: string | null;
   notif_telegram?: boolean | null;
   telegram_chat_id?: string | null;
+  // JR-0056/0057 : colonne dédiée aux compétences (text[]), jusqu'ici présente
+  // en base mais jamais lue ni écrite par ce formulaire (les compétences
+  // étaient stockées uniquement comme texte dans `headline`). On la lit et on
+  // l'écrit désormais en plus, sans retirer `headline` (compat affichage).
+  skills?: string[] | null;
 };
 
 const COUNTRIES = [
@@ -152,7 +157,7 @@ export default function ProfilePage() {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "user_id, full_name, phone, location, country_code, headline, experience_years, cv_file_path, cv_filename, cv_updated_at, notif_telegram, telegram_chat_id"
+          "user_id, full_name, phone, location, country_code, headline, experience_years, cv_file_path, cv_filename, cv_updated_at, notif_telegram, telegram_chat_id, skills"
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -174,7 +179,15 @@ export default function ProfilePage() {
       setCity(loc.city);
       setCountryCode(p?.country_code ?? loc.countryCode);
 
-      setSkills(parseSkills(p?.headline ?? null));
+      // JR-0056/0057 : priorité à la colonne `skills` (source normalisée) si
+      // elle contient déjà quelque chose ; sinon on retombe sur l'ancien
+      // parsing depuis `headline`, pour ne rien casser sur les profils
+      // existants tant qu'ils n'ont pas été ré-enregistrés au moins une fois.
+      const skillsFromColumn = Array.isArray(p?.skills)
+        ? p.skills.filter((s): s is string => Boolean(s && s.trim()))
+        : [];
+      setSkills(skillsFromColumn.length > 0 ? skillsFromColumn : parseSkills(p?.headline ?? null));
+
       setExperienceYears(
         typeof p?.experience_years === "number" && Number.isFinite(p.experience_years)
           ? String(p.experience_years)
@@ -393,6 +406,9 @@ export default function ProfilePage() {
           location: locationValue,
           country_code: countryCode || null,
           headline: headlineValue || null,
+          // JR-0056/0057 : on écrit désormais aussi la colonne dédiée `skills`
+          // (text[]), en plus de `headline` conservé pour compat affichage.
+          skills: skills.length > 0 ? skills : null,
           experience_years: expClean,
         },
         { onConflict: "user_id" }
@@ -627,7 +643,7 @@ export default function ProfilePage() {
                     value={city}
                     onChange={(e) => setCity(e.target.value)}
                     placeholder="Ex: Abidjan"
-                  />
+                />
                   <div className="fieldHelp">Indique ta ville/pays pour améliorer les offres locales.</div>
                 </label>
               </div>
@@ -682,7 +698,7 @@ export default function ProfilePage() {
                     <button className="btn btnGhost" type="button" onClick={() => addSkillsFromInput(skillInput)}>
                       Ajouter
                     </button>
-                  </div>
+                </div>
                 </div>
                 <div className="fieldHelp">Ces compétences aident JobRadar à recommander des offres plus adaptées.</div>
               </label>
@@ -805,7 +821,7 @@ export default function ProfilePage() {
 
               <div className="actions">
                 <button className="btn btnPrimary" onClick={save} disabled={saving}>
-                  {saving ? "Enregistrement…" : "Enregistrer"}
+                  {saving ? "Enregistrementá" : "Enregistrer"}
                 </button>
               </div>
 
