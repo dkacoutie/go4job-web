@@ -26,7 +26,7 @@ import {
 } from "../preview_job_alert_digest/_lib.ts";
 import { buildRelevanceOrFilter } from "../preview_job_alert_digest/_lib.ts";
 
-/** Colonnes du vivier d'offres. Partagées par la requête récente et la requête ciblée. */
+/** Colonnes du vivier d'offres. Partagees par la requete recente et la requete ciblee. */
 const JOB_SELECT_COLUMNS = `
   id, title, company_name, location, country, remote_type, contract_type, seniority,
   published_at, posted_at, scraped_at, created_at, updated_at, last_seen_at,
@@ -53,6 +53,13 @@ type FeedbackRow = {
   job_id?: string | null;
 };
 
+// JR-0052 (07/08/2026) : ligne renvoyee par la requete d'historique des
+// digests deja envoyes a cet utilisateur, utilisee pour eviter de renvoyer
+// la meme offre plusieurs jours de suite.
+type RecentDigestItemRow = {
+  job_id?: string | null;
+};
+
 type ExistingNotificationLog = {
   id: number | string;
   channel: string;
@@ -70,7 +77,18 @@ const CONFIRM_SEND = "SEND_JOB_ALERT_DIGEST_V2";
 const NOTIFICATION_CHANNEL = "job_alert_digest_v2";
 const DUPLICATE_CHANNELS = ["email", "email_non_paying_digest", NOTIFICATION_CHANNEL];
 const REQUEST_TIMEOUT_MS = 15_000;
-const CODE_VERSION = "digest_history_v1";
+const CODE_VERSION = "digest_history_v1_recent_exclusion";
+
+// JR-0052 (07/08/2026) : fenetre pendant laquelle une offre deja envoyee a un
+// utilisateur (via jobradar_digest_items/jobradar_digest_runs) n'est pas
+// reproposee, meme si elle reste pertinente et active. Avant ce correctif,
+// aucune exclusion de ce type n'existait : un audit reel a montre 53 paires
+// (utilisateur, offre) renvoyees au moins deux fois en 7 jours, jusqu'a 7
+// fois pour une seule offre. La table dediee job_alert_sent_jobs prevue a
+// l'origine (voir commentaire dans preview_job_alert_digest/index.ts)
+// n'a jamais ete creee ; jobradar_digest_items/jobradar_digest_runs jouent
+// deja ce role et sont reutilisees ici sans nouvelle table.
+const RECENT_DIGEST_EXCLUSION_DAYS = 7;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -123,6 +141,19 @@ function normalizeEmail(email: string) {
 function digestDateFrom(body: SendJobAlertDigestV2Body) {
   const raw = cleanString(body.date_yyyy_mm_dd);
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date().toISOString().slice(0, 10);
+}
+
+// JR-0052 (07/08/2026) : date de coupure (YYYY-MM-DD) a partir de laquelle on
+// considere qu'une offre a ete "recemment envoyee" a cet utilisateur.
+function recentExclusionCutoffFrom(digestDate: string, days: number) {
+  const base = new Date(`${digestDate}T00:00:00.000Z`);
+  if (Number.isNaN(base.getTime())) {
+    const fallback = new Date();
+    fallback.setUTCDate(fallback.getUTCDate() - days);
+    return fallback.toISOString().slice(0, 10);
+  }
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
 }
 
 function base64Url(bytes: Uint8Array): string {
@@ -200,7 +231,7 @@ function buildHtml(params: {
                 <h1 style="margin:8px 0 8px 0;color:#0f172a;font-size:22px;line-height:1.25;">${escapeHtml(params.subject)}</h1>
                 <p style="margin:0;color:#64748b;font-size:14px;line-height:1.5;">${escapeHtml(params.preheader)}</p>
                 <p style="margin:18px 0 0 0;">
-                  <a href="${primaryUrl}" style="display:inline-block;background:#0052cc;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:800;">Voir mes offres sélectionnées</a>
+                  <a href="${primaryUrl}" style="display:inline-block;background:#0052cc;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:800;">Voir mes offres selectionnees</a>
                 </p>
               </td>
             </tr>
@@ -208,8 +239,8 @@ function buildHtml(params: {
             ${blockLabels ? `<tr><td style="padding:8px 24px 20px 24px;color:#111827;"><ul style="margin:0;padding-left:18px;">${blockLabels}</ul></td></tr>` : ""}
             <tr>
               <td style="padding:16px 24px;border-top:1px solid #e5e7eb;color:#64748b;font-size:12px;text-align:center;">
-                <a href="${editUrl}" style="color:#64748b;text-decoration:underline;">Modifier mes critères</a> ·
-                <a href="${params.unsubscribeUrl}" style="color:#64748b;text-decoration:underline;">Se désinscrire</a>
+                <a href="${editUrl}" style="color:#64748b;text-decoration:underline;">Modifier mes criteres</a> ·
+                <a href="${params.unsubscribeUrl}" style="color:#64748b;text-decoration:underline;">Se desinscrire</a>
               </td>
             </tr>
           </table>
@@ -238,9 +269,9 @@ function buildText(params: {
     "",
     ...lines,
     "",
-    `Voir mes offres sélectionnées: ${params.appUrl}/jobradar/feed?source=email_digest_v2`,
-    `Modifier mes critères: ${params.appUrl}/jobradar/onboarding?source=email_digest_v2`,
-    `Se désinscrire: ${params.unsubscribeUrl}`,
+    `Voir mes offres selectionnees: ${params.appUrl}/jobradar/feed?source=email_digest_v2`,
+    `Modifier mes criteres: ${params.appUrl}/jobradar/onboarding?source=email_digest_v2`,
+    `Se desinscrire: ${params.unsubscribeUrl}`,
   ].join("\n");
 }
 
@@ -273,6 +304,37 @@ async function findDuplicateLog(supabase: SupabaseClient, email: string, digestD
 
   if (error) throw new Error(`notification_log_lookup_failed:${error.message}`);
   return data?.[0] ?? null;
+}
+
+// JR-0052 (07/08/2026) : recupere les job_id deja envoyes a cet utilisateur
+// dans un digest depuis sinceDigestDate (inclus), via l'historique reel
+// jobradar_digest_runs/jobradar_digest_items (aucune nouvelle table). Erreur
+// non fatale : en cas d'echec, on ne bloque pas l'envoi, on ne fait juste pas
+// d'exclusion (comportement identique a avant ce correctif).
+async function fetchRecentlySentJobIds(
+  supabase: SupabaseClient,
+  userId: string,
+  sinceDigestDate: string,
+): Promise<{ data: RecentDigestItemRow[] | null; error: { message: string } | null }> {
+  const runsRes = await supabase
+    .from("jobradar_digest_runs")
+    .select("id")
+    .eq("user_id", userId)
+    .gte("digest_date", sinceDigestDate);
+
+  if (runsRes.error) return { data: null, error: runsRes.error };
+
+  const runIds = (runsRes.data ?? [])
+    .map((row: { id?: string | null }) => row.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (runIds.length === 0) return { data: [], error: null };
+
+  return await supabase
+    .from("jobradar_digest_items")
+    .select("job_id")
+    .in("run_id", runIds)
+    .returns<RecentDigestItemRow[]>();
 }
 
 async function logStatus(
@@ -431,6 +493,8 @@ serve(async (req) => {
   diagnostics.notes.push("send_job_alert_digest_v2 handles one user per invocation; scheduled batching is orchestrated by private.cron_send_job_alert_digest.");
   diagnostics.notes.push("job_alert_sent_jobs is not used in V1; per-job deduplication remains for V1.1.");
 
+  const recentExclusionCutoff = recentExclusionCutoffFrom(digestDate, RECENT_DIGEST_EXCLUSION_DAYS);
+
   try {
     const userResult = await supabase.auth.admin.getUserById(userId);
     if (userResult.error) {
@@ -445,6 +509,7 @@ serve(async (req) => {
       alertsRes,
       applicationsRes,
       feedbackRes,
+      recentDigestRes,
       suppressionRes,
       duplicateLog,
       jobsRes,
@@ -474,6 +539,7 @@ serve(async (req) => {
         .eq("action", "dismissed")
         .limit(5000)
         .returns<FeedbackRow[]>(),
+      fetchRecentlySentJobIds(supabase, userId, recentExclusionCutoff),
       supabase
         .from("email_suppressions")
         .select("reason, source")
@@ -499,6 +565,7 @@ serve(async (req) => {
     if (alertsRes.error) return json(500, { ok: false, error: "alerts_lookup_failed", message: alertsRes.error.message });
     if (applicationsRes.error) return json(500, { ok: false, error: "applications_lookup_failed", message: applicationsRes.error.message });
     if (feedbackRes.error) return json(500, { ok: false, error: "feedback_lookup_failed", message: feedbackRes.error.message });
+    if (recentDigestRes.error) diagnostics.notes.push(`recent_digest_items_lookup_failed: ${recentDigestRes.error.message}`);
     if (suppressionRes.error) diagnostics.notes.push(`email_suppressions lookup failed: ${suppressionRes.error.message}`);
     if (jobsRes.error) return json(500, { ok: false, error: "jobs_lookup_failed", message: jobsRes.error.message });
 
@@ -525,12 +592,23 @@ serve(async (req) => {
       const savedOrAppliedIds = new Set(
         (applicationsRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
       );
-      const dismissedIds = new Set(
-        (feedbackRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
+      // JR-0052 (07/08/2026) : les offres deja envoyees dans un digest recent
+      // (fenetre RECENT_DIGEST_EXCLUSION_DAYS) rejoignent les offres explicitement
+      // rejetees par l'utilisateur (job_feedback action=dismissed) dans le meme
+      // ensemble d'exclusion, deja gere nativement par selectRelevantJobs.
+      const recentlySentIds = new Set(
+        (recentDigestRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
       );
-      // Vivier complémentaire : les offres du catalogue qui correspondent
-      // vraiment aux critères, cherchées en base au lieu d'être espérées dans
-      // les 240 dernières publiées. Purement additif, aucun candidat retiré.
+      const dismissedIds = new Set([
+        ...(feedbackRes.data ?? []).map((row) => cleanString(row.job_id)).filter(Boolean),
+        ...recentlySentIds,
+      ]);
+      diagnostics.notes.push(
+        `recent_digest_exclusion: ${recentlySentIds.size} job(s) already sent since ${recentExclusionCutoff} excluded from re-selection (JR-0052, window=${RECENT_DIGEST_EXCLUSION_DAYS}d).`,
+      );
+      // Vivier complementaire : les offres du catalogue qui correspondent
+      // vraiment aux criteres, cherchees en base au lieu d'etre esperees dans
+      // les 240 dernieres publiees. Purement additif, aucun candidat retire.
       const relevanceFilter = buildRelevanceOrFilter(criteria);
       const candidateJobs: JobRow[] = [...(jobsRes.data ?? [])];
       if (relevanceFilter) {
@@ -632,6 +710,8 @@ serve(async (req) => {
         duplicate_log_checked: true,
         duplicate_log_found: Boolean(duplicateLog),
         job_alert_sent_jobs_status: "not_used_in_v1",
+        recent_digest_exclusion_days: RECENT_DIGEST_EXCLUSION_DAYS,
+        recent_digest_exclusion_cutoff: recentExclusionCutoff,
       },
     };
 
