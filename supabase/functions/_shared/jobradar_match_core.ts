@@ -620,16 +620,6 @@ function normalizeCodeArray(input: unknown): string[] {
   );
 }
 
-function parseSkillsFromHeadline(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  return uniq(
-    raw
-      .split(/[,;\n•]/)
-      .map((item) => cleanString(item))
-      .filter(Boolean),
-  ).slice(0, 20);
-}
-
 function extractKeywordsFromAlertName(name: string): string[] {
   const normalized = normalizeText(name);
   if (!normalized) return [];
@@ -711,10 +701,6 @@ function looksReadableJobLabel(value: string | null | undefined): boolean {
   if (tokens.length >= 2 && tokens.some((token) => token.length >= 4)) return true;
   if (alphaChars >= 8 && alphaChars > digitChars * 2) return true;
   return false;
-}
-
-function hasReadableJobLabel(job: CandidateJob): boolean {
-  return looksReadableJobLabel(job.title) || looksReadableJobLabel(job.company_name);
 }
 
 function getJobTimeMs(job: CandidateJob): number {
