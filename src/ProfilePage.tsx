@@ -5,7 +5,7 @@ import { supabase } from "./lib/supabaseClient";
 import { trackProfileCompleted } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import { Badge } from "./components/ui";
 import "./ProfilePage.css";
 
