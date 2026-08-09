@@ -1330,7 +1330,7 @@ export default function JobRadarFeedPage() {
           .map((x: { job_id?: string }) => x.job_id)
           .filter((id): id is string => typeof id === "string" && id.length > 0);
         setDismissedJobIds(new Set(dismissedIds));
-      } catch (e: unknown) {
+      } catch {
         setErrorMsg((prev) => prev ?? GENERIC_SERVER_ERROR);
       }
     },
@@ -1521,7 +1521,7 @@ export default function JobRadarFeedPage() {
         if (loadRunIdRef.current !== loadMoreRunId) return;
         void hydrateJobDescriptions(nextJobs.map((job) => job.id), loadMoreRunId, "load_more");
       }, 80);
-    } catch (e: unknown) {
+    } catch {
       setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       setLoadingMore(false);
@@ -1600,7 +1600,7 @@ export default function JobRadarFeedPage() {
           if (loadRunIdRef.current !== searchRunId) return;
           void hydrateJobDescriptions(nextJobs.map((job) => job.id), searchRunId, "search");
         }, 80);
-      } catch (e: unknown) {
+      } catch {
         if (cancelled) return;
         setErrorMsg(GENERIC_SERVER_ERROR);
       } finally {
@@ -1679,7 +1679,7 @@ export default function JobRadarFeedPage() {
           message: "Retrouve-la dans ta liste “À postuler”.",
         });
         setSavedHint(true);
-      } catch (e: unknown) {
+      } catch {
         const msg = GENERIC_SERVER_ERROR;
         setErrorMsg(msg);
         pushToast({ kind: "error", title: "Impossible de sauvegarder l’offre", message: msg });
@@ -1841,7 +1841,7 @@ export default function JobRadarFeedPage() {
       const message = "Tu recevras les nouvelles offres correspondant à cette recherche par email.";
       setAlertNotice({ kind: "success", title: "Alerte créée", message });
       pushToast({ kind: "success", title: "Alerte créée", message });
-    } catch (e: unknown) {
+    } catch {
       const message = GENERIC_SERVER_ERROR;
       setErrorMsg(message);
       setAlertNotice({ kind: "error", title: "Création impossible", message });
