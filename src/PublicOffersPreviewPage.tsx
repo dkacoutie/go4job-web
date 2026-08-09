@@ -9,12 +9,12 @@ import "./PublicOffersPreviewPage.css";
 function formatSalary(job: PublicJobPreview): string | null {
   if (!job.salary_min && !job.salary_max) return null;
   const currency = job.salary_currency ?? "";
-  const period = job.salary_period ? \` / \${job.salary_period}\` : "";
+  const period = job.salary_period ? ` / ${job.salary_period}` : "";
   if (job.salary_min && job.salary_max && job.salary_min !== job.salary_max) {
-    return \`\${job.salary_min.toLocaleString("fr-FR")} – \${job.salary_max.toLocaleString("fr-FR")} \${currency}\${period}\`.trim();
+    return `${job.salary_min.toLocaleString("fr-FR")} – ${job.salary_max.toLocaleString("fr-FR")} ${currency}${period}`.trim();
   }
   const value = job.salary_min ?? job.salary_max;
-  return \`\${value?.toLocaleString("fr-FR")} \${currency}\${period}\`.trim();
+  return `${value?.toLocaleString("fr-FR")} ${currency}${period}`.trim();
 }
 
 function formatRelativeDate(iso: string | null): string | null {
@@ -24,9 +24,9 @@ function formatRelativeDate(iso: string | null): string | null {
   const diffMs = Date.now() - date.getTime();
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   if (diffHours < 1) return "à l'instant";
-  if (diffHours < 24) return \`il y a \${diffHours} h\`;
+  if (diffHours < 24) return `il y a ${diffHours} h`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return \`il y a \${diffDays} j\`;
+  if (diffDays < 30) return `il y a ${diffDays} j`;
   return date.toLocaleDateString("fr-FR");
 }
 
@@ -66,7 +66,7 @@ export default function PublicOffersPreviewPage() {
 
   function goSignUp(jobId?: string) {
     if (jobId) trackSelectContent({ itemId: jobId });
-    const target = jobId ? \`/jobradar/jobs/\${jobId}\` : "/jobradar/feed";
+    const target = jobId ? `/jobradar/jobs/${jobId}` : "/jobradar/feed";
     // Déjà connecté (ex. lien /offres visité par un utilisateur existant) :
     // on l'envoie directement sur l'offre cliquée plutôt que de le faire
     // repasser par /auth, qui l'aurait de toute façon renvoyé au même
@@ -86,7 +86,7 @@ export default function PublicOffersPreviewPage() {
         <h1>Un aperçu des offres suivies par JobRadar</h1>
         <p>
           {roundedCount !== null
-            ? \`Un échantillon des offres les plus récentes, parmi plus de \${roundedCount.toLocaleString("fr-FR")} offres actives suivies par JobRadar.\`
+            ? `Un échantillon des offres les plus récentes, parmi plus de ${roundedCount.toLocaleString("fr-FR")} offres actives suivies par JobRadar.`
             : "Un échantillon des offres les plus récentes suivies par JobRadar."}{" "}
           Crée un compte gratuit pour voir la description complète, filtrer selon ton profil et candidater.
         </p>
