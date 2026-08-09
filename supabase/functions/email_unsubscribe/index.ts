@@ -12,8 +12,6 @@ type UnsubscribeTokenRow = {
   used_at: string | null;
 };
 
-const APP_URL = "https://jobradar.go4jobapp.com";
-
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
