@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import {
   fetchCapcarriereDrafts,
   fetchCapcarriereEvents,
