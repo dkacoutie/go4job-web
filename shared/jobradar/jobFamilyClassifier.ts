@@ -328,14 +328,6 @@ function extractEdfStructuredSegment(text: string): string {
   return (match?.[1] ?? "").trim();
 }
 
-function countMatchedTerms(text: string, terms: string[]): string[] {
-  const normalizedText = normalizeTaxonomyText(text).replaceAll("/", " ");
-  return terms.filter((term) => {
-    const normalizedTerm = normalizeTaxonomyText(term).replaceAll("/", " ");
-    return Boolean(normalizedTerm) && normalizedText.includes(normalizedTerm);
-  });
-}
-
 function getSourceConfig(
   source: TextSource["source"],
   context: ClassificationContext,
