@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import {
   PARTNER_PROGRAM_ENTRY_URL,
   PARTNER_PROGRAM_MESSAGES,
