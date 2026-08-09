@@ -18,6 +18,7 @@ import { useSession } from "./lib/useSession";
 import { buildJobRadarOnboardingHref } from "./lib/jobradarOnboarding";
 import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { usePass } from "./lib/usePass";
+import { usePageMeta } from "./lib/usePageMeta";
 import {
   FEATURED_PLAN_CODE,
   PRICING_CURRENCY_MESSAGE,
@@ -276,6 +277,12 @@ export default function PricingPage() {
   const { session } = useSession();
   const paymentMarket = usePaymentMarket(session?.user?.id);
   const { refreshPass } = usePass();
+  usePageMeta({
+    title: "Tarifs JobRadar - Pass et abonnements",
+    description:
+      "Decouvrez les pass JobRadar pour acceder a toutes les offres d'emploi et candidater sans limite.",
+    path: "/pricing",
+  });
   const cardsLogoSrc = `${import.meta.env.BASE_URL}logo-visa-mastercard.png`;
   const mobileMoneyLogoSrc = `${import.meta.env.BASE_URL}mobile-money-operateurs.png`;
 
