@@ -53,15 +53,6 @@ function pageUrl(page: number) {
   return page <= 1 ? FIRST_PAGE_URL : `${FIRST_PAGE_URL}?page=${page - 1}`;
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function decodeHtmlEntities(value: string) {
   return value
     .replace(/&nbsp;/gi, " ")
