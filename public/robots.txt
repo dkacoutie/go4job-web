@@ -1,0 +1,21 @@
+# JR-0072 : robots.txt du site (fichier reel, servi tel quel par Netlify sans passer
+# par le fallback SPA - voir JR-0071 pour l'audit qui a identifie l'absence de ce fichier).
+# Note : Cloudflare (en amont) injecte en plus ses propres regles pour les bots d'IA
+# (GPTBot, Google-Extended, CCBot, ClaudeBot, etc.), independamment de ce fichier.
+User-agent: *
+Allow: /
+
+# Pages privees/applicatives : pas d'interet a etre indexees (auth requise ou contenu
+# dynamique par utilisateur).
+Disallow: /auth
+Disallow: /reset-password
+Disallow: /jobradar/
+Disallow: /profile
+Disallow: /applications
+Disallow: /notifications
+Disallow: /admin
+Disallow: /partner-portal
+Disallow: /mycv
+Disallow: /subscription
+
+Sitemap: https://jobradar.go4jobapp.com/sitemap.xml
