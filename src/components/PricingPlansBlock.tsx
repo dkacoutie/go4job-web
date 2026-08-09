@@ -150,7 +150,7 @@ export default function PricingPlansBlock({
     };
 
     loadRecentTest();
-  }, [session?.user?.id]);
+  }, [session?.user]);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -198,7 +198,7 @@ export default function PricingPlansBlock({
     };
 
     runVerify();
-  }, [session?.user?.id, refreshPass]);
+  }, [session?.user, refreshPass]);
 
   const paymentsEnabled = settings?.payments_enabled !== false;
   const maintenanceMessage =
