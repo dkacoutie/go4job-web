@@ -22,11 +22,9 @@ import "./ConsentBanner.css";
  * les active immédiatement ici, sans attendre un changement de route.
  */
 export default function ConsentBanner() {
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => !hasConsentChoice());
 
   useEffect(() => {
-    setVisible(!hasConsentChoice());
-
     const openHandler = () => setVisible(true);
     window.addEventListener(OPEN_CONSENT_BANNER_EVENT, openHandler);
     return () => window.removeEventListener(OPEN_CONSENT_BANNER_EVENT, openHandler);
