@@ -51,27 +51,6 @@ function sanitizeText(input: unknown) {
     .replace(/[\u{10000}-\u{10FFFF}]/gu, "");
 }
 
-function sanitizeKey(input: unknown) {
-  if (typeof input !== "string") return "";
-  const k = sanitizeText(input);
-  return typeof k === "string" ? k.trim() : "";
-}
-
-function sanitizeValue(value: unknown): unknown {
-  if (typeof value === "string") return sanitizeText(value);
-  if (Array.isArray(value)) return value.map((v) => sanitizeValue(v));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) {
-      const safeKey = sanitizeKey(k);
-      if (!safeKey) continue;
-      out[safeKey] = sanitizeValue(v);
-    }
-    return out;
-  }
-  return value;
-}
-
 function safeJsonValue(value: unknown, fallback: unknown) {
   try {
     return JSON.parse(
