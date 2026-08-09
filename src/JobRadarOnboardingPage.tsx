@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode 
 import { useNavigate, useSearchParams } from "react-router-dom";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import OnboardingStepper from "./components/OnboardingStepper";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
 import { canonicalizeText } from "./lib/taxonomy";
 import { buildGeoPreferences, computeJobMatchScore, type MatchScoreResult } from "./lib/jobMatching";
