@@ -378,23 +378,6 @@ function countBySource(
     );
 }
 
-function countByFamily(
-  rows: ClassifiedRow[],
-): Array<{ family_key: string; count: number }> {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    const familyKey = row.classification.family_key;
-    counts.set(familyKey, (counts.get(familyKey) ?? 0) + 1);
-  }
-
-  return Array.from(counts.entries())
-    .map(([family_key, count]) => ({ family_key, count }))
-    .sort((left, right) =>
-      right.count - left.count ||
-      left.family_key.localeCompare(right.family_key)
-    );
-}
-
 function mergeCounts<T extends string>(
   counts: Map<T, number>,
   entries: Array<{ count: number } & Record<string, unknown>>,
