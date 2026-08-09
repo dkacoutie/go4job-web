@@ -33,16 +33,16 @@ export default function LandingPage() {
   const roundedJobCount = jobCount !== null ? Math.floor(jobCount / 1000) * 1000 : null;
   const badgeText =
     roundedJobCount !== null
-      ? \`Plus de \${roundedJobCount.toLocaleString("fr-FR")} offres disponibles\`
+      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres disponibles`
       : "Des milliers d’offres disponibles";
   const proofbarText =
     roundedJobCount !== null
-      ? \`Plus de \${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement\`
+      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement`
       : "Des milliers d’offres mises à jour régulièrement";
 
   const goAuth = (query?: string) => {
     const trimmed = query?.trim();
-    const from = trimmed ? \`/jobradar/feed?q=\${encodeURIComponent(trimmed)}\` : "/jobradar/feed";
+    const from = trimmed ? `/jobradar/feed?q=${encodeURIComponent(trimmed)}` : "/jobradar/feed";
     navigate("/auth", { state: { from } });
   };
 
