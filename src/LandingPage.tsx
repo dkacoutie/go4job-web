@@ -1,12 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchPublicJobsCount } from "./lib/publicJobsPreview";
+import { usePageMeta } from "./lib/usePageMeta";
 import "./LandingPage.css";
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [jobCount, setJobCount] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  usePageMeta({
+    title: "Trouvez votre prochain emploi en Afrique, en Europe et a distance",
+    description:
+      "JobRadar surveille les offres d'emploi en Afrique, en Europe, aux Etats-Unis et a distance, et les trie selon votre profil. Recherche gratuite, alertes ciblees.",
+    path: "/landing",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -25,16 +33,16 @@ export default function LandingPage() {
   const roundedJobCount = jobCount !== null ? Math.floor(jobCount / 1000) * 1000 : null;
   const badgeText =
     roundedJobCount !== null
-      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres disponibles`
+      ? \`Plus de \${roundedJobCount.toLocaleString("fr-FR")} offres disponibles\`
       : "Des milliers d’offres disponibles";
   const proofbarText =
     roundedJobCount !== null
-      ? `Plus de ${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement`
+      ? \`Plus de \${roundedJobCount.toLocaleString("fr-FR")} offres mises à jour régulièrement\`
       : "Des milliers d’offres mises à jour régulièrement";
 
   const goAuth = (query?: string) => {
     const trimmed = query?.trim();
-    const from = trimmed ? `/jobradar/feed?q=${encodeURIComponent(trimmed)}` : "/jobradar/feed";
+    const from = trimmed ? \`/jobradar/feed?q=\${encodeURIComponent(trimmed)}\` : "/jobradar/feed";
     navigate("/auth", { state: { from } });
   };
 
