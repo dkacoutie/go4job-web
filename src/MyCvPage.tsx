@@ -9,9 +9,9 @@ import "./MyCvPage.css";
 import { Document, Packer, Paragraph } from "docx";
 import { jsPDF } from "jspdf";
 
-// @ts-ignore: external module has no types in build environment
+// @ts-expect-error: external module has no types in build environment
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
-// @ts-ignore: worker url module has no types
+// @ts-expect-error: worker url module has no types
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker?url";
 // @ts-ignore: browser bundle has no types
 import * as mammoth from "mammoth/mammoth.browser";
