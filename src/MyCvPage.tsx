@@ -3,16 +3,25 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import OnboardingStepper from "./components/OnboardingStepper";
 import "./MyCvPage.css";
 import { Document, Packer, Paragraph } from "docx";
 import { jsPDF } from "jspdf";
 
+// JR-0026 (09/08/2026) : ne pas remplacer ces @ts-ignore par @ts-expect-error.
+// ESLint le recommande (@typescript-eslint/ban-ts-comment) mais tsc -b ne
+// considere pas ces lignes en erreur dans cet environnement de build (types
+// absents seulement en dev local) : @ts-expect-error y echoue avec
+// TS2578 "Unused '@ts-expect-error' directive" et casse le build Netlify.
+// Deja tente et revert en production le 09/08/2026 (commits 95d327c/01cb380).
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: external module has no types in build environment
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: worker url module has no types
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker?url";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: browser bundle has no types
 import * as mammoth from "mammoth/mammoth.browser";
 
@@ -654,7 +663,7 @@ export default function MyCvPage() {
               tone: "success",
             },
       );
-    } catch (e: any) {
+    } catch {
       setErr(GENERIC_SERVER_ERROR);
       pushToast({
         kind: "error",
