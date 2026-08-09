@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import { useSession } from "./lib/useSession";
 import {
   fetchOwnPartnerAccount,
