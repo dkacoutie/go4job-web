@@ -14,8 +14,8 @@ import DesiredRoleGate from "./components/DesiredRoleGate";
 import "./App.css";
 import "./AppLayout.css";
 import { ToastProvider } from "./components/ToastCenter";
-import { PartnerReferralProvider } from "./lib/usePartnerReferral";
-import { PassProvider } from "./lib/usePass";
+import { PartnerReferralProvider } from "./lib/PartnerReferralProvider";
+import { PassProvider } from "./lib/PassProvider";
 
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import MetaPixelTracker from "./components/MetaPixelTracker";
