@@ -328,7 +328,7 @@ export default function JobDetailsPage() {
       } else if (isActive()) {
         setApp(null);
       }
-    } catch (error: unknown) {
+    } catch {
       if (isActive()) setErrorMsg(GENERIC_SERVER_ERROR);
     } finally {
       if (isActive()) setBusy(false);
