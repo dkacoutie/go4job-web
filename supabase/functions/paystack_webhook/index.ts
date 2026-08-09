@@ -97,7 +97,7 @@ async function handleBusinessPayment(
       .eq("id", order.product_id)
       .maybeSingle();
 
-    const { raw: accessTokenRaw, hash: accessTokenHash } = await generateAccessToken();
+    const { hash: accessTokenHash } = await generateAccessToken();
     const { error: entErr } = await admin.from("biz_entitlements").insert({
       order_id: order.id,
       customer_id: order.customer_id,
@@ -148,7 +148,7 @@ async function handleBusinessPayment(
     .eq("id", order.product_id)
     .maybeSingle();
 
-  const { raw: accessTokenRaw, hash: accessTokenHash } = await generateAccessToken();
+  const { hash: accessTokenHash } = await generateAccessToken();
 
   const { error: entErr } = await admin.from("biz_entitlements").insert({
     order_id: order.id,
@@ -282,7 +282,6 @@ Deno.serve(async (req) => {
     return new Response("ok", { status: 200 });
   }
 
-  const nowIso = new Date().toISOString();
   const paystackStatus = (data?.status || "").toString().toLowerCase();
   const amount = typeof data?.amount === "number" ? data.amount : null;
   const currency = (data?.currency || "").toString();
@@ -333,7 +332,7 @@ Deno.serve(async (req) => {
   const paidAt = data?.paid_at ?? null;
   const targetStatus = isTestMode ? "paid_test" : "paid";
 
-  const { data: updatedPayment, error: updateErr } = await admin.rpc("billing_apply_payment_update", {
+  const { error: updateErr } = await admin.rpc("billing_apply_payment_update", {
     p_payment_id: payment.id,
     p_status: targetStatus,
     p_failure_reason: null,
