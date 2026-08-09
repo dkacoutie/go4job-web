@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import {
   approvePartnerCommission,
   attachCommissionsToPayout,
