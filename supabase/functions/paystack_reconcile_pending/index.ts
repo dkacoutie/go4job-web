@@ -82,10 +82,6 @@ function json(status: number, body: Record<string, unknown>) {
   });
 }
 
-function clean(v: string | null | undefined) {
-  return (v ?? "").trim();
-}
-
 function cleanSecret(value: string | undefined | null): string {
   let v = (value ?? "").trim();
   v = v.replace(/^['"]|['"]$/g, "");
