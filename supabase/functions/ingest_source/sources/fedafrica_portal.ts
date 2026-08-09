@@ -102,7 +102,6 @@ function parseFedAfricaJobs(
 
   const seenHref = new Set<string>();
   const jobs: CommercialSourceJob[] = [];
-  let itemIndex = 0;
 
   for (let i = 0; i < titleOccurrences.length; i++) {
     const current = titleOccurrences[i];
@@ -132,7 +131,6 @@ function parseFedAfricaJobs(
       tags: [config.country, config.sourceFamily],
       payload: { source_kind: "html", page_url: pageUrl },
     });
-    itemIndex++;
   }
 
   return jobs;
