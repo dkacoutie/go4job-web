@@ -17,7 +17,7 @@ import { useJobRadarOnboarding } from "./lib/useJobRadarOnboarding";
 import { EmptyState, NextStepCard } from "./components/GuidedUI";
 import OnboardingStepper from "./components/OnboardingStepper";
 import PwaInstallCard from "./components/PwaInstallCard";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import "./AlertsPage.css";
 
 type AlertRow = {
@@ -351,7 +351,6 @@ export default function AlertsPage() {
 
     if (!n) {
       if (!keywordsDirty) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setKeywordsText("");
         setLastSuggestedFor("");
         setLastSuggestedText("");
