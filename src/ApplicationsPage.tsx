@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 import { useSession } from "./lib/useSession";
 import { EmptyState } from "./components/GuidedUI";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import "./ApplicationsPage.css";
 
 // Statuts réellement écrits en base, tous chemins confondus :
