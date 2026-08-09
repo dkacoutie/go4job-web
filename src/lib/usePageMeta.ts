@@ -13,7 +13,7 @@ const DEFAULT_DESCRIPTION =
   "JobRadar - Trouve et suis les meilleures opportunites d emploi avec Go4Job et CapCarriere.";
 
 function setMetaTag(attr: "name" | "property", key: string, content: string) {
-  let el = document.querySelector<HTMLMetaElement>(\`meta[\${attr}="\${key}"]\`);
+  let el = document.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`);
   if (!el) {
     el = document.createElement("meta");
     el.setAttribute(attr, key);
@@ -43,8 +43,8 @@ export type PageMetaOptions = {
 
 export function usePageMeta({ title, description, path, image }: PageMetaOptions) {
   useEffect(() => {
-    const fullTitle = \`\${title} | JobRadar\`;
-    const url = \`\${SITE_URL}\${path}\`;
+    const fullTitle = `${title} | JobRadar`;
+    const url = `${SITE_URL}${path}`;
 
     document.title = fullTitle;
     setMetaTag("name", "description", description);
