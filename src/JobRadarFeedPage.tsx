@@ -42,7 +42,7 @@ import { EmptyState, NextStepCard } from "./components/GuidedUI";
 import OnboardingAlertInviteBanner from "./components/OnboardingAlertInviteBanner";
 import JobRadarAdvisor from "./components/JobRadarAdvisor";
 import { getJobRadarAdvisorCopy } from "./components/jobRadarAdvisorContent";
-import { useToast } from "./components/ToastCenter";
+import { useToast } from "./components/useToast";
 import { CompanyAvatar } from "./components/CompanyAvatar";
 import "./JobRadarFeedPage.css";
 
