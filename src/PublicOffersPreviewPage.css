@@ -33,6 +33,7 @@
 }
 
 .offersPreview__card{
+  text-decoration: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
