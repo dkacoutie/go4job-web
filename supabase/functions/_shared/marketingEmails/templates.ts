@@ -3,6 +3,7 @@ export type MarketingEmailKey =
   | "interested_no_payment_attempt_email_1"
   | "buyer_feedback_email_1"
   | "create_alert_email_1"
+  | "create_alert_email_2"
   | "paystack_abandoned_checkout_email_1";
 
 export type MarketingEmailVariables = {
@@ -54,6 +55,7 @@ const SENDABLE_MARKETING_EMAIL_KEYS = new Set<string>([
   "interested_no_payment_attempt_email_1",
   "buyer_feedback_email_1",
   "create_alert_email_1",
+  "create_alert_email_2",
   "paystack_abandoned_checkout_email_1",
 ]);
 
@@ -483,6 +485,55 @@ Se désabonner : ${variables.unsubscribe_url}`;
   return { html, text };
 }
 
+function createAlertEmail2(variables: NormalizedMarketingEmailVariables) {
+  const html = renderLayout({
+    preheader: "Toujours pas d'alerte JobRadar créée ? Voici ce que tu rates.",
+    title: "Chaque jour sans alerte, des offres qui te correspondent passent inaperçues",
+    introHtml: `
+      <p style="margin:0 0 16px;font-size:15px;line-height:1.7;color:#374151;">Bonjour,</p>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#374151;">
+        Il y a quelques jours, on t'invitait à créer ton alerte JobRadar. Ce n'est toujours pas fait,
+        et pendant ce temps, de nouvelles offres correspondant à ta recherche continuent d'arriver
+        chaque jour sur JobRadar.
+      </p>
+    `,
+    bodyHtml: `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;background:#f3faf8;border:1px solid #cfe7df;border-radius:12px;">
+        <tr>
+          <td style="padding:17px 18px;">
+            <p style="margin:0;font-size:15px;line-height:1.7;color:#374151;">
+              Ton alerte fonctionne en arrière-plan : une fois créée, tu reçois uniquement les offres
+              qui correspondent à ce que tu cherches, sans avoir à revenir vérifier chaque jour.
+            </p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0;font-size:15px;line-height:1.7;color:#374151;">
+        Ça prend deux minutes : poste recherché, pays, type de contrat et mode de travail.
+      </p>
+    `,
+    primaryHref: variables.alert_url,
+    primaryLabel: "Créer mon alerte gratuite",
+    unsubscribeUrl: variables.unsubscribe_url,
+    brandSubtitle: "par Go4Job",
+    headerLogoUrl: "https://jobradar.go4jobapp.com/go4job-logo-email.png",
+    hideUnsubscribeUrlInHtml: true,
+  });
+
+  const text = `Bonjour,
+
+Il y a quelques jours, on t'invitait à créer ton alerte JobRadar. Ce n'est toujours pas fait, et pendant ce temps, de nouvelles offres correspondant à ta recherche continuent d'arriver chaque jour sur JobRadar.
+
+Ton alerte fonctionne en arrière-plan : une fois créée, tu reçois uniquement les offres qui correspondent à ce que tu cherches.
+
+Ça prend deux minutes : poste recherché, pays, type de contrat et mode de travail.
+
+Créer mon alerte : ${variables.alert_url}`;
+
+  return { html, text };
+}
+
+
 const TEMPLATES: Record<string, TemplateDefinition> = {
   payment_attempt_no_success_email_1: {
     email_key: "payment_attempt_no_success_email_1",
@@ -508,7 +559,13 @@ const TEMPLATES: Record<string, TemplateDefinition> = {
     subject: "Il manque une chose pour que JobRadar travaille pour toi",
     render: createAlertEmail,
   },
-  paystack_abandoned_checkout_email_1: {
+    create_alert_email_2: {
+    email_key: "create_alert_email_2",
+    template_version: TEMPLATE_VERSION,
+    subject: "Toujours pas d'alerte JobRadar créée ?",
+    render: createAlertEmail2,
+  },
+paystack_abandoned_checkout_email_1: {
     email_key: "paystack_abandoned_checkout_email_1",
     template_version: TEMPLATE_VERSION,
     subject: "Ton paiement n'a pas abouti — reprends où tu en étais",
