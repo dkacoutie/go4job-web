@@ -33,20 +33,35 @@
     Content-Type = "text/html; charset=utf-8"
     Cache-Control = "no-cache"
 
+# JR-0110 : fichiers sous /assets/* générés par Vite avec un hash de
+# contenu dans le nom (ex. index-Twcww_0m.js) — un changement de contenu
+# produit toujours un nom de fichier différent, donc un cache navigateur
+# long et "immutable" ne peut jamais servir une version périmée. Réduit
+# les téléchargements répétés sur les visites suivantes, notamment utile
+# pour les connexions plus lentes/coûteuses d'une partie de l'audience
+# JobRadar (Afrique francophone, cf. JR-0134).
 [[headers]]
   for = "/assets/*.js"
   [headers.values]
     Content-Type = "application/javascript; charset=utf-8"
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
   for = "/assets/*.mjs"
   [headers.values]
     Content-Type = "application/javascript; charset=utf-8"
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
   for = "/assets/*.css"
   [headers.values]
     Content-Type = "text/css; charset=utf-8"
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
   for = "/manifest.webmanifest"
