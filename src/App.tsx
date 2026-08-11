@@ -33,6 +33,7 @@ const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
 const LandingPage = lazy(() => import("./LandingPage"));
 const PublicOffersPreviewPage = lazy(() => import("./PublicOffersPreviewPage"));
 const PublicJobDetailPage = lazy(() => import("./PublicJobDetailPage"));
+const PublicLocationPage = lazy(() => import("./PublicLocationPage"));
 const CvAtsLandingPage = lazy(() => import("./CvAtsLandingPage"));
 const CvAtsThankYouPage = lazy(() => import("./CvAtsThankYouPage"));
 const ResetPasswordPage = lazy(() => import("./ResetPasswordPage"));
@@ -266,6 +267,70 @@ export default function App() {
                     </LazyRoute>
                   }
                 />
+                <Route
+                  path="/offres/cote-divoire"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="cote-divoire" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/abidjan"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="abidjan" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/bouake"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="bouake" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/yamoussoukro"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="yamoussoukro" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/france"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="france" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/paris"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="paris" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/lyon"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="lyon" />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/offres/toulouse"
+                  element={
+                    <LazyRoute>
+                      <PublicLocationPage slug="toulouse" />
+                    </LazyRoute>
+                  }
+                />
               </Route>
 
               <Route
@@ -403,7 +468,6 @@ export default function App() {
                     <LazyRoute>
                       <PartnerPortalPage />
                     </LazyRoute>
-                  }
                 />
                 <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />
                 <Route path="/jobradar/profile" element={<Navigate to="/profile" replace />} />
@@ -439,7 +503,6 @@ export default function App() {
                     <LazyRoute>
                       <JobRadarDigestsPage />
                     </LazyRoute>
-                  }
                 />
                 <Route
                   path="/jobradar/digests/:runId"
