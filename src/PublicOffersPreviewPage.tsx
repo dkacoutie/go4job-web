@@ -81,7 +81,7 @@ export default function PublicOffersPreviewPage() {
       {/* JR-0111 : maillage interne vers les 8 pages pays/ville (JR-0135) —
           /offres est déjà lié depuis le header sur toutes les pages publiques,
           ce bloc fait redescendre cette autorité de lien vers les pages
-          plus spécifiques, qui n'avaient jusqu'ici aucun lien entrant. *}
+          plus spécifiques, qui n'avaient jusqu'ici aucun lien entrant. */}
       <nav className="offersPreview__locationLinks" aria-label="Parcourir par ville ou pays">
         {PUBLIC_LOCATIONS.map((loc) => (
           <Link key={loc.slug} to={`/offres/${loc.slug}`} className="offersPreview__locationLink">
