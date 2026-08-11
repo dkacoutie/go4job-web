@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchPublicJobsCount, fetchPublicJobsPreview, type PublicJobPreview } from "./lib/publicJobsPreview";
+import { PUBLIC_LOCATIONS } from "./lib/publicLocationsConfig";
 import { formatRelativeDate, formatSalary } from "./lib/publicJobFormat";
 import { trackSelectContent } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
@@ -76,6 +77,18 @@ export default function PublicOffersPreviewPage() {
           Crée un compte gratuit pour voir la description complète, filtrer selon ton profil et candidater.
         </p>
       </div>
+
+      {/* JR-0111 : maillage interne vers les 8 pages pays/ville (JR-0135) —
+          /offres est déjà lié depuis le header sur toutes les pages publiques,
+          ce bloc fait redescendre cette autorité de lien vers les pages
+          plus spécifiques, qui n'avaient jusqu'ici aucun lien entrant. *}
+      <nav className="offersPreview__locationLinks" aria-label="Parcourir par ville ou pays">
+        {PUBLIC_LOCATIONS.map((loc) => (
+          <Link key={loc.slug} to={`/offres/${loc.slug}`} className="offersPreview__locationLink">
+            {loc.breadcrumbLabel}
+          </Link>
+        ))}
+      </nav>
 
       {error && (
         <p className="offersPreview__error">
