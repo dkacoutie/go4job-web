@@ -154,3 +154,26 @@
 .offersPreview__backLink:hover{
   text-decoration: underline;
 }
+
+/* JR-0111 : maillage interne pays/ville */
+.offersPreview__locationLinks{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.offersPreview__locationLink{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-600);
+  text-decoration: none;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.offersPreview__locationLink:hover{
+  border-color: var(--brand-600);
+  text-decoration: underline;
+}
