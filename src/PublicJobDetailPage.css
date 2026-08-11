@@ -1,0 +1,118 @@
+.jobDetail{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px 0 64px;
+  max-width: 680px;
+}
+
+.jobDetail__backLink{
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--brand-600);
+  text-decoration: none;
+  width: fit-content;
+}
+
+.jobDetail__backLink:hover{
+  text-decoration: underline;
+}
+
+.jobDetail__header{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.jobDetail__header h1{
+  margin: 0;
+  font-size: clamp(20px, 2.6vw, 26px);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.jobDetail__badge{
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-700);
+  background: var(--accent-100);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.jobDetail__company{
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.jobDetail__meta{
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.jobDetail__salary{
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--brand-700, var(--brand-600));
+}
+
+.jobDetail__excerpt{
+  margin: 8px 0 0;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+
+.jobDetail__ctaBlock{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.jobDetail__ctaHint{
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.jobDetail__notFound{
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.jobDetail--loading{
+  gap: 10px;
+}
+
+.jobDetail__skeletonLine{
+  height: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  animation: jobDetailPulse 1.4s ease-in-out infinite;
+}
+
+.jobDetail__skeletonLine--title{
+  height: 28px;
+  width: 70%;
+}
+
+@keyframes jobDetailPulse{
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
