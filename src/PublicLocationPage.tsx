@@ -10,7 +10,7 @@ import { formatRelativeDate, formatSalary } from "./lib/publicJobFormat";
 import { trackSelectContent } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { usePageMeta } from "./lib/usePageMeta";
-import { getPublicLocationConfig } from "./lib/publicLocationsConfig";
+import { getPublicLocationConfig, PUBLIC_LOCATIONS } from "./lib/publicLocationsConfig";
 import "./PublicOffersPreviewPage.css";
 
 // JR-0135 : page publique pays/ville (ex. /offres/cote-divoire, /offres/abidjan).
@@ -150,6 +150,17 @@ export default function PublicLocationPage({ slug }: { slug: string }) {
           <Link to="/offres">Voir toutes les offres</Link>.
         </p>
       )}
+
+      {/* JR-0111 : liens croisés vers les autres pages pays/ville, pour que
+          chacune des 8 pages profite du maillage des autres, pas seulement
+          du lien retour vers /offres. */}
+      <nav className="offersPreview__locationLinks" aria-label="Autres villes et pays">
+        {PUBLIC_LOCATIONS.filter((loc) => loc.slug !== slug).map((loc) => (
+          <Link key={loc.slug} to={`/offres/${loc.slug}`} className="offersPreview__locationLink">
+            {loc.breadcrumbLabel}
+          </Link>
+        ))}
+      </nav>
 
       <div className="offersPreview__footerCta">
         <button type="button" className="btn btnPrimary" onClick={() => goSignUp()}>
