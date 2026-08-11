@@ -468,6 +468,7 @@ export default function App() {
                     <LazyRoute>
                       <PartnerPortalPage />
                     </LazyRoute>
+                  }
                 />
                 <Route path="/jobradar" element={<Navigate to="/jobradar/feed" replace />} />
                 <Route path="/jobradar/profile" element={<Navigate to="/profile" replace />} />
@@ -503,6 +504,7 @@ export default function App() {
                     <LazyRoute>
                       <JobRadarDigestsPage />
                     </LazyRoute>
+                  }
                 />
                 <Route
                   path="/jobradar/digests/:runId"
