@@ -58,3 +58,32 @@ export async function fetchPublicJobDetail(id: string): Promise<PublicJobDetail 
   const rows = (data ?? []) as PublicJobDetail[];
   return rows[0] ?? null;
 }
+
+/**
+ * Offres publiques filtrées par pays et, optionnellement, par motif de
+ * localisation (pages pays/ville, JR-0135).
+ */
+export async function fetchPublicJobsByLocation(
+  countries: string[],
+  locationPattern: string | null
+): Promise<PublicJobPreview[]> {
+  const { data, error } = await supabase.rpc("jobradar_public_jobs_by_location", {
+    p_countries: countries,
+    p_location_pattern: locationPattern,
+    p_limit: PREVIEW_LIMIT,
+  });
+  if (error) throw error;
+  return (data ?? []) as PublicJobPreview[];
+}
+
+export async function fetchPublicJobsByLocationCount(
+  countries: string[],
+  locationPattern: string | null
+): Promise<number | null> {
+  const { data, error } = await supabase.rpc("jobradar_public_jobs_by_location_count", {
+    p_countries: countries,
+    p_location_pattern: locationPattern,
+  });
+  if (error || typeof data !== "number") return null;
+  return data;
+}
