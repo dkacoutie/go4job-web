@@ -86,6 +86,7 @@ export function buildJobScoringUserPrompt(profile: MatchingProfile, job: Candida
 - Mode de travail : ${job.remote_type ?? "non précisé"}
 - Type de contrat : ${job.contract_type ?? "non précisé"}
 - Séniorité : ${job.seniority ?? "non précisée"}
+- Salaire (si connu) : ${formatSalary(job)}
 - Compétences requises (si extraites) : ${formatList(job.required_skills)}
 - Compétences optionnelles (si extraites) : ${formatList(job.optional_skills)}
 - Famille de poste (si extraite) : ${job.job_family ?? "non précisée"}
