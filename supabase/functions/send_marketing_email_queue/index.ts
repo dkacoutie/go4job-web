@@ -126,6 +126,7 @@ const TEMPLATE_KEY_TO_SEGMENT: Record<MarketingEmailKey, string> = {
   interested_no_payment_attempt_email_1: "interested_no_payment_attempt",
   buyer_feedback_email_1: "buyer_feedback",
   create_alert_email_1: "non_paying_without_alert",
+  create_alert_email_2: "non_paying_without_alert",
   paystack_abandoned_checkout_email_1: "paystack_abandoned_checkout",
 };
 
