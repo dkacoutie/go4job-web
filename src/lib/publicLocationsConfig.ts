@@ -19,7 +19,14 @@ export type PublicLocationConfig = {
 export const PUBLIC_LOCATIONS: PublicLocationConfig[] = [
   {
     slug: "cote-divoire",
-    countries: ["CI", "Côte d'Ivoire"],
+    // JR-SEO-audit-20260812 : jobs.country contient au moins 3 variantes distinctes
+    // pour la Côte d'Ivoire ("CI" x1397, "Cote d'Ivoire" sans accent x354, "Côte
+    // d'Ivoire" avec accent x5 — vérifié par requête SQL le 12/08/2026). Le filtre
+    // exact (j.country = any(p_countries)) dans jobradar_public_jobs_by_location
+    // ignorait la variante sans accent : ~20% des offres actives de Côte d'Ivoire
+    // étaient invisibles sur cette page et sur /offres/abidjan, /offres/bouake,
+    // /offres/yamoussoukro (mêmes countries).
+    countries: ["CI", "Côte d'Ivoire", "Cote d'Ivoire"],
     locationPattern: null,
     h1: "Offres d'emploi en Côte d'Ivoire",
     introFallback:
@@ -29,7 +36,7 @@ export const PUBLIC_LOCATIONS: PublicLocationConfig[] = [
   },
   {
     slug: "abidjan",
-    countries: ["CI", "Côte d'Ivoire"],
+    countries: ["CI", "Côte d'Ivoire", "Cote d'Ivoire"],
     locationPattern: "%abidjan%",
     h1: "Offres d'emploi à Abidjan",
     introFallback: "Un aperçu des offres suivies par JobRadar à Abidjan, tous quartiers confondus.",
@@ -38,7 +45,7 @@ export const PUBLIC_LOCATIONS: PublicLocationConfig[] = [
   },
   {
     slug: "bouake",
-    countries: ["CI", "Côte d'Ivoire"],
+    countries: ["CI", "Côte d'Ivoire", "Cote d'Ivoire"],
     locationPattern: "%bouak%",
     h1: "Offres d'emploi à Bouaké",
     introFallback: "Un aperçu des offres suivies par JobRadar à Bouaké.",
@@ -47,7 +54,7 @@ export const PUBLIC_LOCATIONS: PublicLocationConfig[] = [
   },
   {
     slug: "yamoussoukro",
-    countries: ["CI", "Côte d'Ivoire"],
+    countries: ["CI", "Côte d'Ivoire", "Cote d'Ivoire"],
     locationPattern: "%yamoussoukro%",
     h1: "Offres d'emploi à Yamoussoukro",
     introFallback: "Un aperçu des offres suivies par JobRadar à Yamoussoukro.",
