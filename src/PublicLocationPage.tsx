@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
+  clampPublicJobsPage,
   fetchPublicJobsByLocation,
   fetchPublicJobsByLocationCount,
+  PUBLIC_JOBS_PAGE_SIZE,
   type PublicJobPreview,
 } from "./lib/publicJobsPreview";
 import { formatRelativeDate, formatSalary } from "./lib/publicJobFormat";
@@ -11,6 +13,7 @@ import { trackSelectContent } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { usePageMeta } from "./lib/usePageMeta";
 import { getPublicLocationConfig, PUBLIC_LOCATIONS } from "./lib/publicLocationsConfig";
+import PublicPagination from "./PublicPagination";
 import "./PublicOffersPreviewPage.css";
 
 // JR-0135 : page publique pays/ville (ex. /offres/cote-divoire, /offres/abidjan).
@@ -23,21 +26,26 @@ export default function PublicLocationPage({ slug }: { slug: string }) {
   const navigate = useNavigate();
   const { session } = useSession();
   const config = getPublicLocationConfig(slug);
+  const [searchParams] = useSearchParams();
+  const page = clampPublicJobsPage(Number(searchParams.get("page")) || 1);
   const [jobs, setJobs] = useState<PublicJobPreview[] | null>(null);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [error, setError] = useState(false);
 
   usePageMeta({
-    title: config?.metaTitle ?? "Offres d'emploi",
+    title:
+      page === 1 ? config?.metaTitle ?? "Offres d'emploi" : `${config?.metaTitle ?? "Offres d'emploi"} - Page ${page}`,
     description: config?.introFallback ?? "Offres d'emploi suivies par JobRadar.",
-    path: `/offres/${slug}`,
+    path: page === 1 ? `/offres/${slug}` : `/offres/${slug}?page=${page}`,
   });
 
   useEffect(() => {
     if (!config) return;
     let cancelled = false;
+    setJobs(null);
+    setError(false);
 
-    fetchPublicJobsByLocation(config.countries, config.locationPattern)
+    fetchPublicJobsByLocation(config.countries, config.locationPattern, page)
       .then((data) => {
         if (!cancelled) setJobs(data);
       })
@@ -53,7 +61,7 @@ export default function PublicLocationPage({ slug }: { slug: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, page]);
 
   function goSignUp(jobId?: string) {
     if (jobId) trackSelectContent({ itemId: jobId });
@@ -149,6 +157,14 @@ export default function PublicLocationPage({ slug }: { slug: string }) {
           Aucune offre disponible pour {config.breadcrumbLabel} pour le moment.{" "}
           <Link to="/offres">Voir toutes les offres</Link>.
         </p>
+      )}
+
+      {!error && jobs !== null && (
+        <PublicPagination
+          basePath={`/offres/${slug}`}
+          currentPage={page}
+          hasNextPage={jobs.length === PUBLIC_JOBS_PAGE_SIZE}
+        />
       )}
 
       {/* JR-0111 : liens croisés vers les autres pages pays/ville, pour que

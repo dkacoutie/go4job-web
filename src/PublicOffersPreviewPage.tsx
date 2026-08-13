@@ -1,32 +1,46 @@
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { fetchPublicJobsCount, fetchPublicJobsPreview, type PublicJobPreview } from "./lib/publicJobsPreview";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  clampPublicJobsPage,
+  fetchPublicJobsCount,
+  fetchPublicJobsPreview,
+  PUBLIC_JOBS_PAGE_SIZE,
+  type PublicJobPreview,
+} from "./lib/publicJobsPreview";
 import { PUBLIC_LOCATIONS } from "./lib/publicLocationsConfig";
 import { formatRelativeDate, formatSalary } from "./lib/publicJobFormat";
 import { trackSelectContent } from "./lib/analytics";
 import { useSession } from "./lib/useSession";
 import { usePageMeta } from "./lib/usePageMeta";
+import PublicPagination from "./PublicPagination";
 import "./PublicOffersPreviewPage.css";
 
 export default function PublicOffersPreviewPage() {
   const navigate = useNavigate();
   const { session } = useSession();
+  const [searchParams] = useSearchParams();
+  const page = clampPublicJobsPage(Number(searchParams.get("page")) || 1);
   const [jobs, setJobs] = useState<PublicJobPreview[] | null>(null);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [error, setError] = useState(false);
 
   usePageMeta({
-    title: "Offres d'emploi en Afrique, en Europe et a distance",
+    title:
+      page === 1
+        ? "Offres d'emploi en Afrique, en Europe et a distance"
+        : `Offres d'emploi en Afrique, en Europe et a distance - Page ${page}`,
     description:
       "Un apercu des offres d'emploi suivies par JobRadar. Creez un compte gratuit pour voir la description complete, filtrer selon votre profil et candidater.",
-    path: "/offres",
+    path: page === 1 ? "/offres" : `/offres?page=${page}`,
   });
 
   useEffect(() => {
     let cancelled = false;
+    setJobs(null);
+    setError(false);
 
-    fetchPublicJobsPreview()
+    fetchPublicJobsPreview(page)
       .then((data) => {
         if (!cancelled) setJobs(data);
       })
@@ -41,7 +55,7 @@ export default function PublicOffersPreviewPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page]);
 
   function goSignUp(jobId?: string) {
     if (jobId) trackSelectContent({ itemId: jobId });
@@ -138,6 +152,10 @@ export default function PublicOffersPreviewPage() {
 
       {!error && jobs !== null && jobs.length === 0 && (
         <p className="offersPreview__empty">Aucune offre à afficher pour le moment.</p>
+      )}
+
+      {!error && jobs !== null && (
+        <PublicPagination basePath="/offres" currentPage={page} hasNextPage={jobs.length === PUBLIC_JOBS_PAGE_SIZE} />
       )}
 
       <div className="offersPreview__footerCta">

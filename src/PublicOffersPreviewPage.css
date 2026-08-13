@@ -155,6 +155,60 @@
   text-decoration: underline;
 }
 
+/* JR-SEO-audit-20260812, bataille prioritaire #1 : pagination reelle */
+.offersPreview__pagination{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-top: 4px;
+}
+
+.offersPreview__pageNumbers{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.offersPreview__pageLink{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.offersPreview__pageLink:hover{
+  border-color: var(--brand-600);
+}
+
+.offersPreview__pageLink--current{
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: #fff;
+  cursor: default;
+}
+
+.offersPreview__pageLink--disabled{
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.offersPreview__pageLink--prevNext{
+  color: var(--brand-600);
+}
+
 /* JR-0111 : maillage interne pays/ville */
 .offersPreview__locationLinks{
   display: flex;
