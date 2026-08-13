@@ -245,33 +245,46 @@
 }
 
 /* utilities */
+/* JR-SEO-fix-20260813 : conteneur partage par "Qui sommes-nous",
+   "Observatoire de l'emploi", et les pages legales (Legal/Privacy/Terms/
+   RefundPolicy). Signale par l'utilisateur en production : le padding
+   horizontal de 22px etait ecrase a 0 sur les deux premieres pages par
+   un raccourci CSS dans leurs fichiers dedies (corrige separement dans
+   AboutPage.css / ObservatoirePage.css). A cette occasion, le container
+   est aussi elargi et le padding/la typographie renforces pour une
+   lecture plus confortable sur desktop -- change ici une seule fois car
+   .app-narrow est la source commune aux six pages listees ci-dessus. */
 .app-narrow{
-  max-width: 820px;
+  max-width: 880px;
   margin: 0 auto;
   background: var(--panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  padding: 22px;
+  padding: 40px;
+  box-sizing: border-box;
 }
 
 .app-narrow h1{
-  margin: 0 0 10px;
-  font-size: 28px;
-  font-weight: 700;
+  margin: 0 0 14px;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.25;
   letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 .app-narrow h2{
-  margin: 18px 0 8px;
-  font-size: 16px;
+  margin: 32px 0 10px;
+  font-size: 20px;
   font-weight: 700;
+  color: var(--text);
 }
 
 .app-narrow p,
 .app-narrow li{
   color: var(--muted);
-  line-height: 1.7;
-  font-size: 14px;
+  line-height: 1.75;
+  font-size: 15.5px;
 }
 
 .app-narrow ul{
@@ -281,6 +294,20 @@
 .app-narrow a{
   color: var(--brand-700);
   text-decoration: underline;
+}
+
+@media (max-width: 640px){
+  /* Reduit uniquement le padding horizontal sur mobile -- le padding
+     vertical (haut/bas) reste pilote par .aboutPage / .observatoire
+     quand present, cette regle ne le touche pas. */
+  .app-narrow{
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .app-narrow h1{
+    font-size: 26px;
+  }
 }
 
 img{ max-width: 100%; height: auto; }
