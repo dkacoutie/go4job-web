@@ -1,0 +1,35 @@
+-- INCIDENT critique decouvert en verifiant /offres en conditions reelles
+-- avant d'attaquer la pagination (bataille prioritaire #1 de l'audit) :
+-- la page publique principale /offres -- la page produit la plus visible du
+-- site, liee depuis le header sur toutes les pages -- retournait une erreur
+-- 500 systematique en production. Root cause : jobradar_public_jobs_preview()
+-- trie l'integralite des offres actives+non expirees (334 497 lignes, aucun
+-- filtre pays contrairement a jobradar_public_jobs_by_location) sans index
+-- supportant cet ORDER BY -- Postgres scanne idx_jobs_public_country_active
+-- (indexe sur country, pas sur la date de tri) puis trie ~423k lignes en
+-- memoire avant de prendre les 24 premieres. Mesure en EXPLAIN ANALYZE avant
+-- correctif : 15 a 21 secondes selon l'etat du cache, tres au-dessus des 3
+-- secondes de statement_timeout du role anon -- confirme aussi en direct
+-- dans le navigateur (requete PostgREST -> 500, page affichant "L'apercu
+-- n'est pas disponible pour le moment").
+--
+-- Meme famille de probleme que l'incident pays/ville du 12/08/2026 (voir
+-- 20260813000000_jr_seo_hotfix_country_pages_performance.sql) : il manquait
+-- un index qui permette de suivre l'ordre de tri directement, sans passer
+-- par un tri en memoire de l'ensemble du resultat.
+--
+-- Corrige par un index partiel sur l'expression de tri exacte utilisee par
+-- la fonction (meme expression que idx_jobs_public_country_sort, mais sans
+-- la colonne country puisque cette fonction n'a pas de filtre pays) --
+-- verifie en EXPLAIN ANALYZE avant application : 21 secondes -> 0,2ms
+-- (Index Scan direct au lieu d'un scan complet + tri).
+--
+-- CREATE INDEX CONCURRENTLY ne peut pas s'executer dans un bloc
+-- transactionnel explicite -- deja applique et verifie separement en
+-- production via MCP (execute_sql, hors transaction), avant ce fichier.
+-- Cette instruction est incluse ici pour que le depot reflete l'etat reel ;
+-- si rejouee ailleurs (staging, restauration), IF NOT EXISTS la rend
+-- idempotente.
+create index concurrently if not exists idx_jobs_public_active_sort
+  on jobs ((coalesce(sort_at, posted_at, created_at)) desc)
+  where is_active = true and is_expired = false;
