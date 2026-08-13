@@ -1,0 +1,23 @@
+-- Nettoyage d'index inutilise, flag e a l'audit du 12/08/2026 et repris dans
+-- la liste "ce qui reste ouvert" du rapport SEO de cette nuit.
+--
+-- jobs_desc_status_idx (index partiel sur desc_status = 'pending', 18 Mo)
+-- avait 0 scan depuis toujours (pg_stat_user_indexes). Verification avant
+-- suppression, en plus du compteur de scans : les deux crons qui auraient
+-- pu s'appuyer sur cet index sont desactives --
+-- jobid 28 (job_enrich_description, */15 * * * *) et
+-- jobid 32 (job_auto_enrich_8020, */20 * * * *), tous deux active=false
+-- dans cron.job. Corrobore que la fonctionnalite consommatrice de cet index
+-- est elle-meme a l'arret, pas seulement l'index qui serait mal exploite.
+--
+-- Les autres index a faible usage identifies au meme audit (jobs_sort_at_idx,
+-- idx_jobs_country_codes_gin, jobs_job_type_idx, etc.) touchent a des
+-- chemins d'ingestion/enrichissement/admin qui n'ont pas ete verifies avec
+-- le meme niveau de confiance depuis cette session -- volontairement laisses
+-- en l'etat, a traiter dans un chantier dedie avec plus de temps de
+-- verification par cas.
+--
+-- DROP INDEX CONCURRENTLY ne peut pas s'executer dans un bloc transactionnel
+-- explicite -- deja applique et verifie en production via MCP (execute_sql,
+-- hors transaction) avant ce fichier. IF EXISTS le rend idempotent si rejoue.
+drop index concurrently if exists public.jobs_desc_status_idx;
