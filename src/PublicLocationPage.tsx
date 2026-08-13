@@ -5,6 +5,7 @@ import {
   clampPublicJobsPage,
   fetchPublicJobsByLocation,
   fetchPublicJobsByLocationCount,
+  PUBLIC_JOBS_COUNT_CAP,
   PUBLIC_JOBS_PAGE_SIZE,
   type PublicJobPreview,
 } from "./lib/publicJobsPreview";
@@ -98,7 +99,7 @@ export default function PublicLocationPage({ slug }: { slug: string }) {
         <h1>{config.h1}</h1>
         <p>
           {totalCount !== null
-            ? `${totalCount.toLocaleString("fr-FR")} offre${totalCount > 1 ? "s" : ""} suivie${totalCount > 1 ? "s" : ""} par JobRadar${
+            ? `${totalCount.toLocaleString("fr-FR")}${totalCount >= PUBLIC_JOBS_COUNT_CAP ? "+" : ""} offre${totalCount > 1 ? "s" : ""} suivie${totalCount > 1 ? "s" : ""} par JobRadar${
                 config.locationPattern ? ` à ${config.breadcrumbLabel}` : ` en ${config.breadcrumbLabel}`
               } actuellement.`
             : config.introFallback}{" "}

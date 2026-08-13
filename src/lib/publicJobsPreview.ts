@@ -76,6 +76,15 @@ export async function fetchPublicJobDetail(id: string): Promise<PublicJobDetail 
   return rows[0] ?? null;
 }
 
+// JR-SEO-audit-20260812 : jobradar_public_jobs_by_location_count borne son
+// COUNT a 100000 lignes scannees (voir 20260813000000_jr_seo_hotfix_country_
+// pages_performance.sql -- compter/trier l'integralite d'un pays a fort
+// volume comme la France, 309k+ offres actives, ne tient pas dans les 3s de
+// statement_timeout du role anon). Au-dela, le nombre affiche est un
+// plancher, pas un compte exact -- ce plafond doit rester visible a
+// l'affichage ("100 000+") plutot que ressembler a un chiffre rond suspect.
+export const PUBLIC_JOBS_COUNT_CAP = 100000;
+
 /**
  * Offres publiques filtrées par pays et, optionnellement, par motif de
  * localisation (pages pays/ville, JR-0135).
