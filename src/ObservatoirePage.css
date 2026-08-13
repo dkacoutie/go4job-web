@@ -1,5 +1,8 @@
 .observatoire {
-  padding: 26px 0 64px;
+  /* JR-SEO-fix-20260813 : meme correction que AboutPage.css -- ne pas
+     ecraser le padding horizontal de 22px herite de .app-narrow. */
+  padding-top: 26px;
+  padding-bottom: 64px;
 }
 
 .observatoire__lead {

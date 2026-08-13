@@ -1,5 +1,11 @@
 .aboutPage {
-  padding: 26px 0 64px;
+  /* JR-SEO-fix-20260813 : ne pas ecraser le padding horizontal de 22px
+     herite de .app-narrow (AppLayout.css) -- shorthand precedent
+     ("padding: 26px 0 64px") le remettait a 0 des deux cotes, collant le
+     texte aux bordures verticales de la carte (signale par l'utilisateur
+     en production). Seuls le haut et le bas doivent changer ici. */
+  padding-top: 26px;
+  padding-bottom: 64px;
 }
 
 .aboutPage__lead {
