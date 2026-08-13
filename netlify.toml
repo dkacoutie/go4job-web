@@ -10,6 +10,33 @@
   # Environment variables > "This feature is available on paid plans").
   VITE_LOGO_DEV_TOKEN = "pk_Wjv_L8n9SMirp8Yg_fFbUQ"
 
+# JR-SEO-audit-20260812 : sitemap dynamique sur les offres qualifiees
+# (opportunite #1 de l'audit -- 0 offre dans l'ancien sitemap.xml statique
+# de 17 URL). Genere par la fonction Edge Supabase public_sitemap
+# (supabase/functions/public_sitemap), proxifiee ici pour que les URL
+# restent sous le domaine du site (important pour Search Console, qui
+# associe un sitemap au domaine ou il est servi). Doivent rester AVANT le
+# redirect catch-all "/* -> /index.html" plus bas (Netlify evalue dans
+# l'ordre, premiere regle qui matche gagne) -- force=true en plus par
+# securite, au cas ou un fichier statique existerait au meme chemin.
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=index"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/sitemap-pages.xml"
+  to = "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=pages"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/sitemap-offres.xml"
+  to = "https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=offres"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
