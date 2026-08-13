@@ -97,6 +97,11 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                     </Link>
                   </li>
                   <li>
+                    <Link className="site-footer__link" to="/observatoire-emploi">
+                      Observatoire de l'emploi
+                    </Link>
+                  </li>
+                  <li>
                     <Link className="site-footer__link" to="/pricing">
                       Tarifs
                     </Link>

@@ -5,6 +5,7 @@ import "./PublicHeader.css";
 
 const PUBLIC_NAV_ITEMS = [
   { label: "Offres", to: "/offres" },
+  { label: "Observatoire", to: "/observatoire-emploi" },
   { label: "Tarifs", to: "/pricing" },
   { label: "Qui sommes-nous", to: "/qui-sommes-nous" },
   { label: "Contact", to: "/contact" },

@@ -79,6 +79,7 @@ const STATIC_PAGES: Array<{ loc: string; lastmod: string; priority: string }> = 
   { loc: "/offres", lastmod: "2026-08-09", priority: "0.9" },
   { loc: "/pricing", lastmod: "2026-08-09", priority: "0.8" },
   { loc: "/qui-sommes-nous", lastmod: "2026-08-13", priority: "0.5" },
+  { loc: "/observatoire-emploi", lastmod: "2026-08-13", priority: "0.6" },
   { loc: "/devenir-partenaire", lastmod: "2026-08-09", priority: "0.5" },
   { loc: "/contact", lastmod: "2026-08-09", priority: "0.4" },
   { loc: "/privacy", lastmod: "2026-08-09", priority: "0.2" },

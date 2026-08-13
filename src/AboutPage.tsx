@@ -79,6 +79,13 @@ export default function AboutPage() {
         trentaine d'autres pays. L'Afrique francophone reste notre priorité de développement.
       </p>
 
+      <h2>Nos chiffres en accès libre</h2>
+      <p>
+        Les statistiques calculées à partir de notre catalogue (types de contrat, télétravail,
+        entreprises qui recrutent le plus, par marché) sont publiées sur la page{" "}
+        <Link to="/observatoire-emploi">Observatoire de l'emploi</Link>, mises à jour chaque jour.
+      </p>
+
       <h2>Nous contacter</h2>
       <p>
         Une question, un bug, une suggestion ? <Link to="/contact">Écris-nous</Link> — on répond sous

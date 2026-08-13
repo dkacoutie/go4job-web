@@ -30,6 +30,7 @@ const TermsPage = lazy(() => import("./TermsPage"));
 const ContactPage = lazy(() => import("./ContactPage"));
 const LegalPage = lazy(() => import("./LegalPage"));
 const AboutPage = lazy(() => import("./AboutPage"));
+const ObservatoirePage = lazy(() => import("./ObservatoirePage"));
 const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
 const LandingPage = lazy(() => import("./LandingPage"));
 const PublicOffersPreviewPage = lazy(() => import("./PublicOffersPreviewPage"));
@@ -217,6 +218,14 @@ export default function App() {
                   element={
                     <LazyRoute>
                       <AboutPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/observatoire-emploi"
+                  element={
+                    <LazyRoute>
+                      <ObservatoirePage />
                     </LazyRoute>
                   }
                 />

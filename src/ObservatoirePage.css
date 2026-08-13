@@ -1,0 +1,161 @@
+.observatoire {
+  padding: 26px 0 64px;
+}
+
+.observatoire__lead {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.observatoire__marketTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.observatoire__marketTab {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.observatoire__marketTab.is-active {
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: #fff;
+}
+
+.observatoire__error {
+  color: var(--muted);
+}
+
+.observatoire__skeleton {
+  padding: 40px 0;
+  color: var(--muted);
+}
+
+.observatoire__headline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 36px;
+}
+
+.observatoire__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.observatoire__statValue {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.observatoire__statLabel {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.observatoire__section {
+  margin-bottom: 32px;
+}
+
+.observatoire__section h2 {
+  margin-bottom: 6px;
+}
+
+.observatoire__caveat {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.observatoire__bars {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.observatoire__barRow {
+  display: grid;
+  grid-template-columns: 160px 1fr 48px;
+  align-items: center;
+  gap: 10px;
+}
+
+.observatoire__barLabel {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.observatoire__barTrack {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+
+.observatoire__barFill {
+  display: block;
+  height: 100%;
+  background: var(--brand-500);
+  border-radius: 999px;
+}
+
+.observatoire__barValue {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-align: right;
+}
+
+.observatoire__salaryRange {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.observatoire__companies {
+  list-style: decimal;
+  padding-left: 20px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.observatoire__companies li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.observatoire__companyCount {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.observatoire__generatedAt {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin: 24px 0;
+}
+
+.observatoire__cta {
+  margin-top: 12px;
+}
