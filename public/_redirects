@@ -1,1 +1,13 @@
+# JR-SEO-audit-20260812 : sitemap dynamique. Netlify donne TOUJOURS priorite
+# aux regles de ce fichier _redirects sur celles de netlify.toml quand les
+# deux existent -- c'est pour ca que les regles equivalentes ajoutees dans
+# netlify.toml (13/08/2026) n'avaient aucun effet en production : le
+# catch-all "/* /index.html 200" ci-dessous les court-circuitait a chaque
+# fois. Ces 3 lignes doivent rester ICI, avant le catch-all, pas seulement
+# dans netlify.toml (garde neanmoins en synchronisation avec netlify.toml
+# pour la documentation/le contexte).
+/sitemap.xml            https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=index    200!
+/sitemap-pages.xml      https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=pages    200!
+/sitemap-offres.xml     https://fygsoucyzmfainnbdpvw.supabase.co/functions/v1/public_sitemap?kind=offres   200!
+
 /*    /index.html   200
