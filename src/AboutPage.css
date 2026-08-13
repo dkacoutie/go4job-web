@@ -1,0 +1,23 @@
+.aboutPage {
+  padding: 26px 0 64px;
+}
+
+.aboutPage__lead {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.aboutPage h2 {
+  margin-top: 32px;
+}
+
+.aboutPage p {
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.aboutPage strong {
+  color: var(--text);
+}
