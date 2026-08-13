@@ -29,6 +29,18 @@
 // 1000 lignes (fetchQualifyingRows ci-dessous), et non par un unique
 // appel RPC.
 //
+// IMPORTANT #2 (constate en production, 13/08/2026) : la premiere version
+// de kind=index construisait les bornes de chunks en parcourant TOUT le
+// catalogue via fetchQualifyingRows (donc ~400 appels de 1000 lignes pour
+// ~353k lignes qualifiantes) -- plus d'une minute, un proxy en amont
+// (Cloudflare et/ou Netlify) coupait la connexion avant la fin (504).
+// Remplace par un unique appel a la RPC jobradar_public_sitemap_chunk_bounds
+// (migration 20260813030000_jr_seo_sitemap_chunk_bounds_rpc.sql), qui
+// calcule toutes les bornes en une seule requete SQL cote base (~400ms
+// mesure pour l'ensemble du catalogue, teste en EXPLAIN ANALYZE avant
+// application) -- pas soumis au plafond de 1000 lignes puisque la reponse
+// elle-meme ne contient que les quelques lignes de bornes utiles.
+//
 // verify_jwt = false (config.toml) : endpoint public, doit rester
 // accessible sans en-tete d'authentification pour les crawlers -- meme
 // choix que thanks_page/unsubscribe/email_action dans ce depot.
@@ -42,10 +54,6 @@ const CHUNK_SIZE = 50000;
 // note ci-dessus. Garder une marge (900 au lieu de 1000) est inutile ici
 // car la valeur est fixe et verifiee, mais 1000 pile est correct.
 const API_PAGE_SIZE = 1000;
-// Garde-fou sur le nombre de chunks de sortie (donc de sous-appels *
-// CHUNK_SIZE/API_PAGE_SIZE) parcourus pour construire l'index : 20 x
-// 50000 = 1M lignes de marge au-dessus des ~353k actuelles.
-const MAX_INDEX_CHUNKS = 20;
 
 const XML_HEADERS = {
   "Content-Type": "application/xml; charset=utf-8",
@@ -191,17 +199,14 @@ serve(async (req) => {
       return new Response(offersXml(rows), { headers: { ...XML_HEADERS, "X-Row-Count": String(rows.length) } });
     }
 
-    // kind === "index" (defaut) : parcourt l'ensemble des offres
-    // qualifiantes par chunks de CHUNK_SIZE pour reperer les bornes de
-    // chaque fichier, mis en cache une heure cote HTTP ensuite.
-    const cursors: Array<string | null> = [null];
-    let after: string | null = null;
-    for (let i = 0; i < MAX_INDEX_CHUNKS; i++) {
-      const { rows, lastId, exhausted } = await fetchQualifyingRows(supabase, after, CHUNK_SIZE);
-      if (rows.length < CHUNK_SIZE || exhausted) break;
-      after = lastId;
-      cursors.push(after);
-    }
+    // kind === "index" (defaut) : un seul appel RPC calcule toutes les
+    // bornes de chunks cote base (voir IMPORTANT #2 en tete de fichier).
+    const { data, error } = await supabase.rpc("jobradar_public_sitemap_chunk_bounds", {
+      p_chunk_size: CHUNK_SIZE,
+    });
+    if (error) throw error;
+    const bounds = ((data ?? []) as Array<{ after_id: string }>).map((r) => r.after_id);
+    const cursors: Array<string | null> = [null, ...bounds];
 
     return new Response(indexXml(cursors), { headers: XML_HEADERS });
   } catch (err) {
