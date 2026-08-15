@@ -1,0 +1,14 @@
+-- JR-SEO : revert de la frequence temporaire du cron de cycle de vie.
+--
+-- Le 13/08/2026 (migration 20260813040000), la frequence du cron
+-- jobradar_job_lifecycle_maintenance (jobid=36) avait ete portee de
+-- 1x/heure a 4x/heure ('*/15 * * * *') pour resorber un retard de
+-- 156 125 lignes accumule pendant les 16 jours d'echec du cron (voir
+-- 20260813010000_jr_seo_fix_lifecycle_cron_batch_timeout.sql).
+--
+-- Verifie le 13/08/2026 (plus tard le meme jour) : il ne reste que 186
+-- lignes en attente pour le signal d'expiration explicite (is_active,
+-- not is_expired, expires_at depasse) -- le flux normal du quotidien,
+-- plus un retard. Le rattrapage est termine, retour a la frequence
+-- normale.
+select cron.alter_job(job_id := 36, schedule := '20 * * * *');
