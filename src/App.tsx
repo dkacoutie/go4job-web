@@ -31,6 +31,8 @@ const ContactPage = lazy(() => import("./ContactPage"));
 const LegalPage = lazy(() => import("./LegalPage"));
 const AboutPage = lazy(() => import("./AboutPage"));
 const ObservatoirePage = lazy(() => import("./ObservatoirePage"));
+const CareerArticlesPage = lazy(() => import("./CareerArticlesPage"));
+const CareerArticleDetailPage = lazy(() => import("./CareerArticleDetailPage"));
 const RefundPolicyPage = lazy(() => import("./RefundPolicyPage"));
 const LandingPage = lazy(() => import("./LandingPage"));
 const PublicOffersPreviewPage = lazy(() => import("./PublicOffersPreviewPage"));
@@ -226,6 +228,22 @@ export default function App() {
                   element={
                     <LazyRoute>
                       <ObservatoirePage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/conseils-carriere"
+                  element={
+                    <LazyRoute>
+                      <CareerArticlesPage />
+                    </LazyRoute>
+                  }
+                />
+                <Route
+                  path="/conseils-carriere/:slug"
+                  element={
+                    <LazyRoute>
+                      <CareerArticleDetailPage />
                     </LazyRoute>
                   }
                 />

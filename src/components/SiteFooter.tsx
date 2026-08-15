@@ -102,6 +102,11 @@ export default function SiteFooter({ variant = "app" }: { variant?: SiteFooterVa
                     </Link>
                   </li>
                   <li>
+                    <Link className="site-footer__link" to="/conseils-carriere">
+                      Conseils carrière
+                    </Link>
+                  </li>
+                  <li>
                     <Link className="site-footer__link" to="/pricing">
                       Tarifs
                     </Link>
