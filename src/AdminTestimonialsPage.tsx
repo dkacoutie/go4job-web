@@ -7,10 +7,13 @@ import {
 } from "./lib/adminTestimonialsApi";
 import "./AdminTestimonialsPage.css";
 
-// JR-testimonials-20260816 : moderation admin des avis, accessible via
-// /admin/testimonials (route ajoutee dans App.tsx, entree ajoutee dans
-// AppNav.tsx -> adminItems). Meme structure que les autres pages admin :
-// chargement via RPC, actions ponctuelles, pas d'etat global.
+// JR-testimonials-20260816, refonte visuelle JR-testimonials-ui-20260817 :
+// premiere version utilisait des classes ("btnPill") jamais definies dans le
+// CSS du projet -> page rendue quasi sans style, signale par Dieudonne en
+// comparant avec /admin/partners. Repris ici sur le meme systeme visuel que
+// les autres pages admin : @import AdminSourcesPage.css (chips/card/btn/
+// btn--primary/btn--ghost, base commune a AdminSourcesPage.tsx et
+// AdminPartnersPage.tsx) + tabs repris du style de AdminPartnersPage.css.
 
 type FilterKey = "pending" | "approved" | "rejected" | "all";
 
@@ -20,6 +23,12 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "rejected", label: "Rejetes" },
   { key: "all", label: "Tous" },
 ];
+
+const STATUS_LABEL: Record<AdminTestimonialRow["status"], string> = {
+  pending: "En attente",
+  approved: "Publie",
+  rejected: "Rejete",
+};
 
 export default function AdminTestimonialsPage() {
   const { pushToast } = useToast();
@@ -49,6 +58,18 @@ export default function AdminTestimonialsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const counts = useMemo(
+    () => ({
+      total: rows.length,
+      pending: rows.filter((r) => r.status === "pending").length,
+      approved: rows.filter((r) => r.status === "approved").length,
+      rejected: rows.filter((r) => r.status === "rejected").length,
+    }),
+    [rows]
+  );
+
+  const countFor = (key: FilterKey) => (key === "all" ? counts.total : counts[key]);
+
   const visibleRows = useMemo(
     () => (filter === "all" ? rows : rows.filter((r) => r.status === filter)),
     [rows, filter]
@@ -76,51 +97,72 @@ export default function AdminTestimonialsPage() {
   }
 
   return (
-    <div className="app-narrow admin-testimonials">
-      <h1>Avis utilisateurs</h1>
-      <p className="admin-testimonials__intro">
-        Valide ou rejette les avis soumis par les utilisateurs. Seuls les avis publies apparaissent
-        sur la page d'accueil et la page "Qui sommes-nous".
-      </p>
+    <div className="adminTestimonials">
+      <div className="adminTestimonials__top">
+        <div>
+          <h1>Admin · Avis utilisateurs</h1>
+          <div className="subtitle">
+            Valide ou rejette les avis soumis depuis "Mon profil". Seuls les avis publies apparaissent sur la
+            page d'accueil et la page "Qui sommes-nous".
+          </div>
+          <div className="chips">
+            <span className="chip">Total : {counts.total}</span>
+            <span className="chip">En attente : {counts.pending}</span>
+            <span className="chip">Publies : {counts.approved}</span>
+            <span className="chip">Rejetes : {counts.rejected}</span>
+          </div>
+        </div>
 
-      <div className="admin-testimonials__filters">
+        <div className="topActions">
+          <button type="button" className="btn btn--ghost" onClick={() => void load()} disabled={loading}>
+            {loading ? "Chargement..." : "Rafraichir"}
+          </button>
+        </div>
+      </div>
+
+      <div className="adminTestimonials__tabs" role="tablist" aria-label="Filtrer les avis">
         {FILTERS.map((f) => (
           <button
             key={f.key}
             type="button"
-            className={f.key === filter ? "btn btnPill btnPill--active" : "btn btnGhost btnPill"}
+            role="tab"
+            aria-selected={filter === f.key}
+            className={`adminTestimonials__tab${filter === f.key ? " is-active" : ""}`}
             onClick={() => setFilter(f.key)}
           >
-            {f.label}
-            {f.key !== "all" && ` (${rows.filter((r) => r.status === f.key).length})`}
+            {f.label} ({countFor(f.key)})
           </button>
         ))}
       </div>
 
-      {loading && <p>Chargement...</p>}
+      {!loading && visibleRows.length === 0 ? (
+        <div className="card adminTestimonials__empty">
+          <h2>Aucun avis dans cette categorie</h2>
+          <p className="subtitle">
+            Les avis soumis depuis "Mon profil" apparaitront ici, a valider avant publication.
+          </p>
+        </div>
+      ) : null}
 
-      {!loading && visibleRows.length === 0 && <p>Aucun avis dans cette categorie.</p>}
-
-      <div className="admin-testimonials__list">
+      <div className="adminTestimonials__list">
         {visibleRows.map((row) => (
-          <article key={row.id} className="admin-testimonials__card">
-            <div className="admin-testimonials__cardHead">
+          <article key={row.id} className="card adminTestimonials__card">
+            <div className="adminTestimonials__cardHead">
               <strong>{row.author_display_name}</strong>
-              <span className="admin-testimonials__rating">{"★".repeat(row.rating)}{"☆".repeat(5 - row.rating)}</span>
-              <span className={`admin-testimonials__status admin-testimonials__status--${row.status}`}>
-                {row.status}
+              <span className="adminTestimonials__rating">
+                {"★".repeat(row.rating)}
+                {"☆".repeat(5 - row.rating)}
               </span>
+              <span className={`chip adminTestimonials__status--${row.status}`}>{STATUS_LABEL[row.status]}</span>
             </div>
-            <p className="admin-testimonials__message">{row.message}</p>
-            <p className="admin-testimonials__meta">
-              Soumis le {new Date(row.created_at).toLocaleDateString("fr-FR")}
-            </p>
+            <p className="adminTestimonials__message">{row.message}</p>
+            <p className="muted">Soumis le {new Date(row.created_at).toLocaleDateString("fr-FR")}</p>
 
-            <div className="admin-testimonials__actions">
+            <div className="adminTestimonials__actions">
               {row.status !== "approved" && (
                 <button
                   type="button"
-                  className="btn btnPrimary"
+                  className="btn btn--primary"
                   disabled={busyId === row.id}
                   onClick={() => handleModerate(row.id, "approved")}
                 >
@@ -130,7 +172,7 @@ export default function AdminTestimonialsPage() {
               {row.status !== "rejected" && (
                 <button
                   type="button"
-                  className="btn btnGhost"
+                  className="btn btn--ghost"
                   disabled={busyId === row.id}
                   onClick={() => handleModerate(row.id, "rejected")}
                 >
