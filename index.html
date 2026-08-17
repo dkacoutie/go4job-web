@@ -3,6 +3,70 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
+
+    <!--
+      JR-GA4-03 (17/08/2026) : amorçage Google Analytics 4 (consentement par
+      défaut + chargement du script), déplacé ici depuis React
+      (AnalyticsTracker / analytics.ts).
+
+      Pourquoi : investigation approfondie du 17/08/2026 a montré que tant
+      que gtag('consent','default',...) n'est pas vu par gtag.js AVANT que
+      gtag.js lui-même ne s'exécute, son moteur de consentement interne ne
+      s'initialise jamais correctement — il reste bloqué en permanence sur un
+      état "implicite" (confirmé en direct via window.google_tag_data.ics) et
+      ignore ensuite toute commande 'consent update', même envoyée bien après
+      coup, en direct. Résultat observé : script réel chargé et exécuté
+      (dataLayer.push patché, google_tag_manager/google_tag_data créés), mais
+      strictement aucun hit envoyé, y compris en debug_mode (vérifié via
+      DebugView). Documentation officielle Google (guide de dépannage Consent
+      Mode) : "Don't set default consent states asynchronously" — le signal
+      doit être synchrone, tout en haut de la page, avant tout autre script.
+      Un appel depuis un useEffect React (donc après hydratation, après le
+      premier rendu) est structurellement trop tardif pour ça, quel que soit
+      l'ordre des commandes à l'intérieur du useEffect lui-même.
+
+      Gate sur le domaine de production en JS pur (pas de import.meta.env
+      disponible ici, ce fichier n'est pas transformé par Vite) : ne
+      s'exécute jamais en dev (`npm run dev`) ni sur un domaine de preview,
+      pour ne jamais polluer les données réelles. Garder GA_MEASUREMENT_ID et
+      PRODUCTION_HOSTNAMES synchronisés avec src/lib/analytics.ts si l'un des
+      deux change.
+    -->
+    <script>
+      (function () {
+        var PRODUCTION_HOSTNAMES = ["jobradar.go4jobapp.com", "go4jobapp.com"];
+        if (PRODUCTION_HOSTNAMES.indexOf(window.location.hostname) === -1) return;
+
+        var GA_MEASUREMENT_ID = "G-EET5B96SX7";
+
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () {
+          window.dataLayer.push(arguments);
+        };
+
+        gtag("consent", "default", {
+          ad_storage: "denied",
+          analytics_storage: "denied",
+          ad_user_data: "denied",
+          ad_personalization: "denied",
+        });
+
+        var gaScript = document.createElement("script");
+        gaScript.async = true;
+        gaScript.id = "google-analytics";
+        gaScript.src = "https://www.googletagmanager.com/gtag/js?id=" + GA_MEASUREMENT_ID;
+        document.head.appendChild(gaScript);
+
+        gtag("js", new Date());
+        // send_page_view: false — le page_view initial et tous les suivants
+        // restent gérés à la main via trackPageView() côté React (voir
+        // analytics.ts), pour garder un seul point de vérité en SPA.
+        gtag("config", GA_MEASUREMENT_ID, { send_page_view: false, anonymize_ip: true });
+
+        window.__jrGaInitialized = true;
+      })();
+    </script>
+
     <meta name="google-site-verification" content="EULtcGhysUlEOlWrmYBlv-eRFPhLsPnyxl0CWrVGYSc" />
 
     <link rel="icon" type="image/png" href="/jobradar-icon.png?v=4" />
@@ -34,9 +98,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
-
-
-
-
-

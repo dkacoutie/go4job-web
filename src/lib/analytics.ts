@@ -27,7 +27,6 @@
 import { hasAnalyticsConsent } from "./consent";
 
 const GA_MEASUREMENT_ID = "G-EET5B96SX7";
-const GA_SCRIPT_ID = "google-analytics";
 
 // Domaine réel de production, vérifié le 24/07/2026 (voir rapport d'audit) :
 // go4jobapp.com redirige vers jobradar.go4jobapp.com, qui sert l'application.
@@ -79,21 +78,10 @@ function analyticsEnabled(): boolean {
   // la mesure d'audience dans le bandeau cookies (voir consent.ts /
   // ConsentBanner) — sans ça, aucun événement n'est jamais envoyé. Le script
   // gtag.js et le signal "consentement par défaut : refusé", eux, sont
-  // amorcés dès l'arrivée sur le site indépendamment de ce choix (voir
-  // initGoogleAnalytics) : c'est ce que Consent Mode attend pour fonctionner.
+  // amorcés dès l'arrivée sur le site indépendamment de ce choix, depuis
+  // index.html (voir JR-GA4-03 là-bas) : c'est ce que Consent Mode attend
+  // pour fonctionner.
   return analyticsHostEnabled() && hasAnalyticsConsent();
-}
-
-function ensureGtagStub() {
-  const win = getWin();
-  const dataLayer = Array.isArray(win.dataLayer) ? win.dataLayer : [];
-  win.dataLayer = dataLayer;
-
-  if (typeof win.gtag !== "function") {
-    win.gtag = ((...args: unknown[]) => {
-      dataLayer.push(args as unknown[]);
-    }) as Gtag;
-  }
 }
 
 function flushPendingEvents() {
@@ -108,81 +96,38 @@ function flushPendingEvents() {
 }
 
 /**
- * Charge le script gtag.js et envoie le signal Consent Mode par défaut.
- * Appelée dès le montage de l'application (voir AnalyticsTracker), sur tout
- * chargement de page en production — QUE le bandeau cookies ait déjà été
- * accepté ou non. Aucun événement n'est envoyé tant que l'utilisateur n'a
- * pas accepté (voir sendEvent / analyticsEnabled ci-dessus, toujours
- * subordonnée à hasAnalyticsConsent()) : cette fonction ne fait qu'amorcer
- * la bibliothèque Google avec un consentement par défaut "refusé".
+ * Correctif du 17/08/2026 (JR-GA4-03) : le chargement du script gtag.js et
+ * l'envoi du signal Consent Mode par défaut ont été déplacés dans
+ * index.html, en <script> inline synchrone, tout en haut du <head> — voir le
+ * commentaire détaillé là-bas pour le pourquoi.
  *
- * Correctif du 17/08/2026 (JR-GA4-02) : jusqu'ici, cette fonction ne
- * s'exécutait qu'APRÈS acceptation du bandeau (elle vérifiait
- * analyticsEnabled(), qui inclut hasAnalyticsConsent()), et envoyait alors
- * "default: refusé" puis "update: accordé" dans le même appel, avant même
- * que gtag.js ait fini de se charger. Revérifié en direct le 17/08/2026 via
- * Google Tag Assistant (comme le 26/07/2026) : dans ce schéma, gtag.js reste
- * en état "consentement non configuré" du chargement jusqu'à la fin de la
- * page, et n'envoie jamais aucun hit — silencieusement, sans erreur console,
- * même après un accord explicite de l'utilisateur sur notre bandeau. Ce
- * comportement a été reproduit deux fois, sur deux appareils et réseaux
- * différents (donc pas un blocage réseau local) : c'est bien un problème de
- * séquence, gtag.js n'ayant jamais reçu de signal "default" avant sa propre
- * initialisation puisque le script n'était jamais chargé avant l'acceptation.
- * Le schéma officiel de Google (voir "Implement consent mode") est de charger
- * le script dès l'arrivée sur le site avec un consentement par défaut
- * "refusé" — aucune donnée personnelle envoyée, aucun cookie posé tant que
- * refusé — puis d'informer gtag.js via consent "update" dès que le choix
- * réel de l'utilisateur est connu (voir updateAnalyticsConsent ci-dessous).
+ * Contexte : le correctif précédent (JR-GA4-02, même jour) avait déjà
+ * corrigé l'ORDRE des commandes (default avant update) mais les envoyait
+ * toujours depuis un useEffect React, donc après hydratation. Revérifié en
+ * direct : même avec le bon ordre, gtag.js restait bloqué en état de
+ * consentement "implicite" pour toujours (y compris face à un
+ * gtag('consent','update',...) déclenché en direct dans la console, bien
+ * après le chargement complet du script) et n'envoyait jamais aucun hit, même
+ * en debug_mode (vérifié via DebugView). La documentation officielle Google
+ * est explicite : "Don't set default consent states asynchronously" — le
+ * signal doit être synchrone, avant tout autre script, ce qu'un useEffect ne
+ * peut pas garantir.
+ *
+ * Cette fonction, appelée au montage de l'application (voir
+ * AnalyticsTracker) et sur tout changement de route en production, ne fait
+ * donc plus qu'une chose : rattraper le cas d'un visiteur dont le
+ * consentement est déjà connu (retour d'un visiteur ayant déjà accepté), en
+ * informant gtag.js immédiatement plutôt que d'attendre un nouveau clic. Le
+ * script et le "default" sont déjà en place depuis index.html à ce stade.
+ * Conservée sous ce nom (measurementId gardé en paramètre) pour ne pas casser
+ * les appelants existants (AnalyticsTracker, ConsentBanner).
  */
-export function initGoogleAnalytics(measurementId = GA_MEASUREMENT_ID) {
+export function initGoogleAnalytics(_measurementId = GA_MEASUREMENT_ID) {
   try {
-    if (typeof window === "undefined" || typeof document === "undefined") return;
-    if (!measurementId) return;
+    if (typeof window === "undefined") return;
     if (!analyticsHostEnabled()) return;
 
-    const win = getWin();
-    if (win.__jrGaInitialized) {
-      // Déjà amorcé (script chargé + default envoyé) sur un chargement de
-      // page précédent : si le choix réel est déjà connu, on informe gtag.js
-      // du consentement — utile notamment après un changement de route ou un
-      // second montage de AnalyticsTracker.
-      if (hasAnalyticsConsent()) updateAnalyticsConsent(true);
-      return;
-    }
-
-    ensureGtagStub();
-
-    // Le signal "default" doit être le tout premier appel gtag(), avant même
-    // l'insertion du script gtag.js — c'est ce que gtag.js lit à son
-    // initialisation pour établir son état de consentement de départ.
-    win.gtag?.("consent", "default", {
-      ad_storage: "denied",
-      analytics_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-    });
-
-    if (!document.getElementById(GA_SCRIPT_ID)) {
-      const script = document.createElement("script");
-      script.async = true;
-      script.id = GA_SCRIPT_ID;
-      script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
-      document.head.appendChild(script);
-    }
-
-    win.gtag?.("js", new Date());
-    // send_page_view: false — le page_view initial et tous les suivants sont
-    // envoyés à la main via trackPageView(), jamais automatiquement, pour
-    // garder un seul point de vérité et éviter tout double comptage en SPA.
-    win.gtag?.("config", measurementId, { send_page_view: false, anonymize_ip: true });
-
-    win.__jrGaInitialized = true;
-
-    // Choix déjà connu (retour d'un visiteur ayant déjà accepté) : on
-    // informe gtag.js immédiatement, pas d'attente d'un nouveau clic.
     if (hasAnalyticsConsent()) updateAnalyticsConsent(true);
-
     flushPendingEvents();
   } catch {
     // Analytics ne doit jamais faire planter l'app.
@@ -192,8 +137,7 @@ export function initGoogleAnalytics(measurementId = GA_MEASUREMENT_ID) {
 /**
  * Informe gtag.js d'un changement réel de consentement (clic "Accepter" ou
  * "Refuser" sur le bandeau — voir ConsentBanner). Sans effet si le script
- * n'est pas encore chargé (rien à mettre à jour) ; initGoogleAnalytics()
- * rattrape ce cas au prochain appel via hasAnalyticsConsent().
+ * n'existe pas (hors production, ou script index.html non exécuté).
  */
 export function updateAnalyticsConsent(granted: boolean) {
   try {
