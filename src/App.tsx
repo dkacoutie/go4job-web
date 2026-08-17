@@ -55,6 +55,7 @@ const AdminHealthPage = lazy(() => import("./AdminHealthPage"));
 const AdminSourcesPage = lazy(() => import("./AdminSourcesPage"));
 const AdminPartnersPage = lazy(() => import("./AdminPartnersPage"));
 const AdminCapcarriereDraftPage = lazy(() => import("./AdminCapcarriereDraftPage"));
+const AdminTestimonialsPage = lazy(() => import("./AdminTestimonialsPage"));
 const PartnerPortalPage = lazy(() => import("./PartnerPortalPage"));
 const JobRadarOnboardingPage = lazy(() => import("./JobRadarOnboardingPage"));
 const BecomePartnerPage = lazy(() => import("./BecomePartnerPage"));
@@ -478,6 +479,16 @@ export default function App() {
                     <AdminRoute>
                       <LazyRoute>
                         <AdminCapcarriereDraftPage />
+                      </LazyRoute>
+                    </AdminRoute>
+                  }
+                />
+                <Route
+                  path="/admin/testimonials"
+                  element={
+                    <AdminRoute>
+                      <LazyRoute>
+                        <AdminTestimonialsPage />
                       </LazyRoute>
                     </AdminRoute>
                   }

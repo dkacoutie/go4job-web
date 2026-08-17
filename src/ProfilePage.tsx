@@ -7,6 +7,7 @@ import { useSession } from "./lib/useSession";
 import { NextStepCard } from "./components/GuidedUI";
 import { useToast } from "./components/useToast";
 import { Badge } from "./components/ui";
+import TestimonialForm from "./components/TestimonialForm";
 import "./ProfilePage.css";
 
 type Profile = {
@@ -816,6 +817,8 @@ export default function ProfilePage() {
 
                 {telegramError && <div className="profile-msg profile-msgErr">{telegramError}</div>}
               </div>
+
+              <TestimonialForm defaultDisplayName={fullName.trim() || undefined} />
 
               {errorMsg && <div className="profile-msg profile-msgErr">{errorMsg}</div>}
 

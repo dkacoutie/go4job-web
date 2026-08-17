@@ -1,0 +1,18 @@
+.testimonialForm-stars {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.testimonialForm-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--muted);
+  padding: 0.15rem;
+}
+
+.testimonialForm-starActive {
+  color: #f5a623;
+}

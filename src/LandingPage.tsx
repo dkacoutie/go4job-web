@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchPublicJobsCount } from "./lib/publicJobsPreview";
 import { usePageMeta } from "./lib/usePageMeta";
+import TestimonialsSection from "./components/TestimonialsSection";
 import "./LandingPage.css";
 
 export default function LandingPage() {
@@ -176,6 +177,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      <TestimonialsSection />
 
       <section className="landing-cta-final">
         <div>

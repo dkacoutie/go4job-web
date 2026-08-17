@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchPublicJobsCount } from "./lib/publicJobsPreview";
 import { usePageMeta } from "./lib/usePageMeta";
+import TestimonialsSection from "./components/TestimonialsSection";
 import "./App.css";
 import "./AboutPage.css";
 
@@ -85,6 +86,8 @@ export default function AboutPage() {
         entreprises qui recrutent le plus, par marché) sont publiées sur la page{" "}
         <Link to="/observatoire-emploi">Observatoire de l'emploi</Link>, mises à jour chaque jour.
       </p>
+
+      <TestimonialsSection />
 
       <h2>Nous contacter</h2>
       <p>
