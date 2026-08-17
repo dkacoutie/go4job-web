@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { initGoogleAnalytics, trackPageView } from "../lib/analytics";
+import { initGoogleAnalytics, trackPageView, updateAnalyticsConsent } from "../lib/analytics";
 import { initMetaPixel, trackMetaPageView } from "../lib/metaPixel";
 import {
   CONSENT_CHANGE_EVENT,
@@ -31,6 +31,11 @@ export default function ConsentBanner() {
   }, []);
 
   function activateAnalytics() {
+    // initGoogleAnalytics() est idempotente : si le script est déjà amorcé
+    // (cas normal, voir AnalyticsTracker monté au démarrage de l'app), cet
+    // appel se contente d'informer gtag.js du consentement désormais accordé
+    // (voir updateAnalyticsConsent dans analytics.ts) ; sinon il charge le
+    // script maintenant, avec le consentement déjà accordé.
     initGoogleAnalytics();
     trackPageView(window.location.pathname, window.location.search);
     initMetaPixel();
@@ -46,6 +51,10 @@ export default function ConsentBanner() {
 
   function reject() {
     setAnalyticsConsent("rejected");
+    // Explicite même si le script était déjà en état "refusé" par défaut :
+    // couvre le cas d'un changement d'avis après une acceptation précédente
+    // (lien "Gérer les cookies" en pied de page).
+    updateAnalyticsConsent(false);
     setVisible(false);
   }
 
